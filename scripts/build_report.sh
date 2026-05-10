@@ -26,7 +26,7 @@ out=REPORT.md
     echo
     echo "### ${report#./}"
     echo
-    sed -n '1,120p' "$report"
+    cat "$report"
   done
 } > "$out"
 

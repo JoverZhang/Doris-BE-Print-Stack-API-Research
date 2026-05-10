@@ -1,0 +1,16 @@
+clickhouse-common-static-dbg-26.3.10.62/
+clickhouse-common-static-dbg-26.3.10.62/usr/
+clickhouse-common-static-dbg-26.3.10.62/usr/share/
+clickhouse-common-static-dbg-26.3.10.62/usr/share/doc/
+clickhouse-common-static-dbg-26.3.10.62/usr/share/doc/clickhouse-common-static-dbg/
+clickhouse-common-static-dbg-26.3.10.62/usr/share/doc/clickhouse-common-static-dbg/CHANGELOG.md
+clickhouse-common-static-dbg-26.3.10.62/usr/share/doc/clickhouse-common-static-dbg/README.md
+clickhouse-common-static-dbg-26.3.10.62/usr/share/doc/clickhouse-common-static-dbg/LICENSE
+clickhouse-common-static-dbg-26.3.10.62/usr/share/doc/clickhouse-common-static-dbg/AUTHORS
+clickhouse-common-static-dbg-26.3.10.62/usr/lib/
+clickhouse-common-static-dbg-26.3.10.62/usr/lib/debug/
+clickhouse-common-static-dbg-26.3.10.62/usr/lib/debug/usr/
+clickhouse-common-static-dbg-26.3.10.62/usr/lib/debug/usr/bin/
+clickhouse-common-static-dbg-26.3.10.62/usr/lib/debug/usr/bin/clickhouse.debug
+clickhouse-common-static-dbg-26.3.10.62/install/
+clickhouse-common-static-dbg-26.3.10.62/install/doinst.sh

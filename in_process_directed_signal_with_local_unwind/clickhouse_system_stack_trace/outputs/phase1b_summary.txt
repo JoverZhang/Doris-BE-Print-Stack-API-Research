@@ -1,0 +1,17 @@
+version=26.3.10.62
+rows:       658
+with_trace: 654
+min_trace:  0
+max_trace:  17
+debug_info_layout:
+  debug_url=https://github.com/ClickHouse/ClickHouse/releases/download/v26.3.10.62-lts/clickhouse-common-static-dbg-26.3.10.62-amd64.tgz
+  debug_archive=cache/clickhouse-common-static-dbg-26.3.10.62-amd64.tgz
+  debug_package_size_bytes=833692025
+  debug_member=clickhouse-common-static-dbg-26.3.10.62/usr/lib/debug/usr/bin/clickhouse.debug
+  debug_binary=cache/debug-extract/clickhouse-common-static-dbg-26.3.10.62/usr/lib/debug/usr/bin/clickhouse.debug
+  case_local_debug_symlink=bin/clickhouse.debug
+  global_debug_layout_if_needed=/usr/lib/debug/usr/bin/clickhouse.debug or /usr/lib/debug/.build-id/<build-id>.debug
+fp_no_fp_depth_summary:
+  case,frame_pointer_depth,libunwind_depth
+  fp_enabled,6,6
+  fp_omitted,3,6

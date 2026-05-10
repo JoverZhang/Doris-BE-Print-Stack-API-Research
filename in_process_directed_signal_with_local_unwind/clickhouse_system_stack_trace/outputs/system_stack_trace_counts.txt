@@ -1,0 +1,6 @@
+Row 1:
+──────
+rows:       658
+with_trace: 654
+min_trace:  0
+max_trace:  17

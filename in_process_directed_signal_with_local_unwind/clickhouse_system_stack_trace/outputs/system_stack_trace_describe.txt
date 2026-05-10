@@ -1,0 +1,49 @@
+Row 1:
+──────
+name:               thread_name
+type:               String
+default_type:       
+default_expression: 
+comment:            The name of the thread.
+codec_expression:   
+ttl_expression:     
+
+Row 2:
+──────
+name:               thread_id
+type:               UInt64
+default_type:       
+default_expression: 
+comment:            The thread identifier
+codec_expression:   
+ttl_expression:     
+
+Row 3:
+──────
+name:               query_id
+type:               String
+default_type:       
+default_expression: 
+comment:            The ID of the query this thread belongs to.
+codec_expression:   
+ttl_expression:     
+
+Row 4:
+──────
+name:               trace
+type:               Array(UInt64)
+default_type:       
+default_expression: 
+comment:            The stacktrace of this thread. Basically just an array of addresses.
+codec_expression:   
+ttl_expression:     
+
+Row 5:
+──────
+name:               untracked_memory
+type:               Int64
+default_type:       
+default_expression: 
+comment:            Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush.
+codec_expression:   
+ttl_expression:     
