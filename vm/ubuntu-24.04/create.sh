@@ -7,6 +7,8 @@ image_url="${IMAGE_URL:-https://cloud-images.ubuntu.com/releases/24.04/release/u
 base="ubuntu-24.04-server-cloudimg-amd64.img"
 disk="stacktrace-ubuntu-24.04.qcow2"
 seed="seed.iso"
+key="id_ed25519"
+generated_user_data="user-data.generated"
 
 if [[ ! -f "$base" ]]; then
   curl -L "$image_url" -o "$base"
@@ -16,7 +18,41 @@ if [[ ! -f "$disk" ]]; then
   qemu-img create -f qcow2 -F qcow2 -b "$base" "$disk" 80G
 fi
 
-xorriso -as mkisofs -output "$seed" -volid cidata -joliet -rock user-data meta-data >/dev/null
+if [[ ! -f "$key" ]]; then
+  ssh-keygen -t ed25519 -N "" -f "$key" -C stacktrace-repro-vm >/dev/null
+fi
+
+pubkey="$(cat "${key}.pub")"
+cat >"$generated_user_data" <<EOF
+#cloud-config
+users:
+  - name: repro
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${pubkey}
+ssh_pwauth: false
+package_update: true
+packages:
+  - build-essential
+  - git
+  - curl
+  - ca-certificates
+  - linux-tools-generic
+  - linux-tools-common
+  - bpftrace
+  - clang
+  - llvm
+  - elfutils
+  - jq
+  - just
+runcmd:
+  - sysctl -w kernel.perf_event_paranoid=-1
+  - sysctl -w kernel.kptr_restrict=0
+EOF
+
+xorriso -as mkisofs -output "$seed" -volid cidata -joliet -rock "$generated_user_data" meta-data >/dev/null
 
 echo "created $disk and $seed"
-

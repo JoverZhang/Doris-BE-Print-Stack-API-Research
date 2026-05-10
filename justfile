@@ -18,8 +18,17 @@ vm-create:
 vm-start:
     ./vm/ubuntu-24.04/start.sh
 
+vm-start-bg:
+    ./vm/ubuntu-24.04/start_bg.sh
+
+vm-wait-ssh:
+    ./vm/ubuntu-24.04/wait_ssh.sh
+
 vm-ssh:
     ./vm/ubuntu-24.04/ssh.sh
+
+vm-stop:
+    ./vm/ubuntu-24.04/stop.sh
 
 vm-destroy:
     ./vm/ubuntu-24.04/destroy.sh
@@ -35,4 +44,3 @@ obstack-external:
 
 perf-ebpf:
     ./kernel_perf_ebpf_user_stack/perf_ebpf_vm/scripts/run.sh
-

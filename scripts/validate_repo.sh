@@ -11,7 +11,10 @@ required=(
   reference_checklist/checklist.md
   vm/ubuntu-24.04/create.sh
   vm/ubuntu-24.04/start.sh
+  vm/ubuntu-24.04/start_bg.sh
+  vm/ubuntu-24.04/wait_ssh.sh
   vm/ubuntu-24.04/ssh.sh
+  vm/ubuntu-24.04/stop.sh
   vm/ubuntu-24.04/destroy.sh
 )
 
