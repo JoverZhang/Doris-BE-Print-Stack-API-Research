@@ -40,8 +40,19 @@ Binary string evidence:
   -> libunwind ptrace symbols
 
 Boundary:
-  this is package provenance plus command-surface evidence only.
-  Real observer collection is blocked until a source-built observer is available.
+  OCP obstack source is unavailable, so this scheme is package provenance
+  plus real binary behavior only. It intentionally has no source-derived
+  minimal implementation.
+
+Real source-built observer collection:
+  target: OceanBase v4.5.0_CE observer built from source in task #29
+  observer binary: /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+  observer binary BuildID: 5b9de1e9d53c4ad19d9cf908f44f6b513d2a8da8
+  runtime: podman AlmaLinux 8 with --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --security-opt label=disable
+  command: obstack -o <observer_pid>
+  output: 4247 text lines, 511132 bytes, per-thread symbolized stack output
+  stderr summary: task_cnt 379, attach/detach cost 40.825 ms, parse addrs cost 495.396 ms, total 540.121 ms
+  output style: thread headers plus function/module frames; -o means no source line numbers
 ```
 
 ## Run
@@ -55,7 +66,7 @@ just ob-ocp-obstack
 | input | output | meaning |
 | --- | --- | --- |
 | `commands/provenance_probe.sh` | `commands/provenance_probe.out` | OCP package provenance, version, help, and binary string evidence. |
-| `commands/obstack_collect.sh` | `commands/obstack_collect.out` | OCP tool behavior against a real observer. |
+| `commands/obstack_collect.sh` | `commands/obstack_collect.out` | OCP tool behavior against the source-built real observer from task #29. |
 
 ## Minimal Impl
 

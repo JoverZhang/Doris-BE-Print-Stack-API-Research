@@ -1,3 +1,146 @@
-BLOCKED: OBSERVER_PID is not set.
-The real observer source-build/run is blocked in scheme ob-observer-kill60, so OCP obstack behavior against a real observer is not produced.
-Package provenance is recorded in commands/provenance_probe.out only.
+observer_pid=61
+observer_pid_source=background child pid from source-built observer started in this podman container
+observer_binary=/work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+observer_binary_size_bytes=4550125568
+observer_binary_file=ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=5b9de1e9d53c4ad19d9cf908f44f6b513d2a8da8, with debug_info, not stripped
+obstack_binary=/case/schemes/ob-ocp-obstack/.cache/rpm-el8/usr/bin/obstack
+obstack_binary_file=ELF 64-bit LSB shared object, x86-64, version 1 (GNU/Linux), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=5e12ff5305158a33fde1d1cedeb3e6643bb7f124, with debug_info, not stripped, too many notes (256)
+podman_security=--cap-add=SYS_PTRACE --security-opt seccomp=unconfined --security-opt label=disable
+mysql_port=30881
+rpc_port=30882
+rs_list=127.0.0.1:30882:30881
+command=/case/schemes/ob-ocp-obstack/.cache/rpm-el8/usr/bin/obstack -o 61
+
+obstack_output_bytes=511132
+obstack_stderr_bytes=386
+ptrace_denied_lines=0
+status=PASS
+obstack_output_lines=4247
+
+obstack_stderr_sample:
+[2026-05-10 20:36:05.029955] INFO [get_options@main.cpp:141] [460] input pid: 61
+[2026-05-10 20:36:05.070779] INFO [main@main.cpp:432] [461] all tracees detached, task_cnt: 379, cost(ms): 40.825000
+[2026-05-10 20:36:05.566474] INFO [main@main.cpp:335] [460] parse addrs finish, cost(ms): 495.396000
+[2026-05-10 20:36:05.570073] INFO [main@main.cpp:344] [460] exit, cost(ms): 540.121000
+
+obstack_stdout_sample:
+Thread 61 (observer)
+#0    0x00007f1cdf5080a8 in nanosleep from /usr/lib64/libc-2.28.so
+#1    0x00007f1cdf535968 in usleep from /usr/lib64/libc-2.28.so
+#2    0x000055ae73cf82bf in void oceanbase::common::ob_usleep<(oceanbase::common::ObWaitEventIds::ObWaitEventIdEnum)42>(unsigned int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae767ace1d in oceanbase::observer::ObLeaseStateMgr::register_self_busy_wait() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae77dc722d in oceanbase::observer::ObService::register_self() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae77dc78d3 in oceanbase::observer::ObService::start() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae77c64253 in oceanbase::observer::ObServer::start() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x000055ae73cfc1b8 in inner_main(int, char**) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#8    0x000055ae73d06790 in std::_Function_handler<int (), main::$_0>::_M_invoke(std::_Any_data const&) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#9    0x000055ae8e969420 in oceanbase::common::jump_call(void*, int (*)(void*), void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#10   0x000055ae73cfe395 in main from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#11   0x00007f1cdf43a865 in __libc_start_main from /usr/lib64/libc-2.28.so
+#12   0x000055ae73cf802e in _start from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+Thread 71 (TimerWK0)
+#0    0x00007f1cdf43949d in syscall from /usr/lib64/libc-2.28.so
+#1    0x000055ae8d9a2310 in futex_hook from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae8d496fc0 in oceanbase::lib::ObFutex::wait(int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d5ffe09 in oceanbase::common::ObLightyQueue::pop(void*&, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae7703fc6c in oceanbase::common::ObSimpleThreadPoolBase<oceanbase::common::ObLightyQueue>::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#8    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 72 (TimerWK1)
+#0    0x00007f1cdf43949d in syscall from /usr/lib64/libc-2.28.so
+#1    0x000055ae8d9a2310 in futex_hook from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae8d496fc0 in oceanbase::lib::ObFutex::wait(int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d5ffe09 in oceanbase::common::ObLightyQueue::pop(void*&, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae7703fc6c in oceanbase::common::ObSimpleThreadPoolBase<oceanbase::common::ObLightyQueue>::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#8    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 73 (TimerWK2)
+#0    0x00007f1cdf43949d in syscall from /usr/lib64/libc-2.28.so
+#1    0x000055ae8d9a2310 in futex_hook from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae8d496fc0 in oceanbase::lib::ObFutex::wait(int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d5ffe09 in oceanbase::common::ObLightyQueue::pop(void*&, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae7703fc6c in oceanbase::common::ObSimpleThreadPoolBase<oceanbase::common::ObLightyQueue>::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#8    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 74 (TimerWK3)
+#0    0x00007f1cdf43949d in syscall from /usr/lib64/libc-2.28.so
+#1    0x000055ae8d9a2310 in futex_hook from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae8d496fc0 in oceanbase::lib::ObFutex::wait(int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d5ffe09 in oceanbase::common::ObLightyQueue::pop(void*&, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae7703fc6c in oceanbase::common::ObSimpleThreadPoolBase<oceanbase::common::ObLightyQueue>::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#8    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 75 (TimerSvr)
+#0    0x00007f1cdf80e6e5 in __pthread_cond_timedwait from /usr/lib64/libpthread-2.28.so
+#1    0x000055ae8d9a20de in ob_pthread_cond_timedwait from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae7c5996a4 in bool obutil::Cond::timed_wait_impl<obutil::ObUtilMutex>(obutil::ObUtilMutex const&, obutil::ObSysTime const&) const from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d49f36b in oceanbase::common::ObTimerService::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#7    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 76 (qth_mgr)
+#0    0x00007f1cdf5080a8 in nanosleep from /usr/lib64/libc-2.28.so
+#1    0x00007f1cdf535968 in usleep from /usr/lib64/libc-2.28.so
+#2    0x000055ae73cf82bf in void oceanbase::common::ob_usleep<(oceanbase::common::ObWaitEventIds::ObWaitEventIdEnum)42>(unsigned int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d989c9a in oceanbase::common::ObSimpleThreadPoolDynamicMgr::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#7    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 77 (OB_PLOG)
+#0    0x00007f1cdf43949d in syscall from /usr/lib64/libc-2.28.so
+#1    0x000055ae8d9a2310 in futex_hook from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae8d496fc0 in oceanbase::lib::ObFutex::wait(int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae76e7e536 in oceanbase::common::SimpleCond::wait(unsigned int, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae8d3c0705 in oceanbase::common::ObBaseLogWriter::do_flush_log() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d3c060c in oceanbase::common::ObBaseLogWriter::flush_log() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae8d3c0456 in oceanbase::common::ObBaseLogWriter::flush_log_thread(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#8    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#9    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#10   0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 78 (SyslogCompress)
+#0    0x00007f1cdf80e628 in __pthread_cond_timedwait from /usr/lib64/libpthread-2.28.so
+#1    0x000055ae8d9a20de in ob_pthread_cond_timedwait from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae8d49b137 in oceanbase::common::ObThreadCond::wait_us(unsigned long, long, long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d3d0240 in oceanbase::common::ObLogCompressor::log_compress_loop_() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae8d3bd3f1 in oceanbase::common::ObLogCompressor::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#8    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 79 (LogLimiterRefre)
+#0    0x00007f1cdf5080a8 in nanosleep from /usr/lib64/libc-2.28.so
+#1    0x00007f1cdf535968 in usleep from /usr/lib64/libc-2.28.so
+#2    0x000055ae8323c4be in oceanbase::share::ObSyslogPerErrLimiter::RefreshThread::run1() from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8d98888f in oceanbase::lib::Threads::run(long) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae8d99d192 in oceanbase::lib::Thread::__th_start(void*) from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
+#6    0x00007f1cdf439953 in clone from /usr/lib64/libc-2.28.so
+Thread 80 (obdal)
+#0    0x00007f1cdf53f3c7 in epoll_wait from /usr/lib64/libc-2.28.so
+#1    0x000055ae8ef55d91 in mio::poll::Poll::poll from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#2    0x000055ae8f3e0635 in _ZN5tokio7runtime2io6driver6Driver4turn17hddeaf0c1548ca669E.llvm.10744157888873368222 from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#3    0x000055ae8f3e1a37 in _ZN5tokio7runtime4time6Driver13park_internal17h87c7aa97e930ea00E.llvm.10744157888873368222 from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#4    0x000055ae8f3de50b in tokio::runtime::scheduler::multi_thread::park::Parker::park from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#5    0x000055ae8f3e9de7 in tokio::runtime::scheduler::multi_thread::worker::Context::park_timeout from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#6    0x000055ae8f3e939a in tokio::runtime::scheduler::multi_thread::worker::Context::run from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#7    0x000055ae8f3da506 in tokio::runtime::context::scoped::Scoped<T>::set from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#8    0x000055ae8f3e401c in tokio::runtime::context::runtime::enter_runtime from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#9    0x000055ae8f3e86fc in tokio::runtime::scheduler::multi_thread::worker::run from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#10   0x000055ae8f3dba45 in tokio::runtime::task::core::Core<T,S>::poll from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#11   0x000055ae8f3d48e4 in tokio::runtime::task::harness::Harness<T,S>::poll from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#12   0x000055ae8f3ec540 in tokio::runtime::blocking::pool::Inner::run from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#13   0x000055ae8f3d648e in std::sys::backtrace::__rust_begin_short_backtrace from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#14   0x000055ae8f3d6c99 in core::ops::function::FnOnce::call_once{{vtable-shim}} from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#15   0x000055ae8f3c4a9b in std::sys::pal::unix::thread::Thread::new::thread_start from /work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+#16   0x00007f1cdf8081ca in start_thread from /usr/lib64/libpthread-2.28.so
