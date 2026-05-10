@@ -1,3 +1,12 @@
 # Minimal Impl
 
-Use the same controlled target as the perf/bpftrace scheme, then document which profiler signals prove sample delivery and which do not prove all-thread current stacks.
+This scheme uses the same controlled target shape as `ebpf-perf-bpftrace`:
+
+- two CPU-running worker threads;
+- two sleeping worker threads;
+- two mutex-blocked worker threads;
+- printed Linux TIDs for every role.
+
+The industry profiler should prove sample delivery for the target process, not
+live all-thread snapshot semantics. The expected boundary remains
+`all_native_threads=no` and `live_api_fit=no`.

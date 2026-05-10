@@ -1,0 +1,21 @@
+pyroscope.write "local" {
+  endpoint {
+    url = "http://127.0.0.1:4040"
+  }
+  external_labels = {
+    "scheme" = "ebpf-industry-profiler",
+  }
+}
+
+pyroscope.ebpf "target" {
+  targets = [
+    {
+      "__process_pid__" = "__TARGET_PID__",
+      "service_name"    = "scheme-ebpf-profile-target",
+    },
+  ]
+  forward_to       = [pyroscope.write.local.receiver]
+  sample_rate      = 97
+  collect_interval = "15s"
+  demangle         = "full"
+}

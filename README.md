@@ -21,8 +21,8 @@ The active contract is:
 | no | 1 | `ob-observer-kill60` | OceanBase observer | required | required | required | required | todo | Must run real observer and collect `kill -60` stack output. |
 | no | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance required | required if source exists | required or explicit not-possible note | required | todo | OCP tool behavior cannot be replaced by open-source obstack. |
 | no | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | required | required | required | required | todo | External ptrace/remote-unwind route. |
-| no | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source required | required | required | required | todo | Profiling route only; not all-thread current snapshot. |
-| no | 1 | `ebpf-industry-profiler` | Alloy/Pyroscope or Parca | target source required | required | required | required | todo | Industry profiling route only. |
+| yes | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |
+| yes | 1 | `ebpf-industry-profiler` | Alloy/Pyroscope | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |
 | no | later | `gperftools-stacktrace` | gperftools | not started | not started | not started | not started | deferred | Capture backend/component. |
 | no | later | `libbacktrace-boost-folly` | common C++ stack libraries | not started | not started | not started | not started | deferred | Current-thread/symbolization components. |
 | no | later | `crashpad-breakpad` | crash/minidump tooling | not started | not started | not started | not started | deferred | Crash/minidump semantics, not live dump API. |

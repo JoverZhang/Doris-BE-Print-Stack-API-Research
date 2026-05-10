@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "TODO: build controlled profiling target and prepare industry profiler config" >&2
-exit 2
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/minimal_impl/build.sh"

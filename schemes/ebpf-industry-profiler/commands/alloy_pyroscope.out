@@ -1,0 +1,78 @@
+command=sudo commands/alloy_pyroscope.sh
+status=PASS
+expected_worker_threads=6
+profile_route=continuous profiling
+all_native_threads=no
+live_api_fit=no
+
+target_threads:
+pid=7895 main_tid=7895 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=70
+thread role=cpu id=0 tid=7897
+thread role=cpu id=1 tid=7898
+thread role=sleep id=0 tid=7899
+thread role=mutex_blocked id=0 tid=7901
+thread role=mutex_blocked id=1 tid=7902
+thread role=sleep id=1 tid=7900
+
+alloy_pyroscope_ebpf_metrics:
+# HELP pyroscope_ebpf_active_targets Current number of active targets being tracked by the ebpf component
+# TYPE pyroscope_ebpf_active_targets gauge
+pyroscope_ebpf_active_targets{component_id="pyroscope.ebpf.target",component_path="/"} 0
+# HELP pyroscope_ebpf_debug_info_upload_bytes_total Total number of bytes uploaded to the debug info endpoint
+# TYPE pyroscope_ebpf_debug_info_upload_bytes_total counter
+pyroscope_ebpf_debug_info_upload_bytes_total{component_id="pyroscope.write.local",component_path="/"} 0
+# HELP pyroscope_ebpf_pprof_bytes_total Total number of pprof profiles collected by the ebpf component
+# TYPE pyroscope_ebpf_pprof_bytes_total counter
+pyroscope_ebpf_pprof_bytes_total{component_id="pyroscope.ebpf.target",component_path="/",service_name="scheme-ebpf-profile-target"} 6795
+# HELP pyroscope_ebpf_pprof_samples_total Total number of pprof profiles collected by the ebpf component
+# TYPE pyroscope_ebpf_pprof_samples_total counter
+pyroscope_ebpf_pprof_samples_total{component_id="pyroscope.ebpf.target",component_path="/",service_name="scheme-ebpf-profile-target"} 6795
+# HELP pyroscope_ebpf_pprofs_dropped_total Total number of pprof profiles dropped by the ebpf component
+# TYPE pyroscope_ebpf_pprofs_dropped_total counter
+pyroscope_ebpf_pprofs_dropped_total{component_id="pyroscope.ebpf.target",component_path="/"} 0
+# HELP pyroscope_ebpf_pprofs_total Total number of pprof profiles collected by the ebpf component
+# TYPE pyroscope_ebpf_pprofs_total counter
+pyroscope_ebpf_pprofs_total{component_id="pyroscope.ebpf.target",component_path="/",service_name="scheme-ebpf-profile-target"} 3
+# HELP pyroscope_ebpf_profiling_sessions_failing_total Total number of profiling sessions failed to complete by the ebpf component
+# TYPE pyroscope_ebpf_profiling_sessions_failing_total counter
+pyroscope_ebpf_profiling_sessions_failing_total{component_id="pyroscope.ebpf.target",component_path="/"} 0
+# HELP pyroscope_ebpf_profiling_sessions_total Total number of profiling sessions started by the ebpf component
+# TYPE pyroscope_ebpf_profiling_sessions_total counter
+pyroscope_ebpf_profiling_sessions_total{component_id="pyroscope.ebpf.target",component_path="/"} 1
+# HELP pyroscope_write_sent_profiles_total Total number of profiles sent to Pyroscope.
+# TYPE pyroscope_write_sent_profiles_total counter
+pyroscope_write_sent_profiles_total{component_id="pyroscope.write.local",component_path="/",endpoint="http://127.0.0.1:4040"} 3
+
+alloy_stderr_head:
+time=2026-05-10T16:32:59.460Z level=ERROR msg="Creating Int64Counter: invalid instrument name: : is empty"
+ts=2026-05-10T16:32:59.460775614Z level=info boringcrypto_enabled=false
+ts=2026-05-10T16:32:59.459361588Z level=info source=/go/pkg/mod/github.com/!kim!machine!gun/automemlimit@v0.7.5/memlimit/memlimit.go:175 msg="memory is not limited, skipping" package=github.com/KimMachineGun/automemlimit/memlimit
+ts=2026-05-10T16:32:59.4608006Z level=info msg="no peer discovery configured: both join and discover peers are empty" service=cluster
+ts=2026-05-10T16:32:59.459702345Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:201 msg="starting complete graph evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919
+ts=2026-05-10T16:32:59.459706173Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=otel duration=771ns
+ts=2026-05-10T16:32:59.459711843Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=livedebugging duration=4.218µs
+ts=2026-05-10T16:32:59.460814146Z level=info msg="running usage stats reporter"
+ts=2026-05-10T16:32:59.459867414Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=pyroscope.write.local duration=154.258µs
+ts=2026-05-10T16:32:59.46076791Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=pyroscope.ebpf.target duration=898.321µs
+ts=2026-05-10T16:32:59.460772087Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=tracing duration=2.185µs
+ts=2026-05-10T16:32:59.460822401Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=logging duration=49.271µs
+ts=2026-05-10T16:32:59.460865271Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=remotecfg duration=39.775µs
+ts=2026-05-10T16:32:59.460872756Z level=info msg="applying non-TLS config to HTTP server" service=http
+ts=2026-05-10T16:32:59.46087524Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=http duration=6.022µs
+ts=2026-05-10T16:32:59.460879168Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=cluster duration=561ns
+ts=2026-05-10T16:32:59.460882754Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=ui duration=742ns
+ts=2026-05-10T16:32:59.460887333Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:218 msg="finished node evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 node_id=labelstore duration=1.553µs
+ts=2026-05-10T16:32:59.460890308Z level=info source=/__w/alloy/alloy/internal/runtime/internal/controller/loader.go:205 msg="finished complete graph evaluation" controller_path=/ controller_id="" trace_id=8f8c41dd0144925be05989dccf434919 duration=1.245431ms
+ts=2026-05-10T16:32:59.460920344Z level=info source=/__w/alloy/alloy/internal/runtime/alloy.go:287 msg="scheduling loaded components and services" controller_id=""
+time=2026-05-10T16:32:59.461Z level=INFO msg="Interpreter tracers: perl,php,python,hotspot,ruby,v8,dotnet,go"
+ts=2026-05-10T16:32:59.462217852Z level=info msg="now listening for http traffic" service=http addr=127.0.0.1:12345
+ts=2026-05-10T16:32:59.462295347Z level=info msg="failed to register collector with remote server" service=remotecfg id=dcd5c3ca-de1e-4eed-a833-b6ee3eeb8dcb name="" err="noop client"
+ts=2026-05-10T16:32:59.462344058Z level=info msg="starting cluster node" service=cluster peers_count=0 peers="" advertise_addr=127.0.0.1:12345 minimum_cluster_size=0 minimum_size_wait_timeout=0s
+ts=2026-05-10T16:32:59.462383422Z level=info msg="peers changed" service=cluster peers_count=1 min_cluster_size=0 peers=stacktrace-repro
+time=2026-05-10T16:32:59.564Z level=INFO msg="Found offsets: task stack 0x20, pt_regs 0x3f58, tpbase 0x2468"
+time=2026-05-10T16:32:59.835Z level=INFO msg="Supports generic eBPF map batch operations"
+time=2026-05-10T16:32:59.836Z level=INFO msg="Supports generic eBPF map batch lookup-and-delete"
+time=2026-05-10T16:32:59.836Z level=INFO msg="Supports LPM trie eBPF map batch operations"
+time=2026-05-10T16:32:59.836Z level=INFO msg="eBPF tracer loaded"
+time=2026-05-10T16:32:59.839Z level=INFO msg="Attached tracer program"
+time=2026-05-10T16:32:59.839Z level=INFO msg="Attached sched monitor"
