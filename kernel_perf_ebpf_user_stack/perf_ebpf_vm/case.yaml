@@ -1,33 +1,117 @@
-name: perf_ebpf_vm
+case_id: perf_ebpf_vm
+title: VM perf/eBPF + Grafana Alloy/Pyroscope profiling route
 category: kernel_perf_ebpf_user_stack
-owner: task-20
-status: todo
+owner: Papaya
+task: 20
+status: in_progress
+
 requires:
   root: true
   vm: true
   network: true
   debug_info: optional
-release:
-  project: Linux perf/eBPF
-  tag: vm_kernel
-  commit: null
-commands:
-  build: scripts/build.sh
-  run: scripts/run.sh
-  clean: scripts/clean.sh
-outputs:
-  - outputs/perf_fp.txt
-  - outputs/perf_dwarf.txt
-  - outputs/bpftrace_ustack.txt
-validates:
-  - perf_fp
-  - perf_dwarf
-  - bpftrace_ustack
-  - industry_profiler_attempted
-evidence:
-  runtime: false
-  source: true
-  minimal_demo: false
-boundaries:
-  - profiling_not_synchronous_all_thread_snapshot
+  frame_pointer: optional
+  kernel_capabilities:
+    - CAP_PERFMON or root
+    - CAP_BPF or root
+    - CAP_SYS_ADMIN may be needed on older kernels/tools
+    - tracefs
+    - BTF recommended
 
+environment:
+  host_os: null
+  kernel: null
+  cpu: null
+  virtualization: qemu-kvm
+  notes: "Must be populated from VM results/latest/environment.txt after runtime."
+
+release:
+  project: Linux perf/eBPF + Grafana Alloy pyroscope.ebpf
+  source_url: "https://grafana.com/docs/alloy/latest/reference/components/pyroscope/pyroscope.ebpf/"
+  tag: Ubuntu 24.04 guest kernel + distro perf/bpftrace + Grafana Alloy package
+  commit: null
+  build_id: null
+  acquisition: package
+
+commands:
+  build: scripts/build_target.sh
+  run: scripts/run.sh
+  clean: null
+  extra:
+    - scripts/install_deps.sh
+    - scripts/run_perf.sh
+    - scripts/run_bpftrace.sh
+    - scripts/run_industry_profiler.sh
+
+outputs:
+  samples:
+    - results/latest/perf_summary.txt
+    - results/latest/bpftrace_summary.txt
+    - results/latest/industry_profiler_summary.txt
+  logs:
+    - results/latest/environment.txt
+    - results/latest/alloy.stderr
+    - results/latest/target_*.log
+  artifacts:
+    - results/latest/*.data
+    - results/latest/*.script
+    - results/latest/*.report
+    - results/latest/alloy_metrics.prom
+
+validates:
+  - perf child-process user-stack sampling with FP and DWARF callgraphs
+  - perf same-process attach and system-wide sampling in VM/root environment
+  - bpftrace ustack on-CPU sampling
+  - bpftrace sched_switch/off-CPU event evidence
+  - Grafana Alloy pyroscope.ebpf sending continuous profiles to local Pyroscope
+  - semantic boundary between profiling samples and all-thread current snapshots
+
+evidence:
+  real_project_run:
+    status: BLOCKED
+    notes: "Guest scripts are ready; VM image/SSH runtime from task #16 has not yet been used by this case."
+  source_mapping:
+    status: PASS
+    files:
+      - src/profile_target.cpp
+      - bpftrace/profile_ustack.bt
+      - bpftrace/offcpu_sched_switch.bt
+      - alloy/pyroscope_ebpf.alloy.template
+  minimal_implementation:
+    status: PASS
+    path: src/profile_target.cpp
+    notes: "Synthetic target creates CPU-running, sleeping, and mutex-blocked native threads."
+
+output_capability:
+  raw_pc: partial
+  symbol: partial
+  file_line: partial
+  inline_frames: partial
+  thread_context_registers: no
+  all_native_threads: no
+  selected_thread: partial
+  coroutine_or_bthread: no
+  minidump: no
+
+safety_and_impact:
+  live_diagnostic_api_fit: no
+  crash_or_minidump_semantics: false
+  requires_signal: false
+  requires_ptrace: false
+  requires_debug_info: true
+  requires_frame_pointer: true
+  known_disturbance: "Sampling/profiling overhead; system-wide eBPF/perf requires privileged VM/root environment."
+  timeout_or_partial_failure: "Sampling windows may miss sleeping/blocked threads unless a relevant event such as sched_switch fires."
+
+boundaries:
+  - "profiling samples are not synchronous all-thread snapshots"
+  - "on-CPU sampling does not guarantee coverage of sleeping or blocked threads"
+  - "industry profiler route is continuous profiling, not on-demand dump API"
+
+blockers:
+  - "Awaiting task #16 VM image/create/start/ssh runtime before VM execution evidence can be recorded."
+
+decision:
+  recommendation: BLOCKED
+  reason: "Scripts and minimal implementation are ready, but VM runtime evidence is still pending."
+  next_step: "Run scripts through vm/ubuntu-24.04/ssh.sh once the VM is created and reachable."
