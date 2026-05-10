@@ -6,17 +6,19 @@ Ubuntu VM as root, through the Phase 1-A VM SSH contract.
 Expected invocation after the VM skeleton is available:
 
 ```bash
-vm/ubuntu-24.04/ssh.sh -- bash kernel_perf_ebpf_user_stack/scripts/run_all.sh
+vm/ubuntu-24.04/ssh.sh -- bash kernel_perf_ebpf_user_stack/perf_ebpf_vm/scripts/run_all.sh
 ```
 
 If dependencies are not installed in the VM yet:
 
 ```bash
-vm/ubuntu-24.04/ssh.sh -- bash kernel_perf_ebpf_user_stack/scripts/install_deps.sh
-vm/ubuntu-24.04/ssh.sh -- bash kernel_perf_ebpf_user_stack/scripts/run_all.sh
+vm/ubuntu-24.04/ssh.sh -- bash kernel_perf_ebpf_user_stack/perf_ebpf_vm/scripts/install_deps.sh
+vm/ubuntu-24.04/ssh.sh -- bash kernel_perf_ebpf_user_stack/perf_ebpf_vm/scripts/run_all.sh
 ```
 
 The scripts are non-interactive and write outputs to `results/latest/`.
+Curated VM runtime outputs from task #20 are checked in under
+`outputs/vm_latest/`.
 
 ## Entrypoints
 

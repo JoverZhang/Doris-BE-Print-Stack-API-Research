@@ -1,0 +1,133 @@
+perf run complete
+
+== perf_attach_fp.summary ==
+script=/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/results/latest/perf_attach_fp.script
+sample_count=792
+unique_tids=5471,5472
+unique_tid_count=2
+first_sample:
+profile_target_    5472   777.972371:   10101010 cpu-clock:u: 
+	    7fb829f922f1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    61e814f64b0b (anonymous namespace)::target_leaf(unsigned long)+0x7b (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    61e814f64bed (anonymous namespace)::target_level_three(unsigned long)+0xd (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    61e814f64bfd (anonymous namespace)::target_level_two(unsigned long)+0xd (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    61e814f64c0d (anonymous namespace)::target_level_one(unsigned long)+0xd (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    61e814f64e99 (anonymous namespace)::cpu_worker(int)+0x39 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    61e814f650c1 std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)(int), int> > >::_M_run()+0x11 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    7fb82a0ecdb4 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    7fb829c9caa4 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    7fb829d29c6c [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+
+profile_target_    5471   777.972405:   10101010 cpu-clock:u: 
+	    7fb829f92af1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    61e814f64b2a (anonymous namespace)::target_leaf(unsigned long)+0x9a (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+
+== perf_fp_dwarf,8192.summary ==
+script=/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/results/latest/perf_fp_dwarf,8192.script
+sample_count=1186
+unique_tids=5379,5380
+unique_tid_count=2
+first_sample:
+profile_target_    5379   755.312862:   10101010 cpu-clock:u: 
+	    76e5a43922f1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    618a19409b0a (anonymous namespace)::target_leaf(unsigned long)+0x7a (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    618a19409bec (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    618a19409bfc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    618a19409c0c (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    618a19409e98 (anonymous namespace)::cpu_worker(int)+0x38 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    618a1940a0c0 void std::__invoke_impl<void, void (*)(int), int>(std::__invoke_other, void (*&&)(int), int&&)+0x10 (inlined)
+	    618a1940a0c0 std::__invoke_result<void (*)(int), int>::type std::__invoke<void (*)(int), int>(void (*&&)(int), int&&)+0x10 (inlined)
+	    618a1940a0c0 void std::thread::_Invoker<std::tuple<void (*)(int), int> >::_M_invoke<0ul, 1ul>(std::_Index_tuple<0ul, 1ul>)+0x10 (inlined)
+	    618a1940a0c0 std::thread::_Invoker<std::tuple<void (*)(int), int> >::operator()()+0x10 (inlined)
+	    618a1940a0c0 std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)(int), int> > >::_M_run()+0x10 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    76e5a44ecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    76e5a409caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    76e5a4129c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+
+== perf_fp_fp,64.summary ==
+script=/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/results/latest/perf_fp_fp,64.script
+sample_count=1187
+unique_tids=5348,5349
+unique_tid_count=2
+first_sample:
+profile_target_    5348   748.097027:   10101010 cpu-clock:u: 
+	    728de039258c [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    583fe92f1b0b (anonymous namespace)::target_leaf(unsigned long)+0x7b (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    583fe92f1bed (anonymous namespace)::target_level_three(unsigned long)+0xd (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    583fe92f1bfd (anonymous namespace)::target_level_two(unsigned long)+0xd (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    583fe92f1c0d (anonymous namespace)::target_level_one(unsigned long)+0xd (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    583fe92f1e99 (anonymous namespace)::cpu_worker(int)+0x39 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    583fe92f20c1 std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)(int), int> > >::_M_run()+0x11 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    728de04ecdb4 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    728de009caa4 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    728de0129c6c [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+
+profile_target_    5349   748.097048:   10101010 cpu-clock:u: 
+	    728de03922f1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    583fe92f1b0b (anonymous namespace)::target_leaf(unsigned long)+0x7b (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+
+== perf_nofp_dwarf,8192.summary ==
+script=/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/results/latest/perf_nofp_dwarf,8192.script
+sample_count=1187
+unique_tids=5442,5443
+unique_tid_count=2
+first_sample:
+profile_target_    5443   769.742060:   10101010 cpu-clock:u: 
+	    7d1ee39ba2f4 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    56e5f28dcac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+	    56e5f28dce61 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+	    7d1ee36ecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    7d1ee329caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    7d1ee3329c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+
+profile_target_    5442   769.742293:   10101010 cpu-clock:u: 
+	    7d1ee39ba2f1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    56e5f28dcac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+	    56e5f28dce61 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+	    7d1ee36ecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    7d1ee329caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    7d1ee3329c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+
+== perf_nofp_fp,64.summary ==
+script=/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/results/latest/perf_nofp_fp,64.script
+sample_count=1187
+unique_tids=5411,5412
+unique_tid_count=2
+first_sample:
+profile_target_    5411   762.542471:   10101010 cpu-clock:u: 
+	    71f6a9005594 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    5d45003ecac3 (anonymous namespace)::target_leaf(unsigned long)+0x73 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+
+profile_target_    5412   762.542482:   10101010 cpu-clock:u: 
+	    71f6a90052f1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    5d45003ecac3 (anonymous namespace)::target_leaf(unsigned long)+0x73 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+
+profile_target_    5411   762.552572:   10101010 cpu-clock:u: 
+	    71f6a90055b4 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    5d45003ecac3 (anonymous namespace)::target_leaf(unsigned long)+0x73 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+
+profile_target_    5412   762.552583:   10101010 cpu-clock:u: 
+	    71f6a9005572 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    5d45003ecac3 (anonymous namespace)::target_leaf(unsigned long)+0x73 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_nofp)
+
+== perf_system_wide_dwarf.summary ==
+script=/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/results/latest/perf_system_wide_dwarf.script
+sample_count=797
+unique_tids=5506,5507
+unique_tid_count=2
+first_sample:
+profile_target_    5507 [001]   788.038334:   10101010 cpu-clock:u: 
+	    715556b925b4 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    5bf4f2610b0a (anonymous namespace)::target_leaf(unsigned long)+0x7a (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    5bf4f2610bec (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    5bf4f2610bfc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    5bf4f2610c0c (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    5bf4f2610e98 (anonymous namespace)::cpu_worker(int)+0x38 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    5bf4f26110c0 void std::__invoke_impl<void, void (*)(int), int>(std::__invoke_other, void (*&&)(int), int&&)+0x10 (inlined)
+	    5bf4f26110c0 std::__invoke_result<void (*)(int), int>::type std::__invoke<void (*)(int), int>(void (*&&)(int), int&&)+0x10 (inlined)
+	    5bf4f26110c0 void std::thread::_Invoker<std::tuple<void (*)(int), int> >::_M_invoke<0ul, 1ul>(std::_Index_tuple<0ul, 1ul>)+0x10 (inlined)
+	    5bf4f26110c0 std::thread::_Invoker<std::tuple<void (*)(int), int> >::operator()()+0x10 (inlined)
+	    5bf4f26110c0 std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)(int), int> > >::_M_run()+0x10 (/home/repro/stacktrace-research-repro/kernel_perf_ebpf_user_stack/perf_ebpf_vm/build/profile_target_fp)
+	    715556cecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    71555689caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    715556929c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)

@@ -1,5 +1,5 @@
 tracepoint:sched:sched_switch
-/str(args->prev_comm) == "profile_target_"/
+/args->prev_comm == "profile_target_"/
 {
   @[ustack(20)] = count();
 }

@@ -38,7 +38,7 @@ start_pyroscope() {
     >"${RESULT_DIR}/pyroscope_container_id.txt"
   echo "docker" >"${RESULT_DIR}/pyroscope_container_mode.txt"
 
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 180); do
     if curl -fsS http://127.0.0.1:4040/ready >/dev/null 2>&1; then
       return 0
     fi
