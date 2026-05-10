@@ -1,0 +1,10 @@
+profile:hz:49
+/pid == $1/
+{
+  @[ustack(20)] = count();
+}
+
+interval:s:10
+{
+  exit();
+}
