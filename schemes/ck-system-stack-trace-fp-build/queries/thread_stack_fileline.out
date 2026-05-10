@@ -1,1 +1,45 @@
-BLOCKED: source-built ClickHouse frame-pointer binary was not produced. See ../commands/source_build_probe.out.
+Row 1:
+──────
+thread_name: clickhouse
+thread_id:   2306054 -- 2.31 million
+query_id:    915b9deb-682a-4097-a8dc-b977ad2fb377
+res:         <scheme>/build/fp/./contrib/llvm-project/libcxx/src/condition_variable.cpp:61
+./contrib/llvm-project/libcxx/include/__condition_variable/condition_variable.h:165
+./contrib/llvm-project/libcxx/include/__condition_variable/condition_variable.h:135
+./src/Common/ConcurrentBoundedQueue.h:0
+<scheme>/build/fp/./src/Processors/Executors/PullingAsyncPipelineExecutor.cpp:123
+<scheme>/build/fp/./src/Processors/Executors/PullingAsyncPipelineExecutor.cpp:132
+./contrib/llvm-project/libcxx/include/__vector/vector.h:388
+<scheme>/build/fp/./src/Client/LocalConnection.cpp:451
+<scheme>/build/fp/./src/Client/ClientBase.cpp:1439
+<scheme>/build/fp/./src/Client/ClientBase.cpp:1348
+./contrib/boost/boost/smart_ptr/intrusive_ptr.hpp:76
+./contrib/boost/boost/smart_ptr/intrusive_ptr.hpp:76
+<scheme>/build/fp/./src/Client/ClientBase.cpp:0
+<scheme>/build/fp/./src/Client/ClientBase.cpp:0
+<scheme>/build/fp/./programs/local/LocalServer.cpp:762
+<scheme>/build/fp/./base/poco/Util/src/Application.cpp:0
+<scheme>/build/fp/./programs/local/LocalServer.cpp:0
+./contrib/llvm-project/libcxx/include/__vector/vector.h:250
+
+Row 2:
+──────
+thread_name: clickhouse
+thread_id:   2306056 -- 2.31 million
+query_id:
+res:         <scheme>/build/fp/./src/IO/ReadBufferFromFileDescriptor.cpp:0
+<scheme>/build/fp/./src/IO/ReadBufferFromFileDescriptor.cpp:124
+<scheme>/build/fp/./src/IO/ReadBuffer.cpp:96
+<scheme>/build/fp/./src/Common/SignalHandlers.cpp:314
+./base/poco/Foundation/src/Thread_POSIX.cpp:356
+
+Row 3:
+──────
+thread_name: Collector
+thread_id:   2306057 -- 2.31 million
+query_id:    915b9deb-682a-4097-a8dc-b977ad2fb377
+res:         <scheme>/build/fp/./contrib/llvm-project/libcxx/src/condition_variable.cpp:37
+./contrib/llvm-project/libcxx/include/__atomic/support/c11.h:81
+./src/Processors/Formats/Impl/ParallelFormattingOutputFormat.h:0
+./contrib/llvm-project/libcxx/include/__functional/function.h:0
+./contrib/llvm-project/libcxx/include/__memory/unique_ptr.h:291

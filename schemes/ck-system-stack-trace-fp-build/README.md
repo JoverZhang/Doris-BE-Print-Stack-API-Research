@@ -34,14 +34,17 @@ Dump style: this is still the ClickHouse `system.stack_trace` table and not a se
 ## Run
 
 ```bash
+rustup toolchain install nightly-2025-07-07
 just ck-system-stack-trace-fp-build
 ```
+
+The Rust nightly is required by the ClickHouse source tree through `contrib/corrosion-cmake` / `contrib/wasmtime`. Without it, CMake fails before the `clickhouse` target build starts.
 
 ## Inputs / Outputs
 
 | input | output | meaning |
 | --- | --- | --- |
-| `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Source-build blocker evidence: clone command, elapsed/space/submodule stop point, CMake submodule error. |
+| `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Source-build preflight: source tree, submodule, and Rust nightly requirements. |
 | `commands/clickhouse_metadata.sh` | `commands/clickhouse_metadata.out` | Source-built frame-pointer binary version and build-id metadata when the source build succeeds. |
 | `queries/thread_stack.sql` | `queries/thread_stack.out` | Stack trace output from the source frame-pointer build. |
 | `queries/thread_stack_fileline.sql` | `queries/thread_stack_fileline.out` | File/line output from the source frame-pointer build. |
@@ -51,4 +54,4 @@ just ck-system-stack-trace-fp-build
 
 `minimal_impl/` must keep a small frame-pointer walker versus libunwind comparison. It must state that this is a build-condition/backend comparison, not a second ClickHouse user API.
 
-The minimal implementation is mechanism evidence only. It does not replace the ClickHouse source-build project run, which is currently blocked by source checkout/submodule initialization cost in this environment.
+The minimal implementation is mechanism evidence only. It does not replace the ClickHouse source-build project run captured by the query outputs above.

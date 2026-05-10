@@ -7,6 +7,7 @@ COMMIT="${CLICKHOUSE_COMMIT:-e1c11930c28196f954a93287e43c1aa112c8c607}"
 SRC_DIR="${CLICKHOUSE_SRC_DIR:-$SCHEME_DIR/.cache/ClickHouse-$TAG}"
 BUILD_DIR="${CLICKHOUSE_BUILD_DIR:-$SCHEME_DIR/build/fp}"
 JOBS="${CLICKHOUSE_BUILD_JOBS:-$(nproc)}"
+RUST_TOOLCHAIN="${CLICKHOUSE_RUST_TOOLCHAIN:-nightly-2025-07-07}"
 
 if [[ "${CLICKHOUSE_ATTEMPT_SOURCE_BUILD:-0}" != "1" ]]; then
   "$SCHEME_DIR/commands/source_build_probe.sh" > "$SCHEME_DIR/commands/source_build_probe.out"
@@ -27,6 +28,16 @@ if [[ "$actual_commit" != "$COMMIT" ]]; then
 fi
 
 git -C "$SRC_DIR" submodule update --init --recursive --depth 1 --jobs "${CLICKHOUSE_SUBMODULE_JOBS:-8}"
+
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "Missing rustup; ClickHouse $TAG requires Rust toolchain $RUST_TOOLCHAIN." >&2
+  exit 1
+fi
+
+if ! rustup toolchain list | awk '{print $1}' | grep -qx "${RUST_TOOLCHAIN}-x86_64-unknown-linux-gnu"; then
+  echo "Missing Rust toolchain $RUST_TOOLCHAIN. Install with: rustup toolchain install $RUST_TOOLCHAIN" >&2
+  exit 1
+fi
 
 cmake -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \

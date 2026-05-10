@@ -1,1 +1,3 @@
-BLOCKED: source-built ClickHouse frame-pointer binary was not produced, so version/build-id metadata is unavailable. See source_build_probe.out.
+binary=<scheme>/build/fp/programs/clickhouse
+ClickHouse local version 26.3.10.1.
+    Build ID: 073c6b8cde9d6091654051d6c7d333928a749e22

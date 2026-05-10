@@ -1,1 +1,35 @@
-BLOCKED: source-built ClickHouse frame-pointer binary was not produced. See ../commands/source_build_probe.out.
+Row 1:
+──────
+thread_name:      clickhouse
+thread_id:        2306042 -- 2.31 million
+query_id:         2eeaff94-4f6c-418c-a83f-a473184b5866
+trace_len:        25
+trace_head:       [651059,603036,603788,614504,658821480,324556517,495473939,495470934]
+untracked_memory: 205192
+
+Row 2:
+──────
+thread_name:      clickhouse
+thread_id:        2306045 -- 2.31 million
+query_id:
+trace_len:        11
+trace_head:       [651059,603036,603108,1102638,325233272,325233957,325225085,326606161]
+untracked_memory: 0
+
+Row 3:
+──────
+thread_name:      Collector
+thread_id:        2306046 -- 2.31 million
+query_id:         2eeaff94-4f6c-418c-a83f-a473184b5866
+trace_len:        11
+trace_head:       [651059,603036,603788,613982,658821330,497070255,494686025,325834538]
+untracked_memory: 704
+
+Row 4:
+──────
+thread_name:      QueryPullPipeEx
+thread_id:        2306047 -- 2.31 million
+query_id:         2eeaff94-4f6c-418c-a83f-a473184b5866
+trace_len:        13
+trace_head:       [1146990,369064760,495268279,495267283,495382432,495324430,495321909,495320720]
+untracked_memory: -4832

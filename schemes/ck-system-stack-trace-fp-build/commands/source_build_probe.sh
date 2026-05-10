@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Audit script for the source-build blocker recorded for task #23.
-# It intentionally does not run an unbounded recursive submodule checkout.
+# Audit script for the source-build preflight recorded for task #28.
+# It intentionally documents requirements instead of running the long build.
 
-echo "Attempt 1: git clone --recursive --depth 1 --branch v26.3.10.62-lts https://github.com/ClickHouse/ClickHouse.git <scheme>/.cache/ClickHouse-v26.3.10.62-lts"
-echo "Observed before manual stop: about 7 minutes elapsed, about 4.7G cache size, active submodule contrib/google-cloud-cpp, 129 submodules still uninitialized/not clean."
+echo "Source-build command:"
+echo "CLICKHOUSE_ATTEMPT_SOURCE_BUILD=1 CLICKHOUSE_SRC_DIR=<repo>/repos/source/ClickHouse-v26.3.10.62-lts CLICKHOUSE_SUBMODULE_JOBS=16 CLICKHOUSE_BUILD_JOBS=4 just ck-system-stack-trace-fp-build"
 echo
-echo "Attempt 2/3 CMake command:"
-echo "cmake -S <ClickHouse source> -B <scheme>/build/probe -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DENABLE_TESTS=OFF -DENABLE_CLICKHOUSE_ALL=OFF -DENABLE_CLICKHOUSE_KEEPER=OFF -DENABLE_CLICKHOUSE_KEEPER_CONVERTER=OFF -DENABLE_CLICKHOUSE_KEEPER_CLIENT=OFF -DENABLE_THINLTO=OFF"
+echo "Requirements observed in task #28:"
+echo "- ClickHouse source tree at tag v26.3.10.62-lts, commit e1c11930c28196f954a93287e43c1aa112c8c607."
+echo "- All 129 git submodules initialized."
+echo "- rustup toolchain nightly-2025-07-07 installed; CMake fails before build without it."
 echo
-echo "CMake error summary:"
-echo "CMake Error at CMakeLists.txt:59 (message):"
-echo "  Submodules are not initialized.  Run"
-echo
-echo "      git submodule update --init"
+echo "Previous task #23 blockers resolved in task #28:"
+echo "- Recursive submodule checkout was completed outside this scheme directory."
+echo "- Missing Rust nightly was fixed with: rustup toolchain install nightly-2025-07-07."

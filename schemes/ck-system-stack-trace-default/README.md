@@ -39,14 +39,17 @@ Dump style: `system.stack_trace` is an on-demand table read. It enumerates nativ
 ## Run
 
 ```bash
+rustup toolchain install nightly-2025-07-07
 just ck-system-stack-trace-default
 ```
+
+The Rust nightly is required by the ClickHouse source tree through `contrib/corrosion-cmake` / `contrib/wasmtime`. Without it, CMake fails before the `clickhouse` target build starts.
 
 ## Inputs / Outputs
 
 | input | output | meaning |
 | --- | --- | --- |
-| `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Source-build blocker evidence: clone command, elapsed/space/submodule stop point, CMake submodule error. |
+| `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Source-build preflight: source tree, submodule, and Rust nightly requirements. |
 | `commands/clickhouse_metadata.sh` | `commands/clickhouse_metadata.out` | Source-built binary version and build-id metadata when the source build succeeds. |
 | `queries/thread_stack.sql` | `queries/thread_stack.out` | Raw `system.stack_trace` query output. |
 | `queries/thread_stack_symbols.sql` | `queries/thread_stack_symbols.out` | Symbolized frames via `addressToSymbol()` and `demangle()`. |
@@ -57,4 +60,4 @@ just ck-system-stack-trace-default
 
 `minimal_impl/` must keep only the source-trace core: enumerate threads, send a directed signal, capture raw PCs with local unwind, coordinate with timeout/partial result, and print raw PCs. It must omit ClickHouse SQL, storage engine plumbing, access control, and production symbol caches.
 
-The minimal implementation is mechanism evidence only. It does not replace the ClickHouse source-build project run, which is currently blocked by source checkout/submodule initialization cost in this environment.
+The minimal implementation is mechanism evidence only. It does not replace the ClickHouse source-build project run captured by the query outputs above.

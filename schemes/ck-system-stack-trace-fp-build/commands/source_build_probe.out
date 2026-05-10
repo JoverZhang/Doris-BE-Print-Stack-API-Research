@@ -1,11 +1,11 @@
-Attempt 1: git clone --recursive --depth 1 --branch v26.3.10.62-lts https://github.com/ClickHouse/ClickHouse.git <scheme>/.cache/ClickHouse-v26.3.10.62-lts
-Observed before manual stop: about 7 minutes elapsed, about 4.7G cache size, active submodule contrib/google-cloud-cpp, 129 submodules still uninitialized/not clean.
+Source-build command:
+CLICKHOUSE_ATTEMPT_SOURCE_BUILD=1 CLICKHOUSE_SRC_DIR=<repo>/repos/source/ClickHouse-v26.3.10.62-lts CLICKHOUSE_SUBMODULE_JOBS=16 CLICKHOUSE_BUILD_JOBS=4 just ck-system-stack-trace-fp-build
 
-Attempt 2/3 CMake command:
-cmake -S <ClickHouse source> -B <scheme>/build/probe -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DENABLE_TESTS=OFF -DENABLE_CLICKHOUSE_ALL=OFF -DENABLE_CLICKHOUSE_KEEPER=OFF -DENABLE_CLICKHOUSE_KEEPER_CONVERTER=OFF -DENABLE_CLICKHOUSE_KEEPER_CLIENT=OFF -DENABLE_THINLTO=OFF
+Requirements observed in task #28:
+- ClickHouse source tree at tag v26.3.10.62-lts, commit e1c11930c28196f954a93287e43c1aa112c8c607.
+- All 129 git submodules initialized.
+- rustup toolchain nightly-2025-07-07 installed; CMake fails before build without it.
 
-CMake error summary:
-CMake Error at CMakeLists.txt:59 (message):
-  Submodules are not initialized.  Run
-
-      git submodule update --init
+Previous task #23 blockers resolved in task #28:
+- Recursive submodule checkout was completed outside this scheme directory.
+- Missing Rust nightly was fixed with: rustup toolchain install nightly-2025-07-07.

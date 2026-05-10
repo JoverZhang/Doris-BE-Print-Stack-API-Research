@@ -16,8 +16,8 @@ The active contract is:
 
 | done | phase | scheme | project | source-build | source-trace | minimal-impl | runnable-output | status | note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| no | 1 | `ck-system-stack-trace-default` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Source build blocked by ClickHouse submodule initialization cost; no release binary evidence used. |
-| no | 1 | `ck-system-stack-trace-fp-build` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Build-condition comparison only; source build blocked by same submodule issue. |
+| yes | 1 | `ck-system-stack-trace-default` | ClickHouse | done | done | done | done | in_review | Source-built `v26.3.10.62-lts` default binary produced raw/symbol/file-line `system.stack_trace` outputs; requires all submodules plus Rust `nightly-2025-07-07`; Build ID `1a71bc7bc6667f8d465ff4ae3cb2bfb2549b39b1`. |
+| yes | 1 | `ck-system-stack-trace-fp-build` | ClickHouse | done | done | done | done | in_review | Source-built frame-pointer-preserving build produced raw/file-line `system.stack_trace` outputs; build-condition comparison only, not a second API; Build ID `073c6b8cde9d6091654051d6c7d333928a749e22`. |
 | yes | 1 | `ob-observer-kill60` | OceanBase observer | done | done | done | done | in_review | Source-built `v4.5.0_CE` observer under podman AlmaLinux 8 produced a real `kill -60` stack file; direct host build remains blocked by missing `rpmextract.sh`. |
 | yes | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance done | source unavailable | not possible | done | in_review | Official `obstack 2.0.4` package collected real stacks from the source-built `v4.5.0_CE` observer; requires ptrace-capable podman runtime. |
 | yes | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | done | done | done | done | in_review | Public source commit built under podman CentOS 7; synthetic attach and real source-built observer attach both PASS. Host Arch build remains blocked by upstream deps profile support. |
