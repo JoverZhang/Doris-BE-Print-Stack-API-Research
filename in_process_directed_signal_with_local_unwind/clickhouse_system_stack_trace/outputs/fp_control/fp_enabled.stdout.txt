@@ -1,0 +1,15 @@
+frame_pointer_depth=6
+frame_pointer_pc[0]=0x4019b9 object=fp_control/build/backend_control.fp symbol=
+frame_pointer_pc[1]=0x4019c9 object=fp_control/build/backend_control.fp symbol=
+frame_pointer_pc[2]=0x40118e object=fp_control/build/backend_control.fp symbol=main
+frame_pointer_pc[3]=0x7f6c62d186c1 object=/usr/lib/libc.so.6 symbol=
+frame_pointer_pc[4]=0x7f6c62d187f9 object=/usr/lib/libc.so.6 symbol=__libc_start_main
+frame_pointer_pc[5]=0x4011f5 object=fp_control/build/backend_control.fp symbol=_start
+libunwind_depth=6
+libunwind_pc[0]=0x4019b9 object=fp_control/build/backend_control.fp symbol=
+libunwind_pc[1]=0x4019c9 object=fp_control/build/backend_control.fp symbol=
+libunwind_pc[2]=0x40118e object=fp_control/build/backend_control.fp symbol=main
+libunwind_pc[3]=0x7f6c62d186c1 object=/usr/lib/libc.so.6 symbol=
+libunwind_pc[4]=0x7f6c62d187f9 object=/usr/lib/libc.so.6 symbol=__libc_start_main
+libunwind_pc[5]=0x4011f5 object=fp_control/build/backend_control.fp symbol=_start
+total_depth=12

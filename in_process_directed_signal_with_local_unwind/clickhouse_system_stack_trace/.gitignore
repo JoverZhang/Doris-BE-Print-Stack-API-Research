@@ -1,0 +1,12 @@
+cache/
+bin/
+data/
+tmp/
+logs/
+access/
+user_files/
+format_schemas/
+fp_control/build/
+*.tgz
+*.tgz.sha512
+server_shell.pid

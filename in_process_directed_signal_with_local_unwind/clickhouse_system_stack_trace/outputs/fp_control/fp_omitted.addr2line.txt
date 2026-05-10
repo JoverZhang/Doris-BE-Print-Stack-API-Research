@@ -1,0 +1,27 @@
+frame_pointer_pc 0x4019c9
+(anonymous namespace)::mid_capture()
+<case-dir>/fp_control/backend_control.cpp:102
+frame_pointer_pc 0x7f508bd187f9
+??
+??:0
+frame_pointer_pc 0x4011e5
+_start
+??:?
+libunwind_pc 0x4019c9
+(anonymous namespace)::mid_capture()
+<case-dir>/fp_control/backend_control.cpp:102
+libunwind_pc 0x4019d9
+(anonymous namespace)::root_capture()
+<case-dir>/fp_control/backend_control.cpp:106
+libunwind_pc 0x401186
+main
+<case-dir>/fp_control/backend_control.cpp:112
+libunwind_pc 0x7f508bd186c1
+??
+??:0
+libunwind_pc 0x7f508bd187f9
+??
+??:0
+libunwind_pc 0x4011e5
+_start
+??:?
