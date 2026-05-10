@@ -1,12 +1,20 @@
 #cloud-config
+# Reference template. create.sh generates user-data.generated with a real SSH key.
 users:
   - name: repro
     groups: sudo
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
-    lock_passwd: false
-    passwd: "$6$rounds=4096$slock$EYYn6yKn8vGjT.RKhd86tcCWVD3qiAgLfMA0GBus1BF7fADFWB0g0O7uuzceWpZ05ADcu3e9RiJ4j.2qfwDfP/"
-ssh_pwauth: true
+    lock_passwd: true
+    ssh_authorized_keys:
+      - REPLACE_WITH_PUBLIC_KEY
+ssh_pwauth: false
+write_files:
+  - path: /etc/sysctl.d/99-stacktrace-repro.conf
+    permissions: "0644"
+    content: |
+      kernel.perf_event_paranoid=-1
+      kernel.kptr_restrict=0
 package_update: true
 packages:
   - build-essential
@@ -22,6 +30,4 @@ packages:
   - jq
   - just
 runcmd:
-  - sysctl -w kernel.perf_event_paranoid=-1
-  - sysctl -w kernel.kptr_restrict=0
-
+  - sysctl --system

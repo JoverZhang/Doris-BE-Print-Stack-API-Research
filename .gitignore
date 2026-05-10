@@ -1,0 +1,8 @@
+vm/ubuntu-24.04/id_ed25519
+vm/ubuntu-24.04/id_ed25519.pub
+vm/ubuntu-24.04/seed.iso
+vm/ubuntu-24.04/stacktrace-ubuntu-24.04.qcow2
+vm/ubuntu-24.04/ubuntu-24.04-server-cloudimg-amd64.img
+vm/ubuntu-24.04/user-data.generated
+vm/ubuntu-24.04/vm.log
+vm/ubuntu-24.04/vm.pid

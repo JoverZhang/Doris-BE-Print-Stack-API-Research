@@ -21,6 +21,8 @@ fi
 if [[ ! -f "$key" ]]; then
   ssh-keygen -t ed25519 -N "" -f "$key" -C stacktrace-repro-vm >/dev/null
 fi
+chmod 600 "$key"
+chmod 644 "${key}.pub"
 
 pubkey="$(cat "${key}.pub")"
 cat >"$generated_user_data" <<EOF
@@ -34,6 +36,12 @@ users:
     ssh_authorized_keys:
       - ${pubkey}
 ssh_pwauth: false
+write_files:
+  - path: /etc/sysctl.d/99-stacktrace-repro.conf
+    permissions: "0644"
+    content: |
+      kernel.perf_event_paranoid=-1
+      kernel.kptr_restrict=0
 package_update: true
 packages:
   - build-essential
@@ -49,10 +57,17 @@ packages:
   - jq
   - just
 runcmd:
-  - sysctl -w kernel.perf_event_paranoid=-1
-  - sysctl -w kernel.kptr_restrict=0
+  - sysctl --system
 EOF
 
-xorriso -as mkisofs -output "$seed" -volid cidata -joliet -rock "$generated_user_data" meta-data >/dev/null
+xorriso -as mkisofs \
+  -output "$seed" \
+  -volid cidata \
+  -joliet \
+  -rock \
+  -graft-points \
+  user-data="$generated_user_data" \
+  meta-data=meta-data \
+  >/dev/null
 
 echo "created $disk and $seed"

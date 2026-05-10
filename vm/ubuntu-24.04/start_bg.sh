@@ -11,7 +11,6 @@ if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" >/dev/null 2>&1; then
   exit 0
 fi
 
-nohup ./start.sh >"$logfile" 2>&1 &
-echo "$!" >"$pidfile"
+rm -f "$pidfile" "$logfile"
+VM_DAEMONIZE=1 VM_PIDFILE="$pidfile" VM_LOGFILE="$logfile" ./start.sh
 echo "started VM pid=$(cat "$pidfile") log=$logfile"
-

@@ -56,3 +56,16 @@ just env
 just validate
 ```
 
+## VM Runtime
+
+The QEMU VM is used for cases that need root-level kernel profiling permissions.
+
+```bash
+just vm-create
+just vm-start-bg
+just vm-wait-ssh
+just vm-ssh 'id && uname -r && sysctl kernel.perf_event_paranoid kernel.kptr_restrict'
+just vm-stop
+```
+
+The VM uses a generated local SSH key under `vm/ubuntu-24.04/`, a NoCloud seed ISO, and a `repro` user with passwordless sudo. Generated VM disks, keys, logs, and seed files are ignored by git.

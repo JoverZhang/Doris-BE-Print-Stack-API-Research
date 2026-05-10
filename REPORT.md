@@ -180,4 +180,3 @@ bash scripts/run_industry_profiler.sh
 - On-CPU profiling may miss sleeping or blocked threads.
 - sched-switch/off-CPU evidence is event-based and historical, not a live stack dump.
 - Alloy/Pyroscope eBPF is an industry continuous profiling path; it should not be described as a Doris BE live dump API.
-

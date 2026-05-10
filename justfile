@@ -1,4 +1,5 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set positional-arguments := true
 
 default:
     @just --list
@@ -24,8 +25,8 @@ vm-start-bg:
 vm-wait-ssh:
     ./vm/ubuntu-24.04/wait_ssh.sh
 
-vm-ssh:
-    ./vm/ubuntu-24.04/ssh.sh
+vm-ssh *args:
+    ./vm/ubuntu-24.04/ssh.sh "$@"
 
 vm-stop:
     ./vm/ubuntu-24.04/stop.sh
