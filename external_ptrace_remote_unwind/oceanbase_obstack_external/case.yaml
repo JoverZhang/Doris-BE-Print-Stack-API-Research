@@ -1,0 +1,31 @@
+name: oceanbase_obstack_external
+category: external_ptrace_remote_unwind
+owner: task-19
+status: todo
+requires:
+  root: maybe
+  vm: true
+  network: true
+  debug_info: optional
+release:
+  project: oceanbase/obstack
+  tag: latest_release_or_commit
+  commit: null
+commands:
+  build: scripts/build.sh
+  run: scripts/run.sh
+  clean: scripts/clean.sh
+outputs:
+  - outputs/synthetic.txt
+  - outputs/observer_attach.txt
+validates:
+  - synthetic_target_attach
+  - real_observer_attach_or_blocker
+  - ocp_obstack_x86_64_checked
+evidence:
+  runtime: false
+  source: true
+  minimal_demo: false
+boundaries:
+  - ptrace_remote_unwind_not_observer_signal_worker
+

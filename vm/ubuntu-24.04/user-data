@@ -1,0 +1,27 @@
+#cloud-config
+users:
+  - name: repro
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
+    passwd: "$6$rounds=4096$slock$EYYn6yKn8vGjT.RKhd86tcCWVD3qiAgLfMA0GBus1BF7fADFWB0g0O7uuzceWpZ05ADcu3e9RiJ4j.2qfwDfP/"
+ssh_pwauth: true
+package_update: true
+packages:
+  - build-essential
+  - git
+  - curl
+  - ca-certificates
+  - linux-tools-generic
+  - linux-tools-common
+  - bpftrace
+  - clang
+  - llvm
+  - elfutils
+  - jq
+  - just
+runcmd:
+  - sysctl -w kernel.perf_event_paranoid=-1
+  - sysctl -w kernel.kptr_restrict=0
+

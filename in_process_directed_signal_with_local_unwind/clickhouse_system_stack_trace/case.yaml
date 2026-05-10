@@ -1,0 +1,33 @@
+name: clickhouse_system_stack_trace
+category: in_process_directed_signal_with_local_unwind
+owner: task-17
+status: todo
+requires:
+  root: false
+  vm: false
+  network: true
+  debug_info: required_for_file_line
+release:
+  project: ClickHouse
+  tag: v26.3.10.62-lts
+  commit: e1c11930c28196f954a93287e43c1aa112c8c607
+commands:
+  build: scripts/fetch_binary.sh
+  run: scripts/run.sh
+  clean: scripts/clean.sh
+outputs:
+  - outputs/raw_trace.txt
+  - outputs/symbol_names.txt
+  - outputs/file_lines.txt
+validates:
+  - system_stack_trace_query
+  - raw_pc_array
+  - symbol_names
+  - file_line_with_debug_info
+evidence:
+  runtime: false
+  source: true
+  minimal_demo: false
+boundaries:
+  - fp_no_fp_is_controlled_comparison_not_user_api
+

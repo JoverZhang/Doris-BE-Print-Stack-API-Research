@@ -1,0 +1,33 @@
+name: perf_ebpf_vm
+category: kernel_perf_ebpf_user_stack
+owner: task-20
+status: todo
+requires:
+  root: true
+  vm: true
+  network: true
+  debug_info: optional
+release:
+  project: Linux perf/eBPF
+  tag: vm_kernel
+  commit: null
+commands:
+  build: scripts/build.sh
+  run: scripts/run.sh
+  clean: scripts/clean.sh
+outputs:
+  - outputs/perf_fp.txt
+  - outputs/perf_dwarf.txt
+  - outputs/bpftrace_ustack.txt
+validates:
+  - perf_fp
+  - perf_dwarf
+  - bpftrace_ustack
+  - industry_profiler_attempted
+evidence:
+  runtime: false
+  source: true
+  minimal_demo: false
+boundaries:
+  - profiling_not_synchronous_all_thread_snapshot
+

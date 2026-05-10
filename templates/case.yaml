@@ -1,0 +1,28 @@
+name: example_case
+category: example_category
+owner: unassigned
+status: todo
+requires:
+  root: false
+  vm: false
+  network: false
+  debug_info: optional
+release:
+  project: example
+  tag: null
+  commit: null
+commands:
+  build: scripts/build.sh
+  run: scripts/run.sh
+  clean: scripts/clean.sh
+outputs:
+  - outputs/sample.txt
+validates:
+  - command_runs
+evidence:
+  runtime: false
+  source: false
+  minimal_demo: false
+boundaries:
+  - not_yet_filled
+

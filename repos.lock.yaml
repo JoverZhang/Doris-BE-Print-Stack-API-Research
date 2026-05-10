@@ -1,0 +1,26 @@
+repos:
+  clickhouse:
+    url: https://github.com/ClickHouse/ClickHouse.git
+    version_policy: latest_lts_release
+    pinned: null
+  oceanbase:
+    url: https://github.com/oceanbase/oceanbase.git
+    version_policy: latest_release
+    pinned: null
+  obstack:
+    url: https://github.com/oceanbase/obstack.git
+    version_policy: latest_release_or_commit
+    pinned: null
+  brpc:
+    url: https://github.com/apache/brpc.git
+    version_policy: latest_release
+    pinned: null
+  gperftools:
+    url: https://github.com/gperftools/gperftools.git
+    version_policy: latest_release
+    pinned: null
+  libbacktrace:
+    url: https://github.com/ianlancetaylor/libbacktrace.git
+    version_policy: stable_commit
+    pinned: null
+
