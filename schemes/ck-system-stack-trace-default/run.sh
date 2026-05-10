@@ -38,8 +38,7 @@ run_query queries/thread_stack.sql
 run_query queries/thread_stack_symbols.sql
 run_query queries/thread_stack_fileline.sql
 
-"$CLICKHOUSE_BIN" --version > clickhouse_version.out
-readelf -n "$CLICKHOUSE_BIN" 2>&1 | grep -A1 'Build ID' > clickhouse_build_id.out || true
+./commands/clickhouse_metadata.sh "$CLICKHOUSE_BIN" > commands/clickhouse_metadata.out
 
 ./minimal_impl/run.sh
 

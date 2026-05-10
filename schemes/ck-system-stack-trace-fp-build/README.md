@@ -42,6 +42,7 @@ just ck-system-stack-trace-fp-build
 | input | output | meaning |
 | --- | --- | --- |
 | `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Source-build blocker evidence: clone command, elapsed/space/submodule stop point, CMake submodule error. |
+| `commands/clickhouse_metadata.sh` | `commands/clickhouse_metadata.out` | Source-built frame-pointer binary version and build-id metadata when the source build succeeds. |
 | `queries/thread_stack.sql` | `queries/thread_stack.out` | Stack trace output from the source frame-pointer build. |
 | `queries/thread_stack_fileline.sql` | `queries/thread_stack_fileline.out` | File/line output from the source frame-pointer build. |
 | `minimal_impl/fp_vs_unwind.cpp` | `minimal_impl/fp_vs_unwind.out` | Minimal frame-pointer walker versus libunwind control. |

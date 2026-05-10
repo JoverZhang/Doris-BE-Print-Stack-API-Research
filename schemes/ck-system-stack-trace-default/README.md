@@ -47,6 +47,7 @@ just ck-system-stack-trace-default
 | input | output | meaning |
 | --- | --- | --- |
 | `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Source-build blocker evidence: clone command, elapsed/space/submodule stop point, CMake submodule error. |
+| `commands/clickhouse_metadata.sh` | `commands/clickhouse_metadata.out` | Source-built binary version and build-id metadata when the source build succeeds. |
 | `queries/thread_stack.sql` | `queries/thread_stack.out` | Raw `system.stack_trace` query output. |
 | `queries/thread_stack_symbols.sql` | `queries/thread_stack_symbols.out` | Symbolized frames via `addressToSymbol()` and `demangle()`. |
 | `queries/thread_stack_fileline.sql` | `queries/thread_stack_fileline.out` | File/line output from source-built ClickHouse with matching debug info. |
