@@ -1,6 +1,6 @@
 # Stacktrace Research Report
 
-Generated: 2026-05-10T23:12:40+08:00
+Generated: 2026-05-10T23:13:26+08:00
 
 ## Matrix
 
@@ -9,7 +9,7 @@ case_id,title,owner,status,project_run,source_mapping,minimal_impl,raw_pc,symbol
 clickhouse_system_stack_trace,ClickHouse system.stack_trace + FP/no-FP control,task-17,BLOCKED,BLOCKED,BLOCKED,BLOCKED,unknown,unknown,unknown,unknown,no,no,yes,no,yes,unknown,conditional,in_process_directed_signal_with_local_unwind/clickhouse_system_stack_trace/scripts/run.sh,in_process_directed_signal_with_local_unwind/clickhouse_system_stack_trace/outputs,,""
 oceanbase_observer_signal_worker,OceanBase observer kill -60 real run,task-18,BLOCKED,BLOCKED,BLOCKED,BLOCKED,unknown,unknown,unknown,unknown,no,no,yes,no,unknown,unknown,conditional,in_process_directed_signal_with_local_unwind/oceanbase_observer_signal_worker/scripts/run.sh,in_process_directed_signal_with_local_unwind/oceanbase_observer_signal_worker/outputs,unclaimed,""
 oceanbase_obstack_external,OceanBase OCP obstack_x86_64 vs open-source obstack,task-19,BLOCKED,BLOCKED,BLOCKED,BLOCKED,unknown,unknown,unknown,unknown,no,no,no,yes,yes,unknown,no,external_ptrace_remote_unwind/oceanbase_obstack_external/scripts/run.sh,external_ptrace_remote_unwind/oceanbase_obstack_external/outputs,unclaimed,""
-perf_ebpf_vm,perf/eBPF + industry profiling in VM,task-20,BLOCKED,BLOCKED,BLOCKED,BLOCKED,unknown,unknown,unknown,partial,no,no,no,no,yes,yes,no,kernel_perf_ebpf_user_stack/perf_ebpf_vm/scripts/run.sh,kernel_perf_ebpf_user_stack/perf_ebpf_vm/outputs,unclaimed,""
+perf_ebpf_vm,perf/eBPF + industry profiling in VM,task-20,in_progress,BLOCKED,BLOCKED,BLOCKED,unknown,unknown,unknown,partial,no,no,no,no,yes,yes,no,kernel_perf_ebpf_user_stack/perf_ebpf_vm/scripts/run.sh,kernel_perf_ebpf_user_stack/perf_ebpf_vm/outputs,,""
 ```
 
 ## Reference Checklist
