@@ -18,7 +18,7 @@ The active contract is:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | no | 1 | `ck-system-stack-trace-default` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Source build blocked by ClickHouse submodule initialization cost; no release binary evidence used. |
 | no | 1 | `ck-system-stack-trace-fp-build` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Build-condition comparison only; source build blocked by same submodule issue. |
-| no | 1 | `ob-observer-kill60` | OceanBase observer | blocked | done | done | blocker + minimal only | blocked | Real observer source build/runtime blocked in current host/podman probe; source trace and minimal impl are present. |
+| yes | 1 | `ob-observer-kill60` | OceanBase observer | done | done | done | done | in_review | Source-built `v4.5.0_CE` observer under podman AlmaLinux 8 produced a real `kill -60` stack file; direct host build remains blocked by missing `rpmextract.sh`. |
 | no | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance done | source unavailable | not possible | observer blocked + provenance only | blocked | Official package identifies `obstack 2.0.4`; real observer collection still blocked. |
 | no | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | blocked | done | done | blocker + minimal only | blocked | Public repo has no release tags; source build blocked on current host deps. |
 | yes | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |

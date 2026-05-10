@@ -6,22 +6,26 @@ source_commit=0e8d5ad012baf0953b2032a35a88bdf8886e9a7a
 
 host_probe:
 os=Arch Linux
-id=arch
 arch=x86_64
-rpmextract=
-rpm2cpio=
-cpio=/usr/bin/cpio
-observed_command=timeout 120 bash -lc 'cd .cache/oceanbase-v4.5.0_CE && ./build.sh release --init --make -j4'
 host_status=BLOCKED
 host_blocker=OceanBase deps/init/dep_create.sh maps Arch to el8 but calls rpmextract.sh; rpmextract.sh is not installed.
 observed_error=dep_create.sh: line 317: rpmextract.sh: command not found
 
-podman_probe:
-podman=/usr/bin/podman
-podman version 5.8.0
-observed_command=podman run --rm docker.io/library/almalinux:8 cat /etc/os-release
-observed_status=BLOCKED
-observed_error=open /usr/bin/chage: operation not permitted while applying almalinux:8 layer in rootless podman
-rerun_hint=PODMAN_PROBE_PULL=1 ./commands/source_build_probe.sh
+podman_source_build:
+image=docker.io/library/almalinux:8
+status=PASS
+build_command=./build.sh release --init --make -j4
+build_completed=yes
+build_log=task29-podman-build11.log (kept outside repo; not committed)
+rpm_cache=task29-rpm-cache
+rpm_cache_count=50
+obdevtools_llvm_rpm_size_bytes=802186556
+dependency_workaround=podman wget against upstream RPMs was unstable; host curl -C - prefetched all RPMs, and container wget wrapper only copied from the complete cache.
+container_prerequisites=rpmdevtools cpio git which tar gzip bzip2 xz findutils procps-ng make gcc gcc-c++ glibc-devel libstdc++-devel m4 python3 libaio file
+python_compatibility=/usr/local/bin/python -> /usr/bin/python3
+dep_cache_dir=/work/.task29-dep-cache
+observer_binary=/work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer
+observer_binary_size_bytes=4550125568
+observer_binary_file=ELF 64-bit LSB pie executable, x86-64, dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=5b9de1e9d53c4ad19d9cf908f44f6b513d2a8da8, with debug_info, not stripped
 
-decision=BLOCKED: real observer source build was not completed in the current environment.
+decision=SOURCE_BUILD_PASS; real runtime evidence is in observer_kill60.out.

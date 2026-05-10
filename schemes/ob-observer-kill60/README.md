@@ -77,8 +77,16 @@ deps/oblib/src/lib/signal/ob_libunwind.c:26 safe_backtrace
 ## Run
 
 ```bash
-just ob-observer-kill60
+SKIP_MINIMAL=1 \
+OBSERVER_BIN=/work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer \
+  ./schemes/ob-observer-kill60/run.sh
 ```
+
+The recorded runtime uses podman AlmaLinux 8 with the main repo mounted at `/work` so the source-built
+observer RUNPATH can resolve its deps cache. The direct host source-build probe is still blocked because
+Arch lacks `rpmextract.sh`; that is an environment blocker, not an OceanBase compile failure.
+`minimal_impl/` was rerun separately on the host; the podman runtime uses `SKIP_MINIMAL=1` because the
+AlmaLinux 8 base repositories used here do not provide `libunwind-devel`.
 
 ## Inputs / Outputs
 
@@ -86,6 +94,14 @@ just ob-observer-kill60
 | --- | --- | --- |
 | `commands/observer_kill60.sh` | `commands/observer_kill60.out` | `kill -60` run against a real source-built observer and normalized stack result. |
 | `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Current source-build environment blocker and podman probe result. |
+
+## Evidence
+
+- Source build: PASS in podman AlmaLinux 8 from `repos/source/oceanbase-v4.5.0_CE` at commit `0e8d5ad012baf0953b2032a35a88bdf8886e9a7a`.
+- Observer binary: `/work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer`, 4550125568 bytes, BuildID `5b9de1e9d53c4ad19d9cf908f44f6b513d2a8da8`, with debug info, not stripped.
+- Dependency workaround: podman `wget` against upstream RPMs was unstable, so host `curl -C -` prefetched 50 RPMs and the container wrapper copied only from the complete cache.
+- Runtime: PASS. `kill -60` against the source-built observer produced `stack.109.202651020300`, 82686 bytes, with 377 `tid:` stack lines.
+- Runtime requirements found during reproduction: run observer with `-N`, use the background child pid because `run/observer.pid` is not created in this mode, precreate `store/{clog,slog,sstable}` and `run`, and set `__min_full_resource_pool_memory=1073741824` with `system_memory=1G`.
 
 ## Minimal Impl
 
