@@ -4,8 +4,10 @@ set -euo pipefail
 SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCHEME_DIR"
 
-SOURCE_DIR="${OBSTACK_SOURCE_DIR:-$SCHEME_DIR/.cache/obstack-source}"
 COMMIT="${OBSTACK_COMMIT:-d91edd6d882a33b69164f8d3e809092408da3a33}"
+REPO_ROOT="$(git -C "$SCHEME_DIR" rev-parse --show-toplevel)"
+SOURCE_DIR="${OBSTACK_SOURCE_DIR:-$REPO_ROOT/repos/source/obstack-master}"
+JOBS="${OBSTACK_BUILD_JOBS:-4}"
 
 mkdir -p commands .cache
 
@@ -19,16 +21,57 @@ if [[ "$actual_commit" != "$COMMIT" ]]; then
   exit 2
 fi
 
-if [[ "${OBSTACK_FULL_SOURCE_BUILD:-0}" != "1" ]]; then
-  ./commands/source_build_probe.sh > commands/source_build_probe.out
-  echo "BLOCKED: full open obstack source build is disabled by default because the current host probe is blocked." >&2
-  exit 2
-fi
+build_with_host() {
+  (
+    cd "$SOURCE_DIR"
+    ./build.sh release
+    make -C build_release -j"$JOBS" CXX_DEFINES="-DREVISION=\\\"$COMMIT\\\""
+  )
+}
 
-(
-  cd "$SOURCE_DIR"
-  ./build.sh release
-)
+build_with_podman() {
+  case "$SOURCE_DIR" in
+    "$REPO_ROOT"/*) ;;
+    *)
+      echo "podman build requires OBSTACK_SOURCE_DIR under repo root: $REPO_ROOT" >&2
+      exit 2
+      ;;
+  esac
+
+  local source_rel="${SOURCE_DIR#"$REPO_ROOT"/}"
+  local image="${OBSTACK_PODMAN_IMAGE:-docker.io/library/centos:7}"
+
+  podman run --rm --security-opt label=disable \
+    -v "$REPO_ROOT:/work" -w /work \
+    -e "SOURCE_DIR=/work/$source_rel" \
+    -e "OBSTACK_COMMIT=$COMMIT" \
+    -e "OBSTACK_BUILD_JOBS=$JOBS" \
+    "$image" bash -lc '
+set -euo pipefail
+sed -i s/mirror.centos.org/vault.centos.org/g /etc/yum.repos.d/CentOS-*.repo
+sed -i s/^#.*baseurl=http/baseurl=http/g /etc/yum.repos.d/CentOS-*.repo
+sed -i s/^mirrorlist=http/#mirrorlist=http/g /etc/yum.repos.d/CentOS-*.repo
+yum install -y wget rpm-build rpmdevtools cpio make gcc gcc-c++ glibc-devel libstdc++-devel zlib-devel ncurses-devel file git which tar gzip bzip2 xz >/tmp/obstack-yum.log 2>&1
+git config --global --add safe.directory "$SOURCE_DIR"
+cd "$SOURCE_DIR"
+./build.sh release
+make -C build_release -j"$OBSTACK_BUILD_JOBS" CXX_DEFINES="-DREVISION=\\\"$OBSTACK_COMMIT\\\""
+'
+}
+
+case "${OBSTACK_BUILD_MODE:-podman-centos7}" in
+  host)
+    build_with_host
+    ;;
+  podman-centos7)
+    command -v podman >/dev/null 2>&1 || { echo "podman is required for OBSTACK_BUILD_MODE=podman-centos7" >&2; exit 2; }
+    build_with_podman
+    ;;
+  *)
+    echo "unknown OBSTACK_BUILD_MODE=${OBSTACK_BUILD_MODE}" >&2
+    exit 2
+    ;;
+esac
 
 for candidate in "$SOURCE_DIR"/build_release/src/obstack "$SOURCE_DIR"/build*/src/obstack; do
   if [[ -x "$candidate" ]]; then

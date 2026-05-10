@@ -6,16 +6,21 @@ cd "$SCHEME_DIR"
 
 mkdir -p commands
 
-if obstack_bin="$(./build.sh | tail -n 1)"; then
-  OBSTACK_BIN="$obstack_bin" ./commands/attach_synthetic.sh > commands/attach_synthetic.out
-else
-  ./commands/attach_synthetic.sh > commands/attach_synthetic.out || true
-fi
+./commands/source_build_probe.sh > commands/source_build_probe.out
+obstack_bin="$(awk -F= '/^binary_path_host=/{print $2}' commands/source_build_probe.out | tail -n 1)"
 
-./commands/attach_observer.sh > commands/attach_observer.out || true
+OBSTACK_BIN="$obstack_bin" ./commands/attach_synthetic.sh > commands/attach_synthetic.out
+OBSTACK_BIN="$obstack_bin" ./commands/attach_observer.sh > commands/attach_observer.out
 ./minimal_impl/run.sh
 
-if grep -q '^BLOCKED:' commands/attach_synthetic.out || grep -q '^BLOCKED:' commands/attach_observer.out; then
-  echo "BLOCKED: source-built open obstack/observer run was not produced; minimal_impl output was refreshed." >&2
-  exit 2
+for output in commands/source_build_probe.out commands/attach_synthetic.out commands/attach_observer.out; do
+  if ! grep -q '^status=PASS$' "$output"; then
+    echo "FAIL: $output did not report status=PASS." >&2
+    exit 1
+  fi
+done
+
+if ! grep -q '^status=PASS$' minimal_impl/ptrace_remote_unwind.out; then
+  echo "FAIL: minimal_impl did not report status=PASS." >&2
+  exit 1
 fi

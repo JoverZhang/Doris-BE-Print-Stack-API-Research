@@ -1,3 +1,27 @@
-BLOCKED: source-built open obstack binary is unavailable.
-See commands/source_build_probe.out for the current source-build blocker.
-The source-derived minimal_impl proves the ptrace/libunwind-ptrace mechanics, but it is not substituted for this open obstack project-run output.
+command=/work/repos/source/obstack-master/build_release/src/obstack -n <synthetic_pid>
+target_pid=71
+exit_code=0
+obstack_output_bytes=632
+obstack_stderr_bytes=375
+obstack_output_lines=5
+status=PASS
+
+target_stdout_sample:
+pid=71 main_tid=71
+thread role=cpu id=0 tid=73
+thread role=cpu id=1 tid=74
+thread role=sleep id=0 tid=75
+thread role=sleep id=1 tid=76
+
+obstack_stderr_sample:
+[2026-05-10 21:26:06.649444] INFO [get_options@main.cpp:141] [77] input pid: 71
+[2026-05-10 21:26:06.651605] INFO [main@main.cpp:432] [78] all tracees detached, task_cnt: 5, cost(ms): 2.162000
+[2026-05-10 21:26:06.651936] INFO [main@main.cpp:335] [77] parse addrs finish, cost(ms): 0.164000
+[2026-05-10 21:26:06.652022] INFO [main@main.cpp:344] [77] exit, cost(ms): 2.580000
+
+obstack_stdout_sample:
+tid: 71, tname: synthetic_targe, bt: 0x7ff59eac59fd 0x7ff59eaf62d4 0x401692 0x7ff59ea22555 0x4011d9
+tid: 73, tname: synthetic_targe, bt: 0x4012c1 0x4012e2 0x4012f1 0x401300 0x401407 0x4017d7 0x7ff59fab5330 0x7ff59ee07ea5 0x7ff59eafeb0d
+tid: 74, tname: synthetic_targe, bt: 0x4012c7 0x4012e2 0x4012f1 0x401300 0x401407 0x4017d7 0x7ff59fab5330 0x7ff59ee07ea5 0x7ff59eafeb0d
+tid: 75, tname: synthetic_targe, bt: 0x7ff59eac59fd 0x7ff59eaf62d4 0x401539 0x4017d7 0x7ff59fab5330 0x7ff59ee07ea5 0x7ff59eafeb0d
+tid: 76, tname: synthetic_targe, bt: 0x7ff59eac59fd 0x7ff59eaf62d4 0x401539 0x4017d7 0x7ff59fab5330 0x7ff59ee07ea5 0x7ff59eafeb0d
