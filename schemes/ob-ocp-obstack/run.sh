@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "TODO: run commands/obstack_collect.sh against real observer and overwrite commands/obstack_collect.out" >&2
-exit 2
+
+SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCHEME_DIR"
+
+./build.sh
+./commands/obstack_collect.sh > commands/obstack_collect.out || true
+
+if grep -q '^BLOCKED:' commands/obstack_collect.out; then
+  echo "BLOCKED: OCP obstack provenance is recorded, but real observer collection is not produced." >&2
+  exit 2
+fi

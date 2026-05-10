@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "TODO: acquire OCP obstack_x86_64 with exact provenance or source; do not commit acquire logs" >&2
-exit 2
+
+SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCHEME_DIR"
+
+mkdir -p commands .cache
+./commands/provenance_probe.sh > commands/provenance_probe.out

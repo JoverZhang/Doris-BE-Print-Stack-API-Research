@@ -1,0 +1,18 @@
+command=source_build_probe
+repo=https://github.com/oceanbase/obstack.git
+release_tag=none-published
+commit=d91edd6d882a33b69164f8d3e809092408da3a33
+source_dir_present=yes
+source_commit=d91edd6d882a33b69164f8d3e809092408da3a33
+
+host_probe:
+os=Arch Linux
+id=arch
+arch=x86_64
+cmake=/usr/bin/cmake
+observed_command=timeout 120 bash -lc 'cd .cache/obstack-source && ./build.sh release'
+observed_status=BLOCKED
+observed_error_1=deps/dep_create.sh reports: [ERROR] 'Arch Linux (x86_64)' is not supported yet.
+observed_error_2=build.sh then cannot find deps/usr/local/oceanbase/devtools/bin/cmake.
+
+decision=BLOCKED: open-source obstack was not built from source in the current host environment.

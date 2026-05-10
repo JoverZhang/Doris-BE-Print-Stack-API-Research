@@ -1,0 +1,3 @@
+BLOCKED: source-built open obstack binary is unavailable.
+See commands/source_build_probe.out for the current source-build blocker.
+The source-derived minimal_impl proves the ptrace/libunwind-ptrace mechanics, but it is not substituted for this open obstack project-run output.

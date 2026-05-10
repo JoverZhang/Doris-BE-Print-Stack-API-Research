@@ -1,0 +1,3 @@
+BLOCKED: OBSERVER_PID is not set.
+The real observer source-build/run is blocked in scheme ob-observer-kill60, so OCP obstack behavior against a real observer is not produced.
+Package provenance is recorded in commands/provenance_probe.out only.

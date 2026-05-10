@@ -1,0 +1,69 @@
+command=ptrace_remote_unwind <target-program>
+status=PASS
+
+pid=<target-pid> main_tid=<tid>
+thread role=cpu id=0 tid=<tid>
+thread role=cpu id=1 tid=<tid>
+thread role=sleep id=0 tid=<tid>
+thread role=sleep id=1 tid=<tid>
+sink=<value>
+command=ptrace_remote_unwind <target-program>
+target_pid=<target-pid>
+target_threads_begin
+target_tid=<tid>
+target_tid=<tid>
+target_tid=<tid>
+target_tid=<tid>
+target_tid=<tid>
+target_threads_end
+remote_unwind_begin
+thread=<tid> status=attached init=0
+thread=<tid> frame=0 ip=0x7f093258ff32
+thread=<tid> frame=1 ip=0x7f093258439c
+thread=<tid> frame=2 ip=0x7f09325d4452
+thread=<tid> frame=3 ip=0x7f09325e0537
+thread=<tid> frame=4 ip=0x5609fd8f07e4
+thread=<tid> frame=5 ip=0x7f09325186c1
+thread=<tid> frame=6 ip=0x7f09325187f9
+thread=<tid> frame=7 ip=0x5609fd8f0205
+thread=<tid> status=attached init=0
+thread=<tid> frame=0 ip=0x5609fd8f0308
+thread=<tid> frame=1 ip=0x5609fd8f0325
+thread=<tid> frame=2 ip=0x5609fd8f0334
+thread=<tid> frame=3 ip=0x5609fd8f0343
+thread=<tid> frame=4 ip=0x5609fd8f0458
+thread=<tid> frame=5 ip=0x5609fd8f08e7
+thread=<tid> frame=6 ip=0x7f09328e55a4
+thread=<tid> frame=7 ip=0x7f093258797a
+thread=<tid> frame=8 ip=0x7f093260b2bc
+thread=<tid> status=attached init=0
+thread=<tid> frame=0 ip=0x5609fd8f0308
+thread=<tid> frame=1 ip=0x5609fd8f0325
+thread=<tid> frame=2 ip=0x5609fd8f0334
+thread=<tid> frame=3 ip=0x5609fd8f0343
+thread=<tid> frame=4 ip=0x5609fd8f0458
+thread=<tid> frame=5 ip=0x5609fd8f08e7
+thread=<tid> frame=6 ip=0x7f09328e55a4
+thread=<tid> frame=7 ip=0x7f093258797a
+thread=<tid> frame=8 ip=0x7f093260b2bc
+thread=<tid> status=attached init=0
+thread=<tid> frame=0 ip=0x7f093258ff32
+thread=<tid> frame=1 ip=0x7f093258439c
+thread=<tid> frame=2 ip=0x7f09325d4452
+thread=<tid> frame=3 ip=0x7f09325e0537
+thread=<tid> frame=4 ip=0x5609fd8f05d2
+thread=<tid> frame=5 ip=0x5609fd8f08e7
+thread=<tid> frame=6 ip=0x7f09328e55a4
+thread=<tid> frame=7 ip=0x7f093258797a
+thread=<tid> frame=8 ip=0x7f093260b2bc
+thread=<tid> status=attached init=0
+thread=<tid> frame=0 ip=0x7f093258ff32
+thread=<tid> frame=1 ip=0x7f093258439c
+thread=<tid> frame=2 ip=0x7f09325d4452
+thread=<tid> frame=3 ip=0x7f09325e0537
+thread=<tid> frame=4 ip=0x5609fd8f05d2
+thread=<tid> frame=5 ip=0x5609fd8f08e7
+thread=<tid> frame=6 ip=0x7f09328e55a4
+thread=<tid> frame=7 ip=0x7f093258797a
+thread=<tid> frame=8 ip=0x7f093260b2bc
+remote_unwind_end

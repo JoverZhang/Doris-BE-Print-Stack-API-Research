@@ -15,5 +15,5 @@ oceanbase:
 
 obstack:
   url: https://github.com/oceanbase/obstack.git
-  tag: TBD_SOURCE_RELEASE_TAG
-  commit: TBD_SOURCE_RELEASE_COMMIT
+  tag: master
+  commit: d91edd6d882a33b69164f8d3e809092408da3a33
