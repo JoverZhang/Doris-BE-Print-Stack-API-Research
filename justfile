@@ -4,14 +4,38 @@ set positional-arguments := true
 default:
     @just --list
 
-env:
-    ./scripts/collect_env.sh
-
 validate:
     ./scripts/validate_repo.sh
 
-report:
-    ./scripts/build_report.sh
+ck-system-stack-trace-default:
+    ./schemes/ck-system-stack-trace-default/run.sh
+
+ck-system-stack-trace-fp-build:
+    ./schemes/ck-system-stack-trace-fp-build/run.sh
+
+ob-observer-kill60:
+    ./schemes/ob-observer-kill60/run.sh
+
+ob-ocp-obstack:
+    ./schemes/ob-ocp-obstack/run.sh
+
+ob-open-obstack-ptrace:
+    ./schemes/ob-open-obstack-ptrace/run.sh
+
+ebpf-perf-bpftrace:
+    ./schemes/ebpf-perf-bpftrace/run.sh
+
+ebpf-industry-profiler:
+    ./schemes/ebpf-industry-profiler/run.sh
+
+all-phase1:
+    just ck-system-stack-trace-default
+    just ck-system-stack-trace-fp-build
+    just ob-observer-kill60
+    just ob-ocp-obstack
+    just ob-open-obstack-ptrace
+    just ebpf-perf-bpftrace
+    just ebpf-industry-profiler
 
 vm-create:
     ./vm/ubuntu-24.04/create.sh
@@ -33,15 +57,3 @@ vm-stop:
 
 vm-destroy:
     ./vm/ubuntu-24.04/destroy.sh
-
-clickhouse:
-    ./in_process_directed_signal_with_local_unwind/clickhouse_system_stack_trace/scripts/run.sh
-
-oceanbase-observer:
-    ./in_process_directed_signal_with_local_unwind/oceanbase_observer_signal_worker/scripts/run.sh
-
-obstack-external:
-    ./external_ptrace_remote_unwind/oceanbase_obstack_external/scripts/run.sh
-
-perf-ebpf:
-    ./kernel_perf_ebpf_user_stack/perf_ebpf_vm/scripts/run.sh

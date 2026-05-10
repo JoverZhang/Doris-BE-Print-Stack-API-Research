@@ -1,71 +1,103 @@
 # Stacktrace Research Repro
 
-Reproducible research repo for C/C++ service stack tracing techniques.
+This repo is a source-build research fixture for stack collection schemes.
 
-This repo separates complete live stack-dump designs from capture backends and auxiliary tooling:
+The active contract is:
 
-- complete solution: thread enumeration, trigger, capture, coordination, output, symbolization;
-- capture backend: libunwind, frame-pointer walk, gperftools stacktrace, libgcc unwind;
-- auxiliary tooling: symbolization, profiling, crash/minidump, current-thread helpers.
+- no release-binary evidence;
+- root checklist is the only project matrix;
+- no `case.yaml`, `matrix.csv`, `templates/`, or `reference_checklist/`;
+- each scheme README starts with a source trace: release tag, function names, file paths, and line numbers;
+- each scheme has `minimal_impl/`, derived from the source trace;
+- research command output sits next to its input and shares the same prefix: `thread_stack.sql` -> `thread_stack.out`, `perf_fp.sh` -> `perf_fp.out`, `bpftrace_ustack.bt` -> `bpftrace_ustack.out`;
+- build, fetch, install, and package-manager logs are not committed as research output.
 
-## Phase 1 Scope
+## Checklist
 
-Phase 1 validates:
-
-- ClickHouse `system.stack_trace`, including debug-info file/line output and FP/no-FP controlled comparison.
-- OceanBase observer `kill -60`, OCP `obstack_x86_64`, and open-source `oceanbase/obstack` as separate cases.
-- perf/eBPF inside a QEMU VM with root privileges, including at least one industry profiler route.
-
-Other techniques remain in `reference_checklist/` until explicitly promoted.
+| done | phase | scheme | project | source-build | source-trace | minimal-impl | runnable-output | status | note |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| no | 1 | `ck-system-stack-trace-default` | ClickHouse | required | required | required | required | todo | Source release build only; no release binary evidence. |
+| no | 1 | `ck-system-stack-trace-fp-build` | ClickHouse | required | required | required | required | todo | Build-condition comparison, not a second user API. |
+| no | 1 | `ob-observer-kill60` | OceanBase observer | required | required | required | required | todo | Must run real observer and collect `kill -60` stack output. |
+| no | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance required | required if source exists | required or explicit not-possible note | required | todo | OCP tool behavior cannot be replaced by open-source obstack. |
+| no | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | required | required | required | required | todo | External ptrace/remote-unwind route. |
+| no | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source required | required | required | required | todo | Profiling route only; not all-thread current snapshot. |
+| no | 1 | `ebpf-industry-profiler` | Alloy/Pyroscope or Parca | target source required | required | required | required | todo | Industry profiling route only. |
+| no | later | `gperftools-stacktrace` | gperftools | not started | not started | not started | not started | deferred | Capture backend/component. |
+| no | later | `libbacktrace-boost-folly` | common C++ stack libraries | not started | not started | not started | not started | deferred | Current-thread/symbolization components. |
+| no | later | `crashpad-breakpad` | crash/minidump tooling | not started | not started | not started | not started | deferred | Crash/minidump semantics, not live dump API. |
+| no | later | `cooperative-safepoint` | generic runtime design | not started | not started | not started | not started | deferred | Requires separate design. |
+| no | later | `intel-pt-lbr` | hardware tracing | not started | not started | not started | not started | deferred | Profiling/tracing reference only. |
 
 ## Layout
 
 ```text
+repos.lock
 repos/
-in_process_directed_signal_with_local_unwind/
-in_process_directed_signal_raw_with_frame_pointer_walk/
-external_ptrace_remote_unwind/
-runtime_aware_logical_task_stack/
-kernel_perf_ebpf_user_stack/
-crash_minidump_and_symbolization/
-reference_checklist/
+schemes/
+  <scheme-id>/
+    README.md
+    build.sh
+    run.sh
+    commands/ or queries/
+      <input>.sql|sh|bt
+      <input>.out
+    minimal_impl/
+      README.md
+      build.sh
+      run.sh
+      <demo source>
+      <demo>.out
 scripts/
 vm/
-templates/
 ```
 
-## Workflow
+## Scheme README Contract
 
-Use separate branches or `git worktree` directories per task. Each owner should edit only their assigned case directory plus shared files after coordination.
+Every scheme README must contain only the details needed to verify the scheme:
 
-Each case must provide:
+```text
+# <scheme-id>
 
-- `case.yaml`
-- `README.md`
-- `scripts/build.sh`
-- `scripts/run.sh`
-- `scripts/clean.sh`
-- `outputs/`
-- `report.md`
+## What This Verifies
+<one sentence>
 
-Run:
+## Source Trace
+release tag: <tag>
+commit: <commit>
+
+<file>:<line> <function>
+  -> <file>:<line> <function>
+    -> <file>:<line> <function>
+      -> output: <interface/file/tool output>
+
+## Run
+just <scheme-id>
+
+## Inputs / Outputs
+| input | output | meaning |
+
+## Minimal Impl
+<which source-trace nodes are retained and what is omitted>
+```
+
+`source-trace` must be written before `minimal_impl/` is implemented.
+
+## Running
 
 ```bash
 just --list
-just env
 just validate
 ```
 
-## VM Runtime
-
-The QEMU VM is used for cases that need root-level kernel profiling permissions.
+VM helpers remain available for eBPF and heavyweight build work:
 
 ```bash
 just vm-create
 just vm-start-bg
 just vm-wait-ssh
-just vm-ssh 'id && uname -r && sysctl kernel.perf_event_paranoid kernel.kptr_restrict'
+just vm-ssh 'id && uname -r'
 just vm-stop
 ```
 
-The VM uses a generated local SSH key under `vm/ubuntu-24.04/`, a NoCloud seed ISO, and a `repro` user with passwordless sudo. Generated VM disks, keys, logs, and seed files are ignored by git.
+If an environment blocks source build or runtime, report the blocker in the task thread. Do not skip it and do not retry indefinitely. For OceanBase dependency issues, prefer rootless `podman`; do not assume Docker is available.

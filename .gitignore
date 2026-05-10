@@ -6,3 +6,11 @@ vm/ubuntu-24.04/ubuntu-24.04-server-cloudimg-amd64.img
 vm/ubuntu-24.04/user-data.generated
 vm/ubuntu-24.04/vm.log
 vm/ubuntu-24.04/vm.pid
+schemes/*/build/
+schemes/*/.cache/
+schemes/*/tmp/
+*.log
+*.tgz
+*.tar.gz
+*.deb
+*.rpm

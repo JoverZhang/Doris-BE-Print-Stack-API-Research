@@ -1,1 +1,0 @@
-https://github.com/ClickHouse/ClickHouse/releases/download/v26.3.10.62-lts/clickhouse-common-static-dbg-26.3.10.62-amd64.tgz

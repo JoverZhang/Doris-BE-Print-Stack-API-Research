@@ -1,0 +1,19 @@
+# Source repositories for this research repo.
+#
+# Scheme owners must replace TBD with a source release tag and commit before a
+# checklist row can become done. Release binaries are not accepted as evidence.
+
+clickhouse:
+  url: https://github.com/ClickHouse/ClickHouse.git
+  tag: TBD_SOURCE_RELEASE_TAG
+  commit: TBD_SOURCE_RELEASE_COMMIT
+
+oceanbase:
+  url: https://github.com/oceanbase/oceanbase.git
+  tag: TBD_SOURCE_RELEASE_TAG
+  commit: TBD_SOURCE_RELEASE_COMMIT
+
+obstack:
+  url: https://github.com/oceanbase/obstack.git
+  tag: TBD_SOURCE_RELEASE_TAG
+  commit: TBD_SOURCE_RELEASE_COMMIT

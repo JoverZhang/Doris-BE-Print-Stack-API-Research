@@ -1,5 +1,0 @@
-Row 1:
-──────
-name:    storage_system_stack_trace_pipe_read_timeout_ms
-value:   100
-changed: 0
