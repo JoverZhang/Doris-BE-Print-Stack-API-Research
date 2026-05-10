@@ -1,0 +1,1 @@
+BLOCKED: source-built ClickHouse binary was not produced, so version/build-id metadata is unavailable. See source_build_probe.out.
