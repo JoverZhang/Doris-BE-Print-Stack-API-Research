@@ -10,8 +10,8 @@ clickhouse:
 
 oceanbase:
   url: https://github.com/oceanbase/oceanbase.git
-  tag: TBD_SOURCE_RELEASE_TAG
-  commit: TBD_SOURCE_RELEASE_COMMIT
+  tag: v4.5.0_CE
+  commit: 0e8d5ad012baf0953b2032a35a88bdf8886e9a7a
 
 obstack:
   url: https://github.com/oceanbase/obstack.git

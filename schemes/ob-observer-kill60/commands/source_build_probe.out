@@ -1,0 +1,27 @@
+command=source_build_probe
+release_tag=v4.5.0_CE
+commit=0e8d5ad012baf0953b2032a35a88bdf8886e9a7a
+source_dir_present=yes
+source_commit=0e8d5ad012baf0953b2032a35a88bdf8886e9a7a
+
+host_probe:
+os=Arch Linux
+id=arch
+arch=x86_64
+rpmextract=
+rpm2cpio=
+cpio=/usr/bin/cpio
+observed_command=timeout 120 bash -lc 'cd .cache/oceanbase-v4.5.0_CE && ./build.sh release --init --make -j4'
+host_status=BLOCKED
+host_blocker=OceanBase deps/init/dep_create.sh maps Arch to el8 but calls rpmextract.sh; rpmextract.sh is not installed.
+observed_error=dep_create.sh: line 317: rpmextract.sh: command not found
+
+podman_probe:
+podman=/usr/bin/podman
+podman version 5.8.0
+observed_command=podman run --rm docker.io/library/almalinux:8 cat /etc/os-release
+observed_status=BLOCKED
+observed_error=open /usr/bin/chage: operation not permitted while applying almalinux:8 layer in rootless podman
+rerun_hint=PODMAN_PROBE_PULL=1 ./commands/source_build_probe.sh
+
+decision=BLOCKED: real observer source build was not completed in the current environment.

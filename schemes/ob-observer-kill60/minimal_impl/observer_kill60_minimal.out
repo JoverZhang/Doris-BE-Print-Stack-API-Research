@@ -1,0 +1,27 @@
+command=kill -60 <minimal-pid>
+status=PASS
+stack_file=stack.<minimal-pid>.<timestamp>
+
+program_stdout:
+pid=<minimal-pid>
+
+maps_head:
+55ba7bf58000-55ba7bf5a000 r--p 00000000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55ba7bf5a000-55ba7bf5c000 r-xp 00002000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55ba7bf5c000-55ba7bf5d000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55ba7bf5d000-55ba7bf5e000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55ba7bf5e000-55ba7bf5f000 rw-p 00005000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55bab82c1000-55bab82f4000 rw-p 00000000 00:00 0                          [heap]
+7fd821489000-7fd82448f000 rw-p 00000000 00:00 0 
+7fd82448f000-7fd824493000 r--p 00000000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
+7fd824493000-7fd8244b7000 r-xp 00004000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
+7fd8244b7000-7fd8244c2000 r--p 00028000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
+7fd8244c2000-7fd8244c3000 r--p 00033000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
+7fd8244c3000-7fd8244c4000 rw-p 00034000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
+
+thread_stack_lines:
+tid: 1504265, tname: observer_kill60, lbt: 0x55ba7bf5aafe 0x55ba7bf5b321 0x7fd8245022d0 0x7fd824562f32 0x7fd82455739c 0x7fd8245a7452 0x7fd8245b3537 0x55ba7bf5a76b 0x7fd8244eb6c1 0x7fd8244eb7f9 0x55ba7bf5a895
+tid: 1504274, tname: worker-0, lbt: 0x55ba7bf5aafe 0x55ba7bf5b321 0x7fd8245022d0 0x7fd824562f32 0x7fd82455739c 0x7fd8245a7452 0x7fd8245b3537 0x55ba7bf5aa61 0x7fd8248e55a4 0x7fd82455a97a 0x7fd8245de2bc
+tid: 1504275, tname: worker-1, lbt: 0x55ba7bf5aafe 0x55ba7bf5b321 0x7fd8245022d0 0x7fd824562f32 0x7fd82455739c 0x7fd8245a7452 0x7fd8245b3537 0x55ba7bf5aa61 0x7fd8248e55a4 0x7fd82455a97a 0x7fd8245de2bc
+tid: 1504276, tname: worker-2, lbt: 0x55ba7bf5aafe 0x55ba7bf5b321 0x7fd8245022d0 0x55ba7bf5aa15 0x7fd8248e55a4 0x7fd82455a97a 0x7fd8245de2bc
+tid: 1504277, tname: worker-3, lbt: 0x55ba7bf5aafe 0x55ba7bf5b321 0x7fd8245022d0 0x55ba7bf5aa19 0x7fd8248e55a4 0x7fd82455a97a 0x7fd8245de2bc

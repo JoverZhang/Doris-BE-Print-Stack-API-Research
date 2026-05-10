@@ -1,0 +1,3 @@
+BLOCKED: source-built observer binary is unavailable.
+See commands/source_build_probe.out for the current source-build blocker.
+No release binary or synthetic target is used for this real-observer output.

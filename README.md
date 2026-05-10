@@ -18,7 +18,7 @@ The active contract is:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | no | 1 | `ck-system-stack-trace-default` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Source build blocked by ClickHouse submodule initialization cost; no release binary evidence used. |
 | no | 1 | `ck-system-stack-trace-fp-build` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Build-condition comparison only; source build blocked by same submodule issue. |
-| no | 1 | `ob-observer-kill60` | OceanBase observer | required | required | required | required | todo | Must run real observer and collect `kill -60` stack output. |
+| no | 1 | `ob-observer-kill60` | OceanBase observer | blocked | done | done | blocker + minimal only | blocked | Real observer source build/runtime blocked in current host/podman probe; source trace and minimal impl are present. |
 | no | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance required | required if source exists | required or explicit not-possible note | required | todo | OCP tool behavior cannot be replaced by open-source obstack. |
 | no | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | required | required | required | required | todo | External ptrace/remote-unwind route. |
 | yes | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |
