@@ -5,8 +5,8 @@
 
 clickhouse:
   url: https://github.com/ClickHouse/ClickHouse.git
-  tag: TBD_SOURCE_RELEASE_TAG
-  commit: TBD_SOURCE_RELEASE_COMMIT
+  tag: v26.3.10.62-lts
+  commit: e1c11930c28196f954a93287e43c1aa112c8c607
 
 oceanbase:
   url: https://github.com/oceanbase/oceanbase.git

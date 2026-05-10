@@ -16,8 +16,8 @@ The active contract is:
 
 | done | phase | scheme | project | source-build | source-trace | minimal-impl | runnable-output | status | note |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| no | 1 | `ck-system-stack-trace-default` | ClickHouse | required | required | required | required | todo | Source release build only; no release binary evidence. |
-| no | 1 | `ck-system-stack-trace-fp-build` | ClickHouse | required | required | required | required | todo | Build-condition comparison, not a second user API. |
+| no | 1 | `ck-system-stack-trace-default` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Source build blocked by ClickHouse submodule initialization cost; no release binary evidence used. |
+| no | 1 | `ck-system-stack-trace-fp-build` | ClickHouse | blocked | done | done | blocker + minimal only | blocked | Build-condition comparison only; source build blocked by same submodule issue. |
 | no | 1 | `ob-observer-kill60` | OceanBase observer | required | required | required | required | todo | Must run real observer and collect `kill -60` stack output. |
 | no | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance required | required if source exists | required or explicit not-possible note | required | todo | OCP tool behavior cannot be replaced by open-source obstack. |
 | no | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | required | required | required | required | todo | External ptrace/remote-unwind route. |

@@ -8,6 +8,7 @@ vm/ubuntu-24.04/vm.log
 vm/ubuntu-24.04/vm.pid
 schemes/*/build/
 schemes/*/.cache/
+schemes/*/minimal_impl/build/
 schemes/*/tmp/
 *.log
 *.tgz
