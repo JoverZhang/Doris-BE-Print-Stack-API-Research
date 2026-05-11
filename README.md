@@ -10,6 +10,7 @@ The active contract is:
 - each scheme README starts with a source trace: release tag, function names, file paths, and line numbers;
 - each scheme has `minimal_impl/`, derived from the source trace;
 - research command output sits next to its input and shares the same prefix: `thread_stack.sql` -> `thread_stack.out`, `perf_fp.sh` -> `perf_fp.out`, `bpftrace_ustack.bt` -> `bpftrace_ustack.out`;
+- upstream source trees under `repos/source/` are tracked by git submodules and described in `repos.lock`, not hand-downloaded implicit state;
 - build, fetch, install, and package-manager logs are not committed as research output.
 
 ## Checklist
@@ -34,6 +35,7 @@ The active contract is:
 ```text
 repos.lock
 repos/
+  source/                    # git submodules pinned by .gitmodules + repos.lock
 schemes/
   <scheme-id>/
     README.md
@@ -87,8 +89,14 @@ just <scheme-id>
 
 ```bash
 just --list
+just repos-check
+just repos-sync
 just validate
 ```
+
+`just repos-sync` initializes the source submodules. ClickHouse also initializes
+its nested submodules recursively, which is intentionally large and required for
+source-build evidence.
 
 VM helpers remain available for eBPF and heavyweight build work:
 

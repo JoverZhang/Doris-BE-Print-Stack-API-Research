@@ -2,10 +2,13 @@
 set -euo pipefail
 
 required=(
+  .gitmodules
   README.md
   justfile
   repos.lock
   scripts/validate_repo.sh
+  scripts/validate_repos.sh
+  scripts/sync_repos.sh
   vm/ubuntu-24.04/create.sh
   vm/ubuntu-24.04/start.sh
   vm/ubuntu-24.04/start_bg.sh
@@ -26,6 +29,8 @@ schemes=(
 for path in "${required[@]}"; do
   test -e "$path" || { echo "missing: $path" >&2; exit 1; }
 done
+
+./scripts/validate_repos.sh
 
 for forbidden in case.yaml matrix.csv templates reference_checklist REPORT.md; do
   if [[ -e "$forbidden" ]]; then

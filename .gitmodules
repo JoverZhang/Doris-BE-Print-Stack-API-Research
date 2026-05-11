@@ -1,0 +1,14 @@
+[submodule "repos/source/ClickHouse-v26.3.10.62-lts"]
+	path = repos/source/ClickHouse-v26.3.10.62-lts
+	url = https://github.com/ClickHouse/ClickHouse.git
+	ignore = untracked
+
+[submodule "repos/source/oceanbase-v4.5.0_CE"]
+	path = repos/source/oceanbase-v4.5.0_CE
+	url = https://github.com/oceanbase/oceanbase.git
+	ignore = untracked
+
+[submodule "repos/source/obstack-master"]
+	path = repos/source/obstack-master
+	url = https://github.com/oceanbase/obstack.git
+	ignore = untracked

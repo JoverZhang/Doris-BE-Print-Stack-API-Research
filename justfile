@@ -7,6 +7,12 @@ default:
 validate:
     ./scripts/validate_repo.sh
 
+repos-sync:
+    ./scripts/sync_repos.sh
+
+repos-check:
+    ./scripts/validate_repos.sh
+
 ck-system-stack-trace-default:
     ./schemes/ck-system-stack-trace-default/run.sh
 

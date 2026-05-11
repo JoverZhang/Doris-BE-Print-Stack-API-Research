@@ -22,4 +22,3 @@ schemes/*/tmp/
 *.deb
 *.rpm
 .task29-dep-cache/
-repos/
