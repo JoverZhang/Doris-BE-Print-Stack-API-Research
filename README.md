@@ -34,6 +34,9 @@ The active contract is:
 ```text
 repos.lock
 repos/
+shared/
+  <project>/
+    <fixture/helper scripts>
 schemes/
   <scheme-id>/
     README.md
@@ -51,6 +54,9 @@ schemes/
 scripts/
 vm/
 ```
+
+`shared/` contains helper code only. It is not a scheme namespace and entries
+under it do not appear in the checklist.
 
 ## Scheme README Contract
 

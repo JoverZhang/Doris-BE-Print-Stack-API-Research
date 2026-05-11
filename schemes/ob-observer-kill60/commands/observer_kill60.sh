@@ -2,71 +2,37 @@
 set -euo pipefail
 
 SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(git -C "$SCHEME_DIR" rev-parse --show-toplevel)"
+source "$REPO_ROOT/shared/oceanbase/observer_runtime.sh"
 cd "$SCHEME_DIR"
 
 observer="${OBSERVER_BIN:-}"
-if [[ -z "$observer" || ! -x "$observer" ]]; then
+if ! ob_require_executable "source-built observer binary" "$observer"; then
   cat <<'OUT'
-BLOCKED: source-built observer binary is unavailable.
 See commands/source_build_probe.out for the current source-build blocker.
 No release binary or synthetic target is used for this real-observer output.
 OUT
   exit 2
 fi
 
-echo "observer_binary=$observer"
-if command -v stat >/dev/null 2>&1; then
-  echo "observer_binary_size_bytes=$(stat -c '%s' "$observer")"
-fi
-if command -v file >/dev/null 2>&1; then
-  echo "observer_binary_file=$(file -b "$observer")"
-fi
+ob_print_observer_binary_metadata "$observer"
 
 run_dir="$SCHEME_DIR/tmp/observer-kill60"
-rm -rf "$run_dir"
-mkdir -p "$run_dir"
-cd "$run_dir"
-mkdir -p store/clog store/slog store/sstable run log
+ob_prepare_observer_run_dir "$run_dir"
 
-mysql_port="${OB_MYSQL_PORT:-29881}"
-rpc_port="${OB_RPC_PORT:-29882}"
-rs_list="${OB_RS_LIST:-127.0.0.1:${rpc_port}:${mysql_port}}"
-optstr="${OB_OPTSTR:-memory_limit=6G,system_memory=1G,__min_full_resource_pool_memory=1073741824,datafile_size=2G,log_disk_size=2G,datafile_next=2G,datafile_maxsize=8G,production_mode=false,devname=lo}"
+ob_start_observer "$observer" "$run_dir" 29881 29882
+trap 'ob_stop_observer' EXIT
 
-"$observer" -N -P "$rpc_port" -p "$mysql_port" -z zone1 -n repro -c 1 \
-  -d "$run_dir/store" -i lo -I 127.0.0.1 -r "$rs_list" -o "$optstr" \
-  > observer.stdout 2> observer.stderr &
-pid=$!
-observer_pid=""
-trap 'if [[ -n "${observer_pid:-}" ]]; then kill "$observer_pid" 2>/dev/null || true; fi; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
-
-ready_marker="success to start signal worker and handle"
-for _ in $(seq 1 120); do
-  if kill -0 "$pid" 2>/dev/null \
-    && { [[ -f run/observer.pid ]] || grep -q "$ready_marker" log/observer.log 2>/dev/null; }; then
-    break
-  fi
-  sleep 1
-done
-
-if ! kill -0 "$pid" 2>/dev/null; then
-  echo "FAIL: observer exited before signal-worker startup"
-  sed -n '1,80p' observer.stderr || true
-  exit 2
-fi
-
-if [[ -f run/observer.pid ]]; then
-  observer_pid="$(cat run/observer.pid)"
-  observer_pid_source="run/observer.pid"
-else
-  observer_pid="$pid"
-  observer_pid_source="background child pid; run/observer.pid was not created in -N mode"
-fi
+ob_wait_observer_ready "$run_dir" "$OB_OBSERVER_BG_PID"
+ob_resolve_observer_pid "$run_dir" "$OB_OBSERVER_BG_PID"
+observer_pid="$OB_OBSERVER_PID"
 echo "observer_pid=$observer_pid"
-echo "observer_pid_source=$observer_pid_source"
-echo "mysql_port=$mysql_port"
-echo "rpc_port=$rpc_port"
-echo "rs_list=$rs_list"
+echo "observer_pid_source=$OB_OBSERVER_PID_SOURCE"
+echo "mysql_port=$OB_OBSERVER_MYSQL_PORT"
+echo "rpc_port=$OB_OBSERVER_RPC_PORT"
+echo "rs_list=$OB_OBSERVER_RS_LIST"
+
+cd "$run_dir"
 kill -60 "$observer_pid"
 
 for _ in $(seq 1 60); do
