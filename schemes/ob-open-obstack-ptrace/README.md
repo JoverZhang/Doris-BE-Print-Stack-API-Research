@@ -67,7 +67,7 @@ It omits BFD/LLVM symbolization, aggregation, CLI options, RPM packaging, and an
 ## Evidence Notes
 
 - Source commit: `d91edd6d882a33b69164f8d3e809092408da3a33`; no release tag is published.
-- Source build: PASS under podman `centos:7`; binary BuildID `481d13b2395578331943675f7a2b24ec06f7b911`.
+- Source build: PASS under podman `centos:7`; binary BuildID `3565e1a7959d74b2864ddfcd13bdb7cc9e0db659`.
 - Build workaround: upstream CMake leaves `REVISION` empty when `git log` runs from the build directory, so the reproducible build command passes `CXX_DEFINES=-DREVISION=\"d91edd6d882a33b69164f8d3e809092408da3a33\"` to `make`. Upstream source files are not patched.
 - Runtime: synthetic attach uses podman `centos:7`; real observer attach uses podman `almalinux:8` with `SYS_PTRACE` and `seccomp=unconfined`.
-- Real observer attach output: 379 tasks, 4,247 lines, 513,659 bytes, `ptrace_denied_lines=0`, symbolized stack sample present.
+- Real observer attach output: 379 tasks, 4,247 lines, 513,661 bytes, `ptrace_denied_lines=0`, symbolized stack sample present.
