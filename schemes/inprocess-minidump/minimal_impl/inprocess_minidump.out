@@ -1,78 +1,78 @@
 scheme=inprocess-minidump
 arch=x86_64
 compile_frame_pointer_flag=default_no_fno_omit_frame_pointer
-normal_tid=557521 pid=557521 worker_count=2 stack_copy_bytes=65536
+normal_tid=563454 pid=563454 worker_count=2 stack_copy_bytes=65536
 capture_result slot=0 ok=yes
 capture_result slot=1 ok=yes
 
 === inprocess-minidump snapshot ===
-slot=0 tid=557522 name=worker-0 sequence=1 ack_status=1 capture_status=1
-registers rip=0x561fb303bdcc rsp=0x7f19765aba88 rbp=0xeac486bd22f20261
-stack_bounds=[0x7f1975dad000,0x7f19765ad000) copied=[0x7f19765aba88,+5496] truncated=0
+slot=0 tid=563456 name=worker-0 sequence=1 ack_status=1 capture_status=1
+registers rip=0x55b6e2569dcc rsp=0x7f07d280da88 rbp=0xeac486bd22f20261
+stack_bounds=[0x7f07d200f000,0x7f07d280f000) copied=[0x7f07d280da88,+5496] truncated=0
 unwind_status=START source=saved_ucontext_worker_parked copied_stack_available=yes
-  #00 ip=0x561fb303bdcc sp=0x7f19765aba88 symbol=_ZN12_GLOBAL__N_1L9deep_leafEm+0x2c
-  #01 ip=0x561fb303be10 sp=0x7f19765aba90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #02 ip=0x561fb303be10 sp=0x7f19765abab0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #03 ip=0x561fb303be10 sp=0x7f19765abad0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #04 ip=0x561fb303be10 sp=0x7f19765abaf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #05 ip=0x561fb303be10 sp=0x7f19765abb10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #06 ip=0x561fb303be10 sp=0x7f19765abb30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #07 ip=0x561fb303be10 sp=0x7f19765abb50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #08 ip=0x561fb303be10 sp=0x7f19765abb70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #09 ip=0x561fb303be10 sp=0x7f19765abb90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #10 ip=0x561fb303be10 sp=0x7f19765abbb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #11 ip=0x561fb303be10 sp=0x7f19765abbd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #12 ip=0x561fb303be10 sp=0x7f19765abbf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #13 ip=0x561fb303be10 sp=0x7f19765abc10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #14 ip=0x561fb303be10 sp=0x7f19765abc30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #15 ip=0x561fb303be10 sp=0x7f19765abc50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #16 ip=0x561fb303be10 sp=0x7f19765abc70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #17 ip=0x561fb303be10 sp=0x7f19765abc90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #18 ip=0x561fb303be10 sp=0x7f19765abcb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #19 ip=0x561fb303be10 sp=0x7f19765abcd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #20 ip=0x561fb303be10 sp=0x7f19765abcf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #21 ip=0x561fb303be10 sp=0x7f19765abd10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #22 ip=0x561fb303be10 sp=0x7f19765abd30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #23 ip=0x561fb303be10 sp=0x7f19765abd50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #24 ip=0x561fb303be10 sp=0x7f19765abd70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #25 ip=0x561fb303c167 sp=0x7f19765abd90 symbol=_ZN12_GLOBAL__N_1L18worker_thread_mainEi+0xd7
-  #26 ip=0x7f19768e55a4 sp=0x7f19765abe40 symbol=?
-  #27 ip=0x7f197667897a sp=0x7f19765abe60 symbol=?
-  #28 ip=0x7f19766fc2bc sp=0x7f19765abf40 symbol=?
+  #00 ip=0x55b6e2569dcc sp=0x7f07d280da88 symbol=_ZN12_GLOBAL__N_1L9deep_leafEm+0x2c
+  #01 ip=0x55b6e2569e10 sp=0x7f07d280da90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #02 ip=0x55b6e2569e10 sp=0x7f07d280dab0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #03 ip=0x55b6e2569e10 sp=0x7f07d280dad0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #04 ip=0x55b6e2569e10 sp=0x7f07d280daf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #05 ip=0x55b6e2569e10 sp=0x7f07d280db10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #06 ip=0x55b6e2569e10 sp=0x7f07d280db30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #07 ip=0x55b6e2569e10 sp=0x7f07d280db50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #08 ip=0x55b6e2569e10 sp=0x7f07d280db70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #09 ip=0x55b6e2569e10 sp=0x7f07d280db90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #10 ip=0x55b6e2569e10 sp=0x7f07d280dbb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #11 ip=0x55b6e2569e10 sp=0x7f07d280dbd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #12 ip=0x55b6e2569e10 sp=0x7f07d280dbf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #13 ip=0x55b6e2569e10 sp=0x7f07d280dc10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #14 ip=0x55b6e2569e10 sp=0x7f07d280dc30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #15 ip=0x55b6e2569e10 sp=0x7f07d280dc50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #16 ip=0x55b6e2569e10 sp=0x7f07d280dc70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #17 ip=0x55b6e2569e10 sp=0x7f07d280dc90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #18 ip=0x55b6e2569e10 sp=0x7f07d280dcb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #19 ip=0x55b6e2569e10 sp=0x7f07d280dcd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #20 ip=0x55b6e2569e10 sp=0x7f07d280dcf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #21 ip=0x55b6e2569e10 sp=0x7f07d280dd10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #22 ip=0x55b6e2569e10 sp=0x7f07d280dd30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #23 ip=0x55b6e2569e10 sp=0x7f07d280dd50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #24 ip=0x55b6e2569e10 sp=0x7f07d280dd70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #25 ip=0x55b6e256a167 sp=0x7f07d280dd90 symbol=_ZN12_GLOBAL__N_1L18worker_thread_mainEi+0xd7
+  #26 ip=0x7f07d2ae55a4 sp=0x7f07d280de40 symbol=?
+  #27 ip=0x7f07d28a597a sp=0x7f07d280de60 symbol=?
+  #28 ip=0x7f07d29292bc sp=0x7f07d280df40 symbol=?
 unwind_status=OK frames=28 final_rc=0
 
 === inprocess-minidump snapshot ===
-slot=1 tid=557523 name=worker-1 sequence=1 ack_status=1 capture_status=1
-registers rip=0x561fb303bdcc rsp=0x7f1975daaa88 rbp=0x81459d612f8de66a
-stack_bounds=[0x7f19755ac000,0x7f1975dac000) copied=[0x7f1975daaa88,+5496] truncated=0
+slot=1 tid=563457 name=worker-1 sequence=1 ack_status=1 capture_status=1
+registers rip=0x55b6e2569dcc rsp=0x7f07d200ca88 rbp=0x81459d612f8de66a
+stack_bounds=[0x7f07d180e000,0x7f07d200e000) copied=[0x7f07d200ca88,+5496] truncated=0
 unwind_status=START source=saved_ucontext_worker_parked copied_stack_available=yes
-  #00 ip=0x561fb303bdcc sp=0x7f1975daaa88 symbol=_ZN12_GLOBAL__N_1L9deep_leafEm+0x2c
-  #01 ip=0x561fb303be10 sp=0x7f1975daaa90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #02 ip=0x561fb303be10 sp=0x7f1975daaab0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #03 ip=0x561fb303be10 sp=0x7f1975daaad0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #04 ip=0x561fb303be10 sp=0x7f1975daaaf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #05 ip=0x561fb303be10 sp=0x7f1975daab10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #06 ip=0x561fb303be10 sp=0x7f1975daab30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #07 ip=0x561fb303be10 sp=0x7f1975daab50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #08 ip=0x561fb303be10 sp=0x7f1975daab70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #09 ip=0x561fb303be10 sp=0x7f1975daab90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #10 ip=0x561fb303be10 sp=0x7f1975daabb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #11 ip=0x561fb303be10 sp=0x7f1975daabd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #12 ip=0x561fb303be10 sp=0x7f1975daabf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #13 ip=0x561fb303be10 sp=0x7f1975daac10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #14 ip=0x561fb303be10 sp=0x7f1975daac30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #15 ip=0x561fb303be10 sp=0x7f1975daac50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #16 ip=0x561fb303be10 sp=0x7f1975daac70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #17 ip=0x561fb303be10 sp=0x7f1975daac90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #18 ip=0x561fb303be10 sp=0x7f1975daacb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #19 ip=0x561fb303be10 sp=0x7f1975daacd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #20 ip=0x561fb303be10 sp=0x7f1975daacf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #21 ip=0x561fb303be10 sp=0x7f1975daad10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #22 ip=0x561fb303be10 sp=0x7f1975daad30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #23 ip=0x561fb303be10 sp=0x7f1975daad50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #24 ip=0x561fb303be10 sp=0x7f1975daad70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
-  #25 ip=0x561fb303c167 sp=0x7f1975daad90 symbol=_ZN12_GLOBAL__N_1L18worker_thread_mainEi+0xd7
-  #26 ip=0x7f19768e55a4 sp=0x7f1975daae40 symbol=?
-  #27 ip=0x7f197667897a sp=0x7f1975daae60 symbol=?
-  #28 ip=0x7f19766fc2bc sp=0x7f1975daaf40 symbol=?
+  #00 ip=0x55b6e2569dcc sp=0x7f07d200ca88 symbol=_ZN12_GLOBAL__N_1L9deep_leafEm+0x2c
+  #01 ip=0x55b6e2569e10 sp=0x7f07d200ca90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #02 ip=0x55b6e2569e10 sp=0x7f07d200cab0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #03 ip=0x55b6e2569e10 sp=0x7f07d200cad0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #04 ip=0x55b6e2569e10 sp=0x7f07d200caf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #05 ip=0x55b6e2569e10 sp=0x7f07d200cb10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #06 ip=0x55b6e2569e10 sp=0x7f07d200cb30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #07 ip=0x55b6e2569e10 sp=0x7f07d200cb50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #08 ip=0x55b6e2569e10 sp=0x7f07d200cb70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #09 ip=0x55b6e2569e10 sp=0x7f07d200cb90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #10 ip=0x55b6e2569e10 sp=0x7f07d200cbb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #11 ip=0x55b6e2569e10 sp=0x7f07d200cbd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #12 ip=0x55b6e2569e10 sp=0x7f07d200cbf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #13 ip=0x55b6e2569e10 sp=0x7f07d200cc10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #14 ip=0x55b6e2569e10 sp=0x7f07d200cc30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #15 ip=0x55b6e2569e10 sp=0x7f07d200cc50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #16 ip=0x55b6e2569e10 sp=0x7f07d200cc70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #17 ip=0x55b6e2569e10 sp=0x7f07d200cc90 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #18 ip=0x55b6e2569e10 sp=0x7f07d200ccb0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #19 ip=0x55b6e2569e10 sp=0x7f07d200ccd0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #20 ip=0x55b6e2569e10 sp=0x7f07d200ccf0 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #21 ip=0x55b6e2569e10 sp=0x7f07d200cd10 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #22 ip=0x55b6e2569e10 sp=0x7f07d200cd30 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #23 ip=0x55b6e2569e10 sp=0x7f07d200cd50 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #24 ip=0x55b6e2569e10 sp=0x7f07d200cd70 symbol=_ZN12_GLOBAL__N_1L14deep_recursiveEim+0x20
+  #25 ip=0x55b6e256a167 sp=0x7f07d200cd90 symbol=_ZN12_GLOBAL__N_1L18worker_thread_mainEi+0xd7
+  #26 ip=0x7f07d2ae55a4 sp=0x7f07d200ce40 symbol=?
+  #27 ip=0x7f07d28a597a sp=0x7f07d200ce60 symbol=?
+  #28 ip=0x7f07d29292bc sp=0x7f07d200cf40 symbol=?
 unwind_status=OK frames=28 final_rc=0
