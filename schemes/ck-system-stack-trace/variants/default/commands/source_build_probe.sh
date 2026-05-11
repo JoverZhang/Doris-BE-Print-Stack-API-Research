@@ -5,13 +5,13 @@ set -euo pipefail
 # It intentionally documents requirements instead of running the long build.
 
 echo "Source-build command:"
-echo "just ck-system-stack-trace-default"
+echo "CK_VARIANT=default just ck-system-stack-trace"
 echo
 echo "Requirements observed in task #28:"
 echo "- ClickHouse source tree at tag v26.3.10.62-lts, commit e1c11930c28196f954a93287e43c1aa112c8c607."
 echo "- All 129 git submodules initialized."
 echo "- rustup toolchain nightly-2025-07-07 installed; CMake fails before build without it."
-echo "- If <scheme>/build/default/programs/clickhouse already exists, the scheme reuses it; otherwise it builds from <repo>/repos/source/ClickHouse-v26.3.10.62-lts."
+echo "- If <scheme>/build/default/programs/clickhouse already exists, the default variant reuses it; otherwise it builds from <repo>/repos/source/ClickHouse-v26.3.10.62-lts."
 echo
 echo "Previous task #23 blockers resolved in task #28:"
 echo "- Recursive submodule checkout was completed outside this scheme directory."

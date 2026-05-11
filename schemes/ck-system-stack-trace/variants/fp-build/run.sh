@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCHEME_DIR"
+VARIANT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCHEME_DIR="$(cd "$VARIANT_DIR/../.." && pwd)"
+cd "$VARIANT_DIR"
 
 CLICKHOUSE_BIN="${CLICKHOUSE_BIN:-}"
 if [[ -z "$CLICKHOUSE_BIN" ]]; then
@@ -26,7 +27,8 @@ normalize_output() {
   local output="$1"
   sed -i -E \
     -e "s#${SCHEME_DIR}#<scheme>#g" \
-    -e 's#[^[:space:]]*/\.slock/agents/[A-Za-z0-9-]+/projects/stacktrace-research-repro[^[:space:]]*/schemes/ck-system-stack-trace-fp-build#<scheme>#g' \
+    -e "s#${VARIANT_DIR}#<scheme>/variants/fp-build#g" \
+    -e 's#[^[:space:]]*/\.slock/agents/[A-Za-z0-9-]+/projects/stacktrace-research-repro[^[:space:]]*/schemes/ck-system-stack-trace#<scheme>#g' \
     "$output"
 }
 
@@ -46,6 +48,6 @@ run_query queries/thread_stack_fileline.sql
 ./commands/clickhouse_metadata.sh "$CLICKHOUSE_BIN" > commands/clickhouse_metadata.out
 normalize_output commands/clickhouse_metadata.out
 
-./minimal_impl/run.sh
+"$SCHEME_DIR/minimal_impl/fp-build/run.sh"
 
-echo "wrote ClickHouse frame-pointer source-build outputs under $SCHEME_DIR"
+echo "wrote ClickHouse frame-pointer source-build outputs under $VARIANT_DIR"

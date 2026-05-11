@@ -11,9 +11,10 @@
 It omits ClickHouse SQL, storage engine plumbing, `CurrentThread` query metadata, memory tracking, `SymbolIndex`, access control, and production symbol caches.
 
 This is mechanism evidence only. It does not replace the ClickHouse source-build project run.
+This default-variant demo intentionally uses normal compiler frame-pointer behavior; frame-pointer-specific flags and comparisons live only in `../fp-build/`.
 
 Run:
 
 ```bash
-./minimal_impl/run.sh
+./minimal_impl/default/run.sh
 ```

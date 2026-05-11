@@ -13,11 +13,8 @@ repos-sync:
 repos-check:
     ./scripts/validate_repos.sh
 
-ck-system-stack-trace-default:
-    ./schemes/ck-system-stack-trace-default/run.sh
-
-ck-system-stack-trace-fp-build:
-    ./schemes/ck-system-stack-trace-fp-build/run.sh
+ck-system-stack-trace:
+    ./schemes/ck-system-stack-trace/run.sh
 
 ob-observer-kill60:
     ./schemes/ob-observer-kill60/run.sh
@@ -35,8 +32,7 @@ ebpf-industry-profiler:
     ./schemes/ebpf-industry-profiler/run.sh
 
 all-phase1:
-    just ck-system-stack-trace-default
-    just ck-system-stack-trace-fp-build
+    just ck-system-stack-trace
     just ob-observer-kill60
     just ob-ocp-obstack
     just ob-open-obstack-ptrace

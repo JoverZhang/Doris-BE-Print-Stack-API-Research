@@ -17,8 +17,7 @@ required=(
 )
 
 schemes=(
-  ck-system-stack-trace-default
-  ck-system-stack-trace-fp-build
+  ck-system-stack-trace
   ob-observer-kill60
   ob-ocp-obstack
   ob-open-obstack-ptrace

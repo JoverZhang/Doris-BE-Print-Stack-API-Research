@@ -10,6 +10,7 @@ schemes/*/build/
 schemes/*/.cache/
 schemes/*/commands/*.raw
 schemes/*/minimal_impl/build/
+schemes/*/minimal_impl/*/build/
 schemes/*/minimal_impl/minimal.pid
 schemes/*/minimal_impl/target.pid
 schemes/*/minimal_impl/*.program.out

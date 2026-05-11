@@ -13,5 +13,5 @@ This is mechanism evidence only. It does not replace the ClickHouse source-build
 Run:
 
 ```bash
-./minimal_impl/run.sh
+./minimal_impl/fp-build/run.sh
 ```
