@@ -1,101 +1,101 @@
 command=sudo bpftrace commands/bpftrace_offcpu.bt
 status=PASS
 expected_worker_threads=6
-offcpu_stdout_lines=270
+offcpu_stdout_lines=249
 event_based=yes
 all_native_threads=no
 live_api_fit=no
 
 target_threads:
-pid=2751 main_tid=2751 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=14
-thread role=cpu id=0 tid=2753
-thread role=cpu id=1 tid=2754
-thread role=sleep id=0 tid=2755
-thread role=sleep id=1 tid=2756
-thread role=mutex_blocked id=0 tid=2757
-thread role=mutex_blocked id=1 tid=2758
-sink=4422440544887631989
+pid=3704 main_tid=3704 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=14
+thread role=cpu id=0 tid=3706
+thread role=cpu id=1 tid=3707
+thread role=sleep id=0 tid=3708
+thread role=mutex_blocked id=0 tid=3710
+thread role=mutex_blocked id=1 tid=3711
+thread role=sleep id=1 tid=3709
+sink=8089925658123122145
 
 bpftrace_output_head:
 Attaching 2 probes...
 
 
 @[
-    0x7ff8381cfc79
+    0x721440f92b2b
     (anonymous namespace)::target_leaf(unsigned long)+154
     (anonymous namespace)::target_level_three(unsigned long)+13
     (anonymous namespace)::target_level_two(unsigned long)+13
     (anonymous namespace)::target_level_one(unsigned long)+13
     (anonymous namespace)::cpu_worker(int)+57
-    0x7ff837eecdb4
-    0x7ff837a9caa4
-    0x7ff837b29c6c
+    0x7214410ecdb4
+    0x721440c9caa4
+    0x721440d29c6c
 ]: 1
 @[
-    0x7ff8381cf4df
+    0x721440f92599
     (anonymous namespace)::target_leaf(unsigned long)+123
     (anonymous namespace)::target_level_three(unsigned long)+13
     (anonymous namespace)::target_level_two(unsigned long)+13
     (anonymous namespace)::target_level_one(unsigned long)+13
     (anonymous namespace)::cpu_worker(int)+57
-    0x7ff837eecdb4
-    0x7ff837a9caa4
-    0x7ff837b29c6c
+    0x7214410ecdb4
+    0x721440c9caa4
+    0x721440d29c6c
 ]: 1
 @[
-    0x7ff8381cf5c2
+    0x721440f9250b
     (anonymous namespace)::target_leaf(unsigned long)+123
     (anonymous namespace)::target_level_three(unsigned long)+13
     (anonymous namespace)::target_level_two(unsigned long)+13
     (anonymous namespace)::target_level_one(unsigned long)+13
     (anonymous namespace)::cpu_worker(int)+57
-    0x7ff837eecdb4
-    0x7ff837a9caa4
-    0x7ff837b29c6c
+    0x7214410ecdb4
+    0x721440c9caa4
+    0x721440d29c6c
 ]: 1
 @[
-    0x7ff8381cfd09
-    (anonymous namespace)::target_leaf(unsigned long)+154
-    (anonymous namespace)::target_level_three(unsigned long)+13
-    (anonymous namespace)::target_level_two(unsigned long)+13
-    (anonymous namespace)::target_level_one(unsigned long)+13
-    (anonymous namespace)::cpu_worker(int)+57
-    0x7ff837eecdb4
-    0x7ff837a9caa4
-    0x7ff837b29c6c
-]: 1
-@[
-    0x7ff8381cf357
+    0x721440f924b6
     (anonymous namespace)::target_leaf(unsigned long)+123
     (anonymous namespace)::target_level_three(unsigned long)+13
     (anonymous namespace)::target_level_two(unsigned long)+13
     (anonymous namespace)::target_level_one(unsigned long)+13
     (anonymous namespace)::cpu_worker(int)+57
-    0x7ff837eecdb4
-    0x7ff837a9caa4
-    0x7ff837b29c6c
+    0x7214410ecdb4
+    0x721440c9caa4
+    0x721440d29c6c
 ]: 1
 @[
-    0x7ff8381cf594
+    0x721440f925ba
     (anonymous namespace)::target_leaf(unsigned long)+123
     (anonymous namespace)::target_level_three(unsigned long)+13
     (anonymous namespace)::target_level_two(unsigned long)+13
     (anonymous namespace)::target_level_one(unsigned long)+13
     (anonymous namespace)::cpu_worker(int)+57
-    0x7ff837eecdb4
-    0x7ff837a9caa4
-    0x7ff837b29c6c
+    0x7214410ecdb4
+    0x721440c9caa4
+    0x721440d29c6c
 ]: 1
 @[
-    0x7ff8381cf482
+    0x721440f92482
     (anonymous namespace)::target_leaf(unsigned long)+123
     (anonymous namespace)::target_level_three(unsigned long)+13
     (anonymous namespace)::target_level_two(unsigned long)+13
     (anonymous namespace)::target_level_one(unsigned long)+13
     (anonymous namespace)::cpu_worker(int)+57
-    0x7ff837eecdb4
-    0x7ff837a9caa4
-    0x7ff837b29c6c
+    0x7214410ecdb4
+    0x721440c9caa4
+    0x721440d29c6c
+]: 1
+@[
+    0x721440f925ca
+    (anonymous namespace)::target_leaf(unsigned long)+123
+    (anonymous namespace)::target_level_three(unsigned long)+13
+    (anonymous namespace)::target_level_two(unsigned long)+13
+    (anonymous namespace)::target_level_one(unsigned long)+13
+    (anonymous namespace)::cpu_worker(int)+57
+    0x7214410ecdb4
+    0x721440c9caa4
+    0x721440d29c6c
 ]: 1
 
 bpftrace_stderr:
