@@ -1,4 +1,6 @@
-# Doris BE Live Stack Dump Research
+# Doris BE Print Stack API Research
+
+[Doris#62497](https://github.com/apache/doris/issues/62497)
 
 ## 1. Goal
 
