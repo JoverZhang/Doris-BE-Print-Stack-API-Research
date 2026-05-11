@@ -1,167 +1,85 @@
-# Stacktrace Research Repro
+# Doris BE Live Stack Dump Research
 
-This repo is a source-build research fixture for stack collection schemes.
+## 1. Goal
 
-The active contract is:
+Research practical approaches to dump live stacks of `doris_be` with:
 
-- no release-binary evidence;
-- root checklist is the only project matrix;
-- no `case.yaml`, `matrix.csv`, `templates/`, or `reference_checklist/`;
-- each scheme README starts with a source trace: release tag, function names, file paths, and line numbers;
-- each scheme has `minimal_impl/`, derived from the source trace;
-- repo-owned `minimal_impl/` and `shared/` C++ fixtures are buildable from the root CMake project, which is the clangd/VSCode debug contract;
-- risk cases are negative/guardrail reproductions under `risk_cases/`, not stacktrace schemes;
-- research command output sits next to its input and shares the same prefix: `thread_stack.sql` -> `thread_stack.out`, `perf_fp.sh` -> `perf_fp.out`, `bpftrace_ustack.bt` -> `bpftrace_ustack.out`;
-- `build.sh` owns source build or target build work; `commands/` is only for auditable research actions and their `.out` files, while helper wrappers/config templates live under `helpers/` or `shared/`;
-- upstream source trees under `repos/source/` are tracked by git submodules, not hand-downloaded implicit state;
-- build, fetch, install, and package-manager logs are not committed as research output.
+- low latency impact
+- second / sub-second level completion target
+- no or minimal crash risk
+- acceptable stack trace accuracy
 
-## Checklist
+This repository is only an investigation workspace for the first-stage research.
+It is not a final design proposal yet.
 
-| done | phase | scheme | project | source-build | source-trace | minimal-impl | runnable-output | status | note |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| yes | 1 | `ck-system-stack-trace` | ClickHouse | done | done | done | done | in_review | One ClickHouse `system.stack_trace` scheme with two source-build variants: default Build ID `1a71bc7bc6667f8d465ff4ae3cb2bfb2549b39b1` and frame-pointer-preserving Build ID `073c6b8cde9d6091654051d6c7d333928a749e22`; FP is a build-condition/backend comparison, not a second ClickHouse API. |
-| yes | 1 | `inprocess-minidump` | repo-owned x86_64 snapshot | target source built | done | done | done | in_review | x86_64-only minidump-lite artifact: signal handler captures registers and bounded stack bytes only; normal thread performs best-effort unwind outside the handler; default compiler frame-pointer behavior, no `-fno-omit-frame-pointer`. |
-| yes | 1 | `ob-observer-kill60` | OceanBase observer | done | done | done | done | in_review | Source-built `v4.5.0_CE` observer under podman AlmaLinux 8 produced a real `kill -60` stack file; direct host build remains blocked by missing `rpmextract.sh`. |
-| yes | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | done | done | done | done | in_review | Public source commit built under podman CentOS 7; real source-built observer attach PASS. Host Arch build remains blocked by upstream deps profile support. |
-| yes | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |
-| yes | 1 | `ebpf-alloy-pyroscope` | Alloy/Pyroscope | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`; uses shared eBPF profile target fixture. |
-| no | later | `gperftools-stacktrace` | gperftools | not started | not started | not started | not started | deferred | Capture backend/component. |
-| no | later | `libbacktrace-boost-folly` | common C++ stack libraries | not started | not started | not started | not started | deferred | Current-thread/symbolization components. |
-| no | later | `crashpad-breakpad` | crash/minidump tooling | not started | not started | not started | not started | deferred | Crash/minidump semantics, not live dump API. |
-| no | later | `cooperative-safepoint` | generic runtime design | not started | not started | not started | not started | deferred | Requires separate design. |
-| no | later | `intel-pt-lbr` | hardware tracing | not started | not started | not started | not started | deferred | Profiling/tracing reference only. |
+## 2. Current Status
 
-## Risk Cases
+| Area | Status |
+|---|---|
+| ClickHouse stack trace path | Built / partially inspected |
+| OceanBase kill -60 path | Built / not fully inspected |
+| obstack | Built / ptrace-based, not the main live-dump direction for now |
+| signal-handler unwind demo | Runnable minimal prototype |
+| stack-snapshot hybrid demo | Runnable minimal prototype |
+| performance / stability verification | Not started |
 
-| case | status | meaning |
-| --- | --- | --- |
-| `ck_unwind_without_phdr_cache` | done | Deterministic model of the ClickHouse `dl_iterate_phdr`/PHDR-cache signal-safety risk; unsafe mode times out when unwind re-enters a non-async-signal-safe PHDR path, safe mode completes through a prebuilt cache. |
+## 3. Initial Observation
 
-## Layout
+The current investigation mainly compares existing implementations and tries to identify a feasible direction for Doris BE.
 
-```text
-repos/
-  source/                    # git submodules pinned by .gitmodules + gitlinks
-shared/
-  ebpf/profile_target/
-  oceanbase/
-risk_cases/
-  ck_unwind_without_phdr_cache/
-schemes/
-  <scheme-id>/
-    README.md
-    build.sh
-    run.sh
-    commands/ or queries/
-      <input>.sql|sh|bt
-      <input>.out
-    helpers/                 # optional non-evidence wrappers or config templates
-    variants/                # optional, for build variants inside one scheme
-    minimal_impl/
-      README.md
-      build.sh
-      run.sh
-      <demo source>
-      <demo>.out
-scripts/
-vm/
-```
+Current references:
 
-`shared/` contains helper code only. It is not a scheme namespace and entries
-under it do not appear in the checklist.
+- ClickHouse stack trace implementation
+- OceanBase `kill -60` related implementation
+- obstack
 
-## Local C++ LSP and Debug
+Initial note:
 
-The root CMake project intentionally covers only repo-owned C++ code:
+- `obstack` is based on `ptrace`, so it is not very aligned with the target scenario here, which is a low-impact live dump mechanism inside / near the running BE process.
+- ClickHouse and OceanBase are more relevant references for the next step, especially around signal-triggered stack collection.
 
-- scheme `minimal_impl/` programs;
-- shared fixtures under `shared/`;
-- no ClickHouse/OceanBase/obstack upstream project targets.
+## 4. Candidate Directions
 
-This keeps clangd and VSCode focused on code maintained in this repro repo. The
-large upstream source trees keep their own source-build commands and should only
-be indexed with their own compile databases when needed.
+At this stage, there is no final recommendation yet. The current investigation is mainly split into two possible directions.
 
-```bash
-cmake --preset debug
-cmake --build --preset debug --target stacktrace_minimal_impls
-just all-minimal
-```
+### Direction A: unwind in signal handler
 
-`.clangd` points clangd at `build/cmake-debug/compile_commands.json`.
-`.vscode/launch.json` contains CodeLLDB (`type: "lldb"`) launch entries for
-each minimal target, and `.vscode/extensions.json` recommends clangd and
-CodeLLDB. `just all-minimal` is the safe local development entrypoint. It
-rebuilds and runs only the repo-owned minimal implementations.
+Basic idea:
 
-Heavy project evidence reruns are explicit:
+- Coordinator sends signal to target threads.
+- Target threads enter signal handler.
+- The handler performs unwind and collects stack trace.
 
-```bash
-RUN_HEAVY_EVIDENCE=1 just all-evidence
-```
+Reference:
 
-`just all-phase1` is kept as a safe alias for `just all-minimal`. It no longer
-runs the heavyweight ClickHouse/OceanBase/eBPF evidence chain by default.
+- ClickHouse-style stack trace path
+- OceanBase `kill -60` path, still needs deeper reading
 
-## Scheme README Contract
+Main open question:
 
-Every scheme README must contain only the details needed to verify the scheme:
+- Whether unwind inside signal handler can be made safe enough.
+- Need to verify async-signal-safety risk, performance, and stability.
 
-```text
-# <scheme-id>
+### Direction B: stack snapshot hybrid
 
-## What This Verifies
-<one sentence>
+Basic idea:
 
-## Source Trace
-release tag: <tag>
-commit: <commit>
+- Coordinator sends signal to target threads.
+- Signal handler only captures minimal thread state:
+  - `ucontext`
+  - registers
+  - bounded stack snapshot
+- Coordinator thread later tries to unwind / reconstruct stack trace from the captured data.
 
-<file>:<line> <function>
-  -> <file>:<line> <function>
-    -> <file>:<line> <function>
-      -> output: <interface/file/tool output>
+Main open question:
 
-## Run
-just <scheme-id>
+- Whether this can reconstruct accurate enough stack traces.
+- Need to verify implementation complexity, performance, and correctness.
 
-## Inputs / Outputs
-| input | output | meaning |
+## 5. Next Steps
 
-## Minimal Impl
-<which source-trace nodes are retained and what is omitted>
-```
-
-`source-trace` must be written before `minimal_impl/` is implemented.
-
-## Running
-
-```bash
-just --list
-just cmake-configure
-just cmake-build
-just all-minimal
-just inprocess-minidump
-just risk-unwind-without-phdr-cache
-just repos-check
-just repos-sync
-just validate
-```
-
-`just repos-sync` initializes the source submodules from `.gitmodules`.
-ClickHouse also initializes
-its nested submodules recursively, which is intentionally large and required for
-source-build evidence.
-
-VM helpers remain available for eBPF and heavyweight build work:
-
-```bash
-just vm-create
-just vm-start-bg
-just vm-wait-ssh
-just vm-ssh 'id && uname -r'
-just vm-stop
-```
-
-If an environment blocks source build or runtime, report the blocker in the task thread. Do not skip it and do not retry indefinitely. For OceanBase dependency issues, prefer rootless `podman`; do not assume Docker is available.
+1. Continue reading ClickHouse and OceanBase implementations.
+2. Understand how OceanBase handles `kill -60` and unwind safety.
+3. Stress test the signal-handler unwind demo.
+4. Verify whether stack-snapshot hybrid can produce usable stack traces.
+5. Compare the two directions by accuracy, latency impact, crash risk, and implementation complexity.

@@ -5,7 +5,9 @@ default:
     @just --list
 
 validate:
-    ./scripts/validate_repo.sh
+    just repos-check
+    cmake --preset debug >/dev/null
+    cmake --build --preset debug --target stacktrace_minimal_impls stacktrace_risk_cases
 
 repos-sync:
     ./scripts/sync_repos.sh
