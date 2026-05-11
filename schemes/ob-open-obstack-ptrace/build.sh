@@ -12,7 +12,8 @@ JOBS="${OBSTACK_BUILD_JOBS:-4}"
 mkdir -p commands .cache
 
 if [[ ! -d "$SOURCE_DIR/.git" ]]; then
-  git clone --depth 1 --filter=blob:none https://github.com/oceanbase/obstack.git "$SOURCE_DIR"
+  echo "BLOCKED: obstack source submodule is unavailable at $SOURCE_DIR. Run just repos-sync." >&2
+  exit 2
 fi
 
 actual_commit="$(git -C "$SOURCE_DIR" rev-parse HEAD)"

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO_ROOT="$(git -C "$SCHEME_DIR" rev-parse --show-toplevel)"
+REPO_ROOT="${REPO_ROOT:-$(git -C "$SCHEME_DIR" rev-parse --show-toplevel)}"
 source "$REPO_ROOT/shared/oceanbase/observer_runtime.sh"
 cd "$SCHEME_DIR"
 
@@ -13,6 +13,27 @@ See commands/source_build_probe.out for the current source-build blocker.
 No release binary or synthetic target is used for this real-observer output.
 OUT
   exit 2
+fi
+
+if [[ "${OB_OBSERVER_KILL60_IN_PODMAN:-0}" != "1" ]]; then
+  ob_require_under_repo "OBSERVER_BIN" "$observer" "$REPO_ROOT" || exit 2
+  command -v podman >/dev/null 2>&1 || {
+    echo "BLOCKED: podman is required to run the source-built OceanBase observer runtime."
+    exit 2
+  }
+
+  observer_rel="$(ob_repo_relpath "$observer" "$REPO_ROOT")"
+  podman run --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}" \
+    -v "$REPO_ROOT:/work" -w /work \
+    -e REPO_ROOT=/work \
+    -e "OBSERVER_BIN=/work/$observer_rel" \
+    -e OB_OBSERVER_KILL60_IN_PODMAN=1 \
+    docker.io/library/almalinux:8 bash -lc '
+set -euo pipefail
+dnf install -y ncurses-compat-libs zlib libaio procps-ng file >/tmp/observer-kill60-yum.log 2>&1
+schemes/ob-observer-kill60/commands/observer_kill60.sh
+'
+  exit $?
 fi
 
 ob_print_observer_binary_metadata "$observer"

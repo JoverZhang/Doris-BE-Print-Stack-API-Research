@@ -2,17 +2,29 @@
 set -euo pipefail
 
 SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCHEME_DIR" rev-parse --show-toplevel)"
 cd "$SCHEME_DIR"
 
 TAG="${OCEANBASE_TAG:-v4.5.0_CE}"
 COMMIT="${OCEANBASE_COMMIT:-0e8d5ad012baf0953b2032a35a88bdf8886e9a7a}"
-SOURCE_DIR="${OCEANBASE_SOURCE_DIR:-$SCHEME_DIR/.cache/oceanbase-$TAG}"
+SOURCE_DIR="${OCEANBASE_SOURCE_DIR:-$REPO_ROOT/repos/source/oceanbase-$TAG}"
 
 mkdir -p commands .cache
 
+for observer_bin in \
+  "$SOURCE_DIR/build_release/src/observer/observer" \
+  "$SOURCE_DIR/build_release/src/observer/observer/observer"
+do
+  if [[ -x "$observer_bin" ]]; then
+    printf '%s\n' "$observer_bin"
+    exit 0
+  fi
+done
+
 if [[ ! -d "$SOURCE_DIR/.git" ]]; then
-  git clone --depth 1 --branch "$TAG" --filter=blob:none \
-    https://github.com/oceanbase/oceanbase.git "$SOURCE_DIR"
+  ./commands/source_build_probe.sh > commands/source_build_probe.out
+  echo "BLOCKED: OceanBase source submodule is unavailable at $SOURCE_DIR. Run just repos-sync." >&2
+  exit 2
 fi
 
 actual_commit="$(git -C "$SOURCE_DIR" rev-parse HEAD)"
@@ -23,7 +35,7 @@ fi
 
 if [[ "${OB_FULL_SOURCE_BUILD:-0}" != "1" ]]; then
   ./commands/source_build_probe.sh > commands/source_build_probe.out
-  echo "BLOCKED: full observer source build is disabled by default. Set OB_FULL_SOURCE_BUILD=1 after provisioning deps." >&2
+  echo "BLOCKED: source-built observer binary is missing. Set OB_FULL_SOURCE_BUILD=1 after provisioning deps." >&2
   exit 2
 fi
 

@@ -11,13 +11,13 @@ BUILD_TIME: Jul  5 2024 13:53:00
 Copyright (c) 2022 Alipay Inc.
 
 help_relevant:
-Usage: 
+Usage:
  obstack [option(s)] [pid]
 
-Example: 
+Example:
  obstack $pid
 
-Options: 
+Options:
  -l, --log_level=[DEBUG|INFO|WARN|ERROR]              : Log level
  -n, --no_parse                                       : Output address only
  -a, --agg                                            : Aggregate backtrace

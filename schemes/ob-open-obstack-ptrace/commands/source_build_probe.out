@@ -24,8 +24,8 @@ exit_code=0
 binary_path_host=/home/mira/.slock/agents/b620fb72-907e-492d-9dc1-7454d39719f2/projects/stacktrace-research-repro/repos/source/obstack-master/build_release/src/obstack
 binary_exists=yes
 binary_size_bytes=15488600
-binary_file=ELF 64-bit LSB pie executable, x86-64, version 1 (GNU/Linux), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 2.6.32, BuildID[sha1]=481d13b2395578331943675f7a2b24ec06f7b911, with debug_info, not stripped
-binary_build_id=481d13b2395578331943675f7a2b24ec06f7b911
+binary_file=ELF 64-bit LSB pie executable, x86-64, version 1 (GNU/Linux), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 2.6.32, BuildID[sha1]=3565e1a7959d74b2864ddfcd13bdb7cc9e0db659, with debug_info, not stripped
+binary_build_id=3565e1a7959d74b2864ddfcd13bdb7cc9e0db659
 version_output=not_run_on_host; runtime is verified by attach_synthetic.out and attach_observer.out
 status=PASS
 
