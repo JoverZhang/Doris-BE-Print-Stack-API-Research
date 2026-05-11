@@ -1,0 +1,14 @@
+case=safe_with_phdr_cache
+phdr_cache_ready=yes
+trigger=raise_SIGUSR1_while_fake_loader_lock_is_held
+handler_entered=yes
+handler_completed=yes
+status=PASS
+reason=handler_unwind_completed_through_cache_backed_dl_iterate_phdr
+handler_entered=1
+handler_completed=1
+wrapper_calls=9
+slow_path_calls=0
+cache_path_calls=9
+reentered_while_lock_held=0
+captured_frames=8

@@ -116,6 +116,26 @@ repo_executable(
 target_compile_options(ebpf_profile_target_nofp PRIVATE -O2 -g -fomit-frame-pointer)
 target_link_libraries(ebpf_profile_target_nofp PRIVATE Threads::Threads m)
 
+repo_executable(
+  risk_ck_unwind_no_phdr_cache
+  risk_cases/ck_unwind_without_phdr_cache/ck_unwind_without_phdr_cache.cpp
+  risk_cases/ck_unwind_without_phdr_cache/build
+  unsafe_no_phdr_cache
+)
+target_compile_options(risk_ck_unwind_no_phdr_cache PRIVATE -O1 -g -DRISK_USE_PHDR_CACHE=0)
+target_link_options(risk_ck_unwind_no_phdr_cache PRIVATE -rdynamic)
+target_link_libraries(risk_ck_unwind_no_phdr_cache PRIVATE unwind unwind-x86_64 dl Threads::Threads)
+
+repo_executable(
+  risk_ck_unwind_with_phdr_cache
+  risk_cases/ck_unwind_without_phdr_cache/ck_unwind_without_phdr_cache.cpp
+  risk_cases/ck_unwind_without_phdr_cache/build
+  safe_with_phdr_cache
+)
+target_compile_options(risk_ck_unwind_with_phdr_cache PRIVATE -O1 -g -DRISK_USE_PHDR_CACHE=1)
+target_link_options(risk_ck_unwind_with_phdr_cache PRIVATE -rdynamic)
+target_link_libraries(risk_ck_unwind_with_phdr_cache PRIVATE unwind unwind-x86_64 dl Threads::Threads)
+
 add_custom_target(
   stacktrace_minimal_impls
   DEPENDS
@@ -127,4 +147,11 @@ add_custom_target(
     ob_open_obstack_ptrace_remote_unwind
     ebpf_profile_target_fp
     ebpf_profile_target_nofp
+)
+
+add_custom_target(
+  stacktrace_risk_cases
+  DEPENDS
+    risk_ck_unwind_no_phdr_cache
+    risk_ck_unwind_with_phdr_cache
 )

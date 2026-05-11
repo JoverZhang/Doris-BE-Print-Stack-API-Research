@@ -15,6 +15,11 @@ required=(
   scripts/validate_repo.sh
   scripts/validate_repos.sh
   scripts/sync_repos.sh
+  risk_cases/ck_unwind_without_phdr_cache/README.md
+  risk_cases/ck_unwind_without_phdr_cache/build.sh
+  risk_cases/ck_unwind_without_phdr_cache/run.sh
+  risk_cases/ck_unwind_without_phdr_cache/run_unsafe_no_phdr_cache.sh
+  risk_cases/ck_unwind_without_phdr_cache/run_safe_with_phdr_cache.sh
   vm/ubuntu-24.04/create.sh
   vm/ubuntu-24.04/start.sh
   vm/ubuntu-24.04/start_bg.sh
@@ -33,6 +38,11 @@ schemes=(
 for path in "${required[@]}"; do
   test -e "$path" || { echo "missing: $path" >&2; exit 1; }
 done
+
+test -x risk_cases/ck_unwind_without_phdr_cache/build.sh || { echo "missing executable risk build.sh" >&2; exit 1; }
+test -x risk_cases/ck_unwind_without_phdr_cache/run.sh || { echo "missing executable risk run.sh" >&2; exit 1; }
+test -x risk_cases/ck_unwind_without_phdr_cache/run_unsafe_no_phdr_cache.sh || { echo "missing executable unsafe risk runner" >&2; exit 1; }
+test -x risk_cases/ck_unwind_without_phdr_cache/run_safe_with_phdr_cache.sh || { echo "missing executable safe risk runner" >&2; exit 1; }
 
 ./scripts/validate_repos.sh
 

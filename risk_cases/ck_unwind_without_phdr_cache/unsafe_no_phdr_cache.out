@@ -1,0 +1,7 @@
+case=unsafe_no_phdr_cache
+phdr_cache_ready=no
+trigger=raise_SIGUSR1_while_fake_loader_lock_is_held
+handler_entered=yes
+dl_iterate_phdr_reentered_while_lock_held=yes
+status=EXPECTED_TIMEOUT
+reason=handler_unwind_reentered_slow_dl_iterate_phdr_while_loader_lock_was_held

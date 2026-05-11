@@ -10,6 +10,7 @@ The active contract is:
 - each scheme README starts with a source trace: release tag, function names, file paths, and line numbers;
 - each scheme has `minimal_impl/`, derived from the source trace;
 - repo-owned `minimal_impl/` and `shared/` C++ fixtures are buildable from the root CMake project, which is the clangd/VSCode debug contract;
+- risk cases are negative/guardrail reproductions under `risk_cases/`, not stacktrace schemes;
 - research command output sits next to its input and shares the same prefix: `thread_stack.sql` -> `thread_stack.out`, `perf_fp.sh` -> `perf_fp.out`, `bpftrace_ustack.bt` -> `bpftrace_ustack.out`;
 - `build.sh` owns source build or target build work; `commands/` is only for auditable research actions and their `.out` files, while helper wrappers/config templates live under `helpers/` or `shared/`;
 - upstream source trees under `repos/source/` are tracked by git submodules, not hand-downloaded implicit state;
@@ -30,6 +31,12 @@ The active contract is:
 | no | later | `cooperative-safepoint` | generic runtime design | not started | not started | not started | not started | deferred | Requires separate design. |
 | no | later | `intel-pt-lbr` | hardware tracing | not started | not started | not started | not started | deferred | Profiling/tracing reference only. |
 
+## Risk Cases
+
+| case | status | meaning |
+| --- | --- | --- |
+| `ck_unwind_without_phdr_cache` | done | Deterministic model of the ClickHouse `dl_iterate_phdr`/PHDR-cache signal-safety risk; unsafe mode times out when unwind re-enters a non-async-signal-safe PHDR path, safe mode completes through a prebuilt cache. |
+
 ## Layout
 
 ```text
@@ -38,6 +45,8 @@ repos/
 shared/
   ebpf/profile_target/
   oceanbase/
+risk_cases/
+  ck_unwind_without_phdr_cache/
 schemes/
   <scheme-id>/
     README.md
@@ -132,6 +141,7 @@ just --list
 just cmake-configure
 just cmake-build
 just all-minimal
+just risk-unwind-without-phdr-cache
 just repos-check
 just repos-sync
 just validate

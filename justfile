@@ -28,6 +28,9 @@ all-minimal:
     ./schemes/ebpf-perf-bpftrace/minimal_impl/run.sh
     ./schemes/ebpf-alloy-pyroscope/minimal_impl/run.sh
 
+risk-unwind-without-phdr-cache:
+    ./risk_cases/ck_unwind_without_phdr_cache/run.sh
+
 ck-system-stack-trace:
     ./schemes/ck-system-stack-trace/run.sh
 

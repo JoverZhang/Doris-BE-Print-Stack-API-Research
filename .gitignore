@@ -19,6 +19,8 @@ schemes/*/minimal_impl/*.raw
 schemes/*/minimal_impl/stack.*
 schemes/*/tmp/
 shared/ebpf/profile_target/build/
+risk_cases/*/build/
+risk_cases/*/*.raw
 *.log
 *.tgz
 *.tar.gz
