@@ -11,7 +11,7 @@ The active contract is:
 - each scheme has `minimal_impl/`, derived from the source trace;
 - repo-owned `minimal_impl/` and `shared/` C++ fixtures are buildable from the root CMake project, which is the clangd/VSCode debug contract;
 - research command output sits next to its input and shares the same prefix: `thread_stack.sql` -> `thread_stack.out`, `perf_fp.sh` -> `perf_fp.out`, `bpftrace_ustack.bt` -> `bpftrace_ustack.out`;
-- upstream source trees under `repos/source/` are tracked by git submodules and described in `repos.lock`, not hand-downloaded implicit state;
+- upstream source trees under `repos/source/` are tracked by git submodules, not hand-downloaded implicit state;
 - build, fetch, install, and package-manager logs are not committed as research output.
 
 ## Checklist
@@ -33,9 +33,8 @@ The active contract is:
 ## Layout
 
 ```text
-repos.lock
 repos/
-  source/                    # git submodules pinned by .gitmodules + repos.lock
+  source/                    # git submodules pinned by .gitmodules + gitlinks
 shared/
   ebpf/profile_target/
   oceanbase/
@@ -79,10 +78,11 @@ cmake --build --preset debug --target stacktrace_minimal_impls
 just all-minimal
 ```
 
-`.clangd` points clangd at `build/cmake-debug/compile_commands.json`, and
-`.vscode/launch.json` contains debug launch entries for each minimal target.
-`just all-minimal` is the safe local development entrypoint. It rebuilds and
-runs only the repo-owned minimal implementations.
+`.clangd` points clangd at `build/cmake-debug/compile_commands.json`.
+`.vscode/launch.json` contains CodeLLDB (`type: "lldb"`) launch entries for
+each minimal target, and `.vscode/extensions.json` recommends clangd and
+CodeLLDB. `just all-minimal` is the safe local development entrypoint. It
+rebuilds and runs only the repo-owned minimal implementations.
 
 Heavy project evidence reruns are explicit:
 
@@ -136,7 +136,8 @@ just repos-sync
 just validate
 ```
 
-`just repos-sync` initializes the source submodules. ClickHouse also initializes
+`just repos-sync` initializes the source submodules from `.gitmodules`.
+ClickHouse also initializes
 its nested submodules recursively, which is intentionally large and required for
 source-build evidence.
 

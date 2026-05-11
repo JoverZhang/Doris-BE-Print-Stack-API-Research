@@ -3,8 +3,8 @@ status=PASS
 
 pid=<target-pid> main_tid=<tid>
 thread role=cpu id=0 tid=<tid>
-thread role=cpu id=1 tid=<tid>
 thread role=sleep id=0 tid=<tid>
+thread role=cpu id=1 tid=<tid>
 thread role=sleep id=1 tid=<tid>
 sink=<value>
 command=ptrace_remote_unwind <target-program>
@@ -18,52 +18,52 @@ target_tid=<tid>
 target_threads_end
 remote_unwind_begin
 thread=<tid> status=attached init=0
-thread=<tid> frame=0 ip=0x7f77168adf32
-thread=<tid> frame=1 ip=0x7f77168a239c
-thread=<tid> frame=2 ip=0x7f77168f2452
-thread=<tid> frame=3 ip=0x7f77168fe537
-thread=<tid> frame=4 ip=0x5616347127e4
-thread=<tid> frame=5 ip=0x7f77168366c1
-thread=<tid> frame=6 ip=0x7f77168367f9
-thread=<tid> frame=7 ip=0x561634712205
+thread=<tid> frame=0 ip=0x7f3040f8ff32
+thread=<tid> frame=1 ip=0x7f3040f8439c
+thread=<tid> frame=2 ip=0x7f3040fd4452
+thread=<tid> frame=3 ip=0x7f3040fe0537
+thread=<tid> frame=4 ip=0x5611216447e4
+thread=<tid> frame=5 ip=0x7f3040f186c1
+thread=<tid> frame=6 ip=0x7f3040f187f9
+thread=<tid> frame=7 ip=0x561121644205
 thread=<tid> status=attached init=0
-thread=<tid> frame=0 ip=0x561634712308
-thread=<tid> frame=1 ip=0x561634712325
-thread=<tid> frame=2 ip=0x561634712334
-thread=<tid> frame=3 ip=0x561634712343
-thread=<tid> frame=4 ip=0x561634712458
-thread=<tid> frame=5 ip=0x5616347128e7
-thread=<tid> frame=6 ip=0x7f7716ae55a4
-thread=<tid> frame=7 ip=0x7f77168a597a
-thread=<tid> frame=8 ip=0x7f77169292bc
+thread=<tid> frame=0 ip=0x56112164430b
+thread=<tid> frame=1 ip=0x561121644325
+thread=<tid> frame=2 ip=0x561121644334
+thread=<tid> frame=3 ip=0x561121644343
+thread=<tid> frame=4 ip=0x561121644458
+thread=<tid> frame=5 ip=0x5611216448e7
+thread=<tid> frame=6 ip=0x7f30412e55a4
+thread=<tid> frame=7 ip=0x7f3040f8797a
+thread=<tid> frame=8 ip=0x7f304100b2bc
 thread=<tid> status=attached init=0
-thread=<tid> frame=0 ip=0x56163471230b
-thread=<tid> frame=1 ip=0x561634712325
-thread=<tid> frame=2 ip=0x561634712334
-thread=<tid> frame=3 ip=0x561634712343
-thread=<tid> frame=4 ip=0x561634712458
-thread=<tid> frame=5 ip=0x5616347128e7
-thread=<tid> frame=6 ip=0x7f7716ae55a4
-thread=<tid> frame=7 ip=0x7f77168a597a
-thread=<tid> frame=8 ip=0x7f77169292bc
+thread=<tid> frame=0 ip=0x561121644308
+thread=<tid> frame=1 ip=0x561121644325
+thread=<tid> frame=2 ip=0x561121644334
+thread=<tid> frame=3 ip=0x561121644343
+thread=<tid> frame=4 ip=0x561121644458
+thread=<tid> frame=5 ip=0x5611216448e7
+thread=<tid> frame=6 ip=0x7f30412e55a4
+thread=<tid> frame=7 ip=0x7f3040f8797a
+thread=<tid> frame=8 ip=0x7f304100b2bc
 thread=<tid> status=attached init=0
-thread=<tid> frame=0 ip=0x7f77168adf32
-thread=<tid> frame=1 ip=0x7f77168a239c
-thread=<tid> frame=2 ip=0x7f77168f2452
-thread=<tid> frame=3 ip=0x7f77168fe537
-thread=<tid> frame=4 ip=0x5616347125d2
-thread=<tid> frame=5 ip=0x5616347128e7
-thread=<tid> frame=6 ip=0x7f7716ae55a4
-thread=<tid> frame=7 ip=0x7f77168a597a
-thread=<tid> frame=8 ip=0x7f77169292bc
+thread=<tid> frame=0 ip=0x7f3040f8ff32
+thread=<tid> frame=1 ip=0x7f3040f8439c
+thread=<tid> frame=2 ip=0x7f3040fd4452
+thread=<tid> frame=3 ip=0x7f3040fe0537
+thread=<tid> frame=4 ip=0x5611216445d2
+thread=<tid> frame=5 ip=0x5611216448e7
+thread=<tid> frame=6 ip=0x7f30412e55a4
+thread=<tid> frame=7 ip=0x7f3040f8797a
+thread=<tid> frame=8 ip=0x7f304100b2bc
 thread=<tid> status=attached init=0
-thread=<tid> frame=0 ip=0x7f77168adf32
-thread=<tid> frame=1 ip=0x7f77168a239c
-thread=<tid> frame=2 ip=0x7f77168f2452
-thread=<tid> frame=3 ip=0x7f77168fe537
-thread=<tid> frame=4 ip=0x5616347125d2
-thread=<tid> frame=5 ip=0x5616347128e7
-thread=<tid> frame=6 ip=0x7f7716ae55a4
-thread=<tid> frame=7 ip=0x7f77168a597a
-thread=<tid> frame=8 ip=0x7f77169292bc
+thread=<tid> frame=0 ip=0x7f3040f8ff32
+thread=<tid> frame=1 ip=0x7f3040f8439c
+thread=<tid> frame=2 ip=0x7f3040fd4452
+thread=<tid> frame=3 ip=0x7f3040fe0537
+thread=<tid> frame=4 ip=0x5611216445d2
+thread=<tid> frame=5 ip=0x5611216448e7
+thread=<tid> frame=6 ip=0x7f30412e55a4
+thread=<tid> frame=7 ip=0x7f3040f8797a
+thread=<tid> frame=8 ip=0x7f304100b2bc
 remote_unwind_end

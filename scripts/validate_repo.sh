@@ -4,6 +4,7 @@ set -euo pipefail
 required=(
   .gitmodules
   .clangd
+  .vscode/extensions.json
   .vscode/launch.json
   .vscode/settings.json
   .vscode/tasks.json
@@ -11,7 +12,6 @@ required=(
   CMakePresets.json
   README.md
   justfile
-  repos.lock
   scripts/validate_repo.sh
   scripts/validate_repos.sh
   scripts/sync_repos.sh

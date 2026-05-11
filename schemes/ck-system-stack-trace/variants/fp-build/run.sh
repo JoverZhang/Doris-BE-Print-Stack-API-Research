@@ -3,6 +3,7 @@ set -euo pipefail
 
 VARIANT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCHEME_DIR="$(cd "$VARIANT_DIR/../.." && pwd)"
+REPO_ROOT="$(git -C "$VARIANT_DIR" rev-parse --show-toplevel)"
 cd "$VARIANT_DIR"
 
 CLICKHOUSE_BIN="${CLICKHOUSE_BIN:-}"
@@ -26,9 +27,11 @@ mkdir -p tmp
 normalize_output() {
   local output="$1"
   sed -i -E \
-    -e "s#${SCHEME_DIR}#<scheme>#g" \
     -e "s#${VARIANT_DIR}#<scheme>/variants/fp-build#g" \
-    -e 's#[^[:space:]]*/\.slock/agents/[A-Za-z0-9-]+/projects/stacktrace-research-repro[^[:space:]]*/schemes/ck-system-stack-trace#<scheme>#g' \
+    -e "s#${SCHEME_DIR}#<scheme>#g" \
+    -e "s#${REPO_ROOT}#<repo>#g" \
+    -e 's#[^[:space:]]*/schemes/ck-system-stack-trace-fp-build/build/fp#<scheme>/variants/fp-build/build/fp#g' \
+    -e 's#[^[:space:]]*/schemes/ck-system-stack-trace/build/fp#<scheme>/variants/fp-build/build/fp#g' \
     -e 's/[[:space:]]+$//' \
     "$output"
 }

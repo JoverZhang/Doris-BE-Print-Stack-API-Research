@@ -6,22 +6,22 @@ program_stdout:
 pid=<minimal-pid>
 
 maps_head:
-5565c4a6a000-5565c4a6c000 r--p 00000000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5565c4a6c000-5565c4a6e000 r-xp 00002000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5565c4a6e000-5565c4a6f000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5565c4a6f000-5565c4a70000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5565c4a70000-5565c4a71000 rw-p 00005000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5565e2792000-5565e27c5000 rw-p 00000000 00:00 0                          [heap]
-7f7c93cb4000-7f7c96cba000 rw-p 00000000 00:00 0
-7f7c96cba000-7f7c96cbc000 rw-p 00000000 00:00 0
-7f7c96cbc000-7f7c96cc0000 r--p 00000000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
-7f7c96cc0000-7f7c96ce4000 r-xp 00004000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
-7f7c96ce4000-7f7c96cef000 r--p 00028000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
-7f7c96cef000-7f7c96cf0000 r--p 00033000 103:02 99367676                  /usr/lib/liblzma.so.5.8.2
+5561b1a3f000-5561b1a41000 r--p 00000000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+5561b1a41000-5561b1a43000 r-xp 00002000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+5561b1a43000-5561b1a44000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+5561b1a44000-5561b1a45000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+5561b1a45000-5561b1a46000 rw-p 00005000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+5561d99df000-5561d9a12000 rw-p 00000000 00:00 0                          [heap]
+7fda47009000-7fda4a00f000 rw-p 00000000 00:00 0
+7fda4a00f000-7fda4a033000 r--p 00000000 103:02 99355590                  /usr/lib/libc.so.6
+7fda4a033000-7fda4a1a4000 r-xp 00024000 103:02 99355590                  /usr/lib/libc.so.6
+7fda4a1a4000-7fda4a1f2000 r--p 00195000 103:02 99355590                  /usr/lib/libc.so.6
+7fda4a1f2000-7fda4a1f6000 r--p 001e2000 103:02 99355590                  /usr/lib/libc.so.6
+7fda4a1f6000-7fda4a1f8000 rw-p 001e6000 103:02 99355590                  /usr/lib/libc.so.6
 
 thread_stack_lines:
-tid: 3504006, tname: observer_kill60, lbt: 0x5565c4a6cafe 0x5565c4a6d321 0x7f7c96d2f2d0 0x7f7c96d8ff32 0x7f7c96d8439c 0x7f7c96dd4452 0x7f7c96de0537 0x5565c4a6c76b 0x7f7c96d186c1 0x7f7c96d187f9 0x5565c4a6c895
-tid: 3504011, tname: worker-0, lbt: 0x5565c4a6cafe 0x5565c4a6d321 0x7f7c96d2f2d0 0x7f7c96d8ff32 0x7f7c96d8439c 0x7f7c96dd4452 0x7f7c96de0537 0x5565c4a6ca61 0x7f7c970e55a4 0x7f7c96d8797a 0x7f7c96e0b2bc
-tid: 3504012, tname: worker-1, lbt: 0x5565c4a6cafe 0x5565c4a6d321 0x7f7c96d2f2d0 0x7f7c96d8ff32 0x7f7c96d8439c 0x7f7c96dd4452 0x7f7c96de0537 0x5565c4a6ca61 0x7f7c970e55a4 0x7f7c96d8797a 0x7f7c96e0b2bc
-tid: 3504013, tname: worker-2, lbt: 0x5565c4a6cafe 0x5565c4a6d321 0x7f7c96d2f2d0 0x5565c4a6ca11 0x7f7c970e55a4 0x7f7c96d8797a 0x7f7c96e0b2bc
-tid: 3504014, tname: worker-3, lbt: 0x5565c4a6cafe 0x5565c4a6d321 0x7f7c96d2f2d0 0x7f7c96d8ff32 0x7f7c96d8439c 0x7f7c96dd4452 0x7f7c96de0537 0x5565c4a6ca61 0x7f7c970e55a4 0x7f7c96d8797a 0x7f7c96e0b2bc
+tid: 3610768, tname: observer_kill60, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a4176b 0x7fda4a0366c1 0x7fda4a0367f9 0x5561b1a41895
+tid: 3610773, tname: worker-0, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a41a61 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc
+tid: 3610774, tname: worker-1, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a41a61 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc
+tid: 3610775, tname: worker-2, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a41a61 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc
+tid: 3610776, tname: worker-3, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x5561b1a41a1e 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc

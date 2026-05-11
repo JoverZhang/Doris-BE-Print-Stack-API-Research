@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "CK directed signal unwind",
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/default/build/directed_signal_unwind",
       "args": [],
@@ -12,7 +12,7 @@
     },
     {
       "name": "CK FP walker",
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/fp-build/build/fp_vs_unwind.fp",
       "args": [],
@@ -21,7 +21,7 @@
     },
     {
       "name": "CK no-FP unwind control",
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/fp-build/build/fp_vs_unwind.no_fp",
       "args": [],
@@ -30,7 +30,7 @@
     },
     {
       "name": "OB kill -60 minimal",
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/schemes/ob-observer-kill60/minimal_impl/build/observer_kill60_minimal",
       "args": [],
@@ -39,7 +39,7 @@
     },
     {
       "name": "Open obstack ptrace minimal",
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/schemes/ob-open-obstack-ptrace/minimal_impl/build/ptrace_remote_unwind",
       "args": [
@@ -50,7 +50,7 @@
     },
     {
       "name": "eBPF profile target",
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/shared/ebpf/profile_target/build/profile_target_fp",
       "args": [

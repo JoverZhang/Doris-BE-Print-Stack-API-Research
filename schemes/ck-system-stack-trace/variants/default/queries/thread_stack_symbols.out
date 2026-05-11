@@ -1,29 +1,23 @@
 Row 1:
 ──────
 thread_name: clickhouse
-thread_id:   3449497 -- 3.45 million
+thread_id:   3608941 -- 3.61 million
 symbols:     ['','','','pthread_cond_timedwait','std::__1::condition_variable::__do_timed_wait(std::__1::unique_lock<std::__1::mutex>&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000000l>>>)','std::__1::cv_status std::__1::condition_variable::wait_until[abi:fe210105]<std::__1::chrono::steady_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000000l>>>(std::__1::unique_lock<std::__1::mutex>&, std::__1::chrono::time_point<std::__1::chrono::steady_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000000l>>> const&)','bool ConcurrentBoundedQueue<DB::Chunk>::popImpl<true>(DB::Chunk&, std::__1::optional<unsigned long>)','DB::LazyOutputFormat::getChunk(unsigned long)']
 
 Row 2:
 ──────
 thread_name: clickhouse
-thread_id:   3449500 -- 3.45 million
+thread_id:   3608944 -- 3.61 million
 symbols:     ['','','','read','DB::ReadBufferFromFileDescriptor::readImpl(char*, unsigned long, unsigned long, unsigned long) const','DB::ReadBufferFromFileDescriptor::nextImpl()','DB::ReadBuffer::next()','SignalListener::run()']
 
 Row 3:
 ──────
-thread_name: AsyncLogger
-thread_id:   3449501 -- 3.45 million
-symbols:     ['','','','pthread_cond_wait','std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&)','DB::AsyncLogMessageQueue::waitDequeueMessage()','DB::OwnAsyncSplitChannel::runChannel(unsigned long)','Poco::ThreadImpl::runnableEntry(void*)']
+thread_name: Collector
+thread_id:   3608947 -- 3.61 million
+symbols:     ['','','','pthread_cond_wait','std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&)','DB::ParallelFormattingOutputFormat::collectorThreadFunction(std::__1::shared_ptr<DB::ThreadGroup> const&)','ThreadFromGlobalPoolImpl<true, true>::ThreadFromGlobalPoolImpl<DB::ParallelFormattingOutputFormat::ParallelFormattingOutputFormat(DB::ParallelFormattingOutputFormat::Params)::\'lambda\'()>(DB::ParallelFormattingOutputFormat::ParallelFormattingOutputFormat(DB::ParallelFormattingOutputFormat::Params)::\'lambda\'()&&)::\'lambda\'()::operator()()','ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker()']
 
 Row 4:
 ──────
-thread_name: Collector
-thread_id:   3449502 -- 3.45 million
-symbols:     ['','','','pthread_cond_wait','std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&)','DB::ParallelFormattingOutputFormat::collectorThreadFunction(std::__1::shared_ptr<DB::ThreadGroup> const&)','ThreadFromGlobalPoolImpl<true, true>::ThreadFromGlobalPoolImpl<DB::ParallelFormattingOutputFormat::ParallelFormattingOutputFormat(DB::ParallelFormattingOutputFormat::Params)::\'lambda\'()>(DB::ParallelFormattingOutputFormat::ParallelFormattingOutputFormat(DB::ParallelFormattingOutputFormat::Params)::\'lambda\'()&&)::\'lambda\'()::operator()()','ThreadPoolImpl<std::__1::thread>::ThreadFromThreadPool::worker()']
-
-Row 5:
-──────
 thread_name: QueryPullPipeEx
-thread_id:   3449503 -- 3.45 million
+thread_id:   3608948 -- 3.61 million
 symbols:     ['syscall','DB::(anonymous namespace)::StackTraceSource::generate()','DB::ISource::tryGenerate()','DB::ISource::work()','DB::ExecutionThreadContext::executeTask()','DB::PipelineExecutor::executeStepImpl(unsigned long, DB::IAcquiredSlot*, std::__1::atomic<bool>*)','DB::PipelineExecutor::executeImpl(unsigned long, bool)','DB::PipelineExecutor::execute(unsigned long, bool)']

@@ -11,9 +11,6 @@ if [[ -n "${REPOS_SUBMODULE_DEPTH:-}" ]]; then
 fi
 
 git submodule sync --recursive
-git submodule update --init --recursive --jobs "$jobs" "${depth_arg[@]}" -- \
-  repos/source/ClickHouse-v26.3.10.62-lts \
-  repos/source/oceanbase-v4.5.0_CE \
-  repos/source/obstack-master
+git submodule update --init --recursive --jobs "$jobs" "${depth_arg[@]}"
 
 ./scripts/validate_repos.sh
