@@ -3,7 +3,8 @@ set -euo pipefail
 
 COMMAND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCHEME_DIR="$(cd "${COMMAND_DIR}/.." && pwd)"
-TARGET="${SCHEME_DIR}/minimal_impl/build/profile_target_fp"
+REPO_ROOT="$(cd "${SCHEME_DIR}/../.." && pwd)"
+TARGET="${REPO_ROOT}/shared/ebpf/profile_target/build/profile_target_fp"
 OUT="${COMMAND_DIR}/bpftrace_offcpu.out"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT

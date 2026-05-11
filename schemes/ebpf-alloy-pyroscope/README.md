@@ -1,4 +1,4 @@
-# ebpf-industry-profiler
+# ebpf-alloy-pyroscope
 
 ## What This Verifies
 
@@ -41,7 +41,20 @@ internal/component/pyroscope/ebpf/ebpf_linux.go:289 checkTraceFS
     -> internal/component/pyroscope/ebpf/metrics.go:24 newMetrics
       -> internal/component/pyroscope/ebpf/metrics.go:38-52 defines pyroscope_ebpf_pprofs_total, pprofs_dropped_total, pprof_bytes_total, pprof_samples_total
 
-Local fixture path:
+Shared fixture path:
+shared/ebpf/profile_target/profile_target.cpp:54 cpu_worker
+  -> shared/ebpf/profile_target/profile_target.cpp:50 target_level_one
+    -> shared/ebpf/profile_target/profile_target.cpp:46 target_level_two
+      -> shared/ebpf/profile_target/profile_target.cpp:42 target_level_three
+        -> shared/ebpf/profile_target/profile_target.cpp:32 target_leaf
+          -> sampled profile data sent by Alloy/Pyroscope
+
+shared/ebpf/profile_target/profile_target.cpp:63 sleep_worker
+shared/ebpf/profile_target/profile_target.cpp:70 mutex_block_worker
+  -> printed in target thread inventory
+  -> boundary: profile delivery does not prove all sleeping/blocked current stacks
+
+Local scheme path:
 commands/alloy_pyroscope.sh:38-47 start or reuse local Pyroscope receiver
   -> commands/alloy_pyroscope.sh:49-51 start controlled target process
     -> commands/alloy_pyroscope.sh:54-58 render and run Alloy config
@@ -49,30 +62,18 @@ commands/alloy_pyroscope.sh:38-47 start or reuse local Pyroscope receiver
         -> commands/pyroscope_ebpf.alloy.template:17 forward_to pyroscope.write.local.receiver
           -> commands/alloy_pyroscope.sh:63-66 scrape Alloy/Pyroscope readiness and metrics
             -> commands/alloy_pyroscope.sh:68-85 writes commands/alloy_pyroscope.out
-
-minimal_impl/profile_target.cpp:54 cpu_worker
-  -> minimal_impl/profile_target.cpp:50 target_level_one
-    -> minimal_impl/profile_target.cpp:46 target_level_two
-      -> minimal_impl/profile_target.cpp:42 target_level_three
-        -> minimal_impl/profile_target.cpp:32 target_leaf
-          -> sampled profile data sent by Alloy/Pyroscope
-
-minimal_impl/profile_target.cpp:63 sleep_worker
-minimal_impl/profile_target.cpp:70 mutex_block_worker
-  -> printed in target thread inventory
-  -> boundary: profile delivery does not prove all sleeping/blocked current stacks
 ```
 
 ## Run
 
 ```bash
-just ebpf-industry-profiler
+just ebpf-alloy-pyroscope
 ```
 
 From a separate worktree, point to an already-created VM helper if needed:
 
 ```bash
-STACKTRACE_VM_SSH=/path/to/main/vm/ubuntu-24.04/ssh.sh just ebpf-industry-profiler
+STACKTRACE_VM_SSH=/path/to/main/vm/ubuntu-24.04/ssh.sh just ebpf-alloy-pyroscope
 ```
 
 ## Inputs / Outputs
@@ -81,11 +82,11 @@ STACKTRACE_VM_SSH=/path/to/main/vm/ubuntu-24.04/ssh.sh just ebpf-industry-profil
 | --- | --- | --- |
 | `commands/alloy_pyroscope.sh` | `commands/alloy_pyroscope.out` | Alloy/Pyroscope eBPF profile delivery metrics and boundary evidence. |
 | `commands/pyroscope_ebpf.alloy.template` | included in `commands/alloy_pyroscope.out` | Alloy config proving the eBPF component and write receiver path. |
-| `minimal_impl/profile_target.cpp` | `minimal_impl/profile_target.out` | controlled target thread inventory. |
+| `shared/ebpf/profile_target/profile_target.cpp` | `minimal_impl/profile_target.out` | controlled shared target thread inventory. |
 
 ## Minimal Impl
 
-`minimal_impl/` keeps the same controlled target shape as `ebpf-perf-bpftrace`: CPU-running workers, sleeping workers, mutex-blocked workers, and printed TIDs.
+`minimal_impl/` uses the shared target in `shared/ebpf/profile_target/`, the same controlled target shape as `ebpf-perf-bpftrace`: CPU-running workers, sleeping workers, mutex-blocked workers, and printed TIDs.
 
 The profiler route is accepted only with this conclusion:
 

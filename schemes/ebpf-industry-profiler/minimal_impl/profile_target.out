@@ -1,8 +1,0 @@
-pid=7637 main_tid=7637 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=2
-thread role=cpu id=0 tid=7638
-thread role=cpu id=1 tid=7639
-thread role=sleep id=0 tid=7640
-thread role=sleep id=1 tid=7641
-thread role=mutex_blocked id=0 tid=7642
-thread role=mutex_blocked id=1 tid=7643
-sink=8333812611907016751

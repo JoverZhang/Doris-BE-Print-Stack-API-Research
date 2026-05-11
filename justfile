@@ -28,8 +28,8 @@ ob-open-obstack-ptrace:
 ebpf-perf-bpftrace:
     ./schemes/ebpf-perf-bpftrace/run.sh
 
-ebpf-industry-profiler:
-    ./schemes/ebpf-industry-profiler/run.sh
+ebpf-alloy-pyroscope:
+    ./schemes/ebpf-alloy-pyroscope/run.sh
 
 all-phase1:
     just ck-system-stack-trace
@@ -37,7 +37,7 @@ all-phase1:
     just ob-ocp-obstack
     just ob-open-obstack-ptrace
     just ebpf-perf-bpftrace
-    just ebpf-industry-profiler
+    just ebpf-alloy-pyroscope
 
 vm-create:
     ./vm/ubuntu-24.04/create.sh

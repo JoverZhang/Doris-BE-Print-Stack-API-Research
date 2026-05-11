@@ -1,6 +1,8 @@
 # Minimal Impl
 
-This is the controlled source target used by the perf/bpftrace scheme.
+This is the controlled source target entry used by the perf/bpftrace scheme.
+The actual C++ fixture lives in `../../../shared/ebpf/profile_target/` so both
+eBPF schemes use the same thread inventory.
 
 It preserves the nodes needed by the Source Trace:
 

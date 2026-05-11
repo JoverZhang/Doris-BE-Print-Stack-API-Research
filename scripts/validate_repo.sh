@@ -22,7 +22,7 @@ schemes=(
   ob-ocp-obstack
   ob-open-obstack-ptrace
   ebpf-perf-bpftrace
-  ebpf-industry-profiler
+  ebpf-alloy-pyroscope
 )
 
 for path in "${required[@]}"; do

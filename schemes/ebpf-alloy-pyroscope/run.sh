@@ -13,12 +13,12 @@ if [[ "${STACKTRACE_SCHEME_IN_VM:-0}" != "1" ]]; then
     exit 2
   fi
 
-  tar -C "${REPO_ROOT}" -czf - schemes/ebpf-industry-profiler |
+  tar -C "${REPO_ROOT}" -czf - schemes/ebpf-alloy-pyroscope shared/ebpf/profile_target |
     "${VM_SSH}" "mkdir -p '${VM_REPO}' && tar -C '${VM_REPO}' -xzf -"
 
-  "${VM_SSH}" "cd '${VM_REPO}' && STACKTRACE_SCHEME_IN_VM=1 schemes/ebpf-industry-profiler/run.sh"
+  "${VM_SSH}" "cd '${VM_REPO}' && STACKTRACE_SCHEME_IN_VM=1 schemes/ebpf-alloy-pyroscope/run.sh"
 
-  "${VM_SSH}" "cd '${VM_REPO}' && tar -czf - schemes/ebpf-industry-profiler/commands/*.out schemes/ebpf-industry-profiler/minimal_impl/profile_target.out" |
+  "${VM_SSH}" "cd '${VM_REPO}' && tar -czf - schemes/ebpf-alloy-pyroscope/commands/*.out schemes/ebpf-alloy-pyroscope/minimal_impl/profile_target.out" |
     tar -C "${REPO_ROOT}" -xzf -
   exit 0
 fi

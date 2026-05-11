@@ -2,57 +2,57 @@ command=perf record -F 99 -e cpu-clock:u --call-graph dwarf,8192 -- profile_targ
 status=PASS
 expected_worker_threads=6
 sample_count=1186
-sampled_tids=7335 7336
+sampled_tids=2652 2653
 sampled_tid_count=2
 all_native_threads=no
 live_api_fit=no
 
 target_threads:
-pid=7333 main_tid=7333 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=6
-thread role=cpu id=0 tid=7335
-thread role=sleep id=0 tid=7337
-thread role=cpu id=1 tid=7336
-thread role=mutex_blocked id=0 tid=7339
-thread role=mutex_blocked id=1 tid=7340
-thread role=sleep id=1 tid=7338
-sink=14228271400135135109
+pid=2650 main_tid=2650 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=6
+thread role=cpu id=0 tid=2652
+thread role=cpu id=1 tid=2653
+thread role=sleep id=0 tid=2654
+thread role=mutex_blocked id=0 tid=2656
+thread role=mutex_blocked id=1 tid=2657
+thread role=sleep id=1 tid=2655
+sink=15038234743671141196
 
 first_perf_sample:
-profile_target_    7335  3683.300431:   10101010 cpu-clock:u:
-	    79c6d81025c6 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
-	    6309d987aac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abbc (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abdc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abfc (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987ae91 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    79c6d7eecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
-	    79c6d7a9caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
-	    79c6d7b29c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+profile_target_    2652   253.965118:   10101010 cpu-clock:u:
+	    7a0e9b7f22f6 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    63fdb223dac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbbc (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbdc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbfc (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223de91 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    7a0e9b4ecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    7a0e9b09caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    7a0e9b129c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
 
-profile_target_    7336  3683.300492:   10101010 cpu-clock:u:
-	    79c6d81022f1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
-	    6309d987aac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abbc (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abdc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abfc (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987ae91 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    79c6d7eecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
-	    79c6d7a9caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
-	    79c6d7b29c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+profile_target_    2653   253.965150:   10101010 cpu-clock:u:
+	    7a0e9b7f25ba [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    63fdb223dac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbbc (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbdc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbfc (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223de91 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    7a0e9b4ecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    7a0e9b09caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    7a0e9b129c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
 
-profile_target_    7335  3683.310531:   10101010 cpu-clock:u:
-	    79c6d8102af1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
-	    6309d987aae2 (anonymous namespace)::target_leaf(unsigned long)+0x92 (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abbc (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abdc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987abfc (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    6309d987ae91 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
-	    79c6d7eecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
-	    79c6d7a9caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
-	    79c6d7b29c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+profile_target_    2652   253.975211:   10101010 cpu-clock:u:
+	    7a0e9b7f25c6 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    63fdb223dac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbbc (anonymous namespace)::target_level_three(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbdc (anonymous namespace)::target_level_two(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223dbfc (anonymous namespace)::target_level_one(unsigned long)+0xc (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    63fdb223de91 (anonymous namespace)::cpu_worker(int)+0x31 (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
+	    7a0e9b4ecdb3 [unknown] (/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.33)
+	    7a0e9b09caa3 [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
+	    7a0e9b129c6b [unknown] (/usr/lib/x86_64-linux-gnu/libc.so.6)
 
-profile_target_    7336  3683.310593:   10101010 cpu-clock:u:
-	    79c6d81025b4 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
-	    6309d987aac2 (anonymous namespace)::target_leaf(unsigned long)+0x72 (/home/repro/stacktrace-research-repro/schemes/ebpf-perf-bpftrace/minimal_impl/build/profile_target_nofp)
+profile_target_    2653   253.975251:   10101010 cpu-clock:u:
+	    7a0e9b7f2af1 [unknown] (/usr/lib/x86_64-linux-gnu/libm.so.6)
+	    63fdb223dae2 (anonymous namespace)::target_leaf(unsigned long)+0x92 (/home/repro/stacktrace-research-repro/shared/ebpf/profile_target/build/profile_target_nofp)
 
 perf_stderr:

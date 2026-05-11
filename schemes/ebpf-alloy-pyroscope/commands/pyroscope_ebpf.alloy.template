@@ -3,7 +3,7 @@ pyroscope.write "local" {
     url = "http://127.0.0.1:4040"
   }
   external_labels = {
-    "scheme" = "ebpf-industry-profiler",
+    "scheme" = "ebpf-alloy-pyroscope",
   }
 }
 
@@ -11,7 +11,7 @@ pyroscope.ebpf "target" {
   targets = [
     {
       "__process_pid__" = "__TARGET_PID__",
-      "service_name"    = "scheme-ebpf-profile-target",
+      "service_name"    = "scheme-ebpf-shared-profile-target",
     },
   ]
   forward_to       = [pyroscope.write.local.receiver]

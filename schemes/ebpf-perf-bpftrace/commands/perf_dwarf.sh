@@ -3,7 +3,8 @@ set -euo pipefail
 
 COMMAND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCHEME_DIR="$(cd "${COMMAND_DIR}/.." && pwd)"
-TARGET="${SCHEME_DIR}/minimal_impl/build/profile_target_nofp"
+REPO_ROOT="$(cd "${SCHEME_DIR}/../.." && pwd)"
+TARGET="${REPO_ROOT}/shared/ebpf/profile_target/build/profile_target_nofp"
 OUT="${COMMAND_DIR}/perf_dwarf.out"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
@@ -36,7 +37,7 @@ sampled_tid_count="$(awk '/^profile_target_/ {print $2}' "${TMP_DIR}/perf.script
   sed -n '1,20p' "${TMP_DIR}/target.log"
   echo
   echo "first_perf_sample:"
-  sed -n '1,36p' "${TMP_DIR}/perf.script"
+  sed -n '1,36p' "${TMP_DIR}/perf.script" | sed 's/[[:space:]]\+$//'
   echo
   echo "perf_stderr:"
   sed -n '1,40p' "${TMP_DIR}/perf.stderr"
