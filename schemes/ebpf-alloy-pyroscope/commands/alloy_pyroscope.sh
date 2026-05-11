@@ -4,6 +4,7 @@ set -euo pipefail
 COMMAND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCHEME_DIR="$(cd "${COMMAND_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${SCHEME_DIR}/../.." && pwd)"
+HELPER_DIR="${SCHEME_DIR}/helpers"
 TARGET="${REPO_ROOT}/shared/ebpf/profile_target/build/profile_target_fp"
 OUT="${COMMAND_DIR}/alloy_pyroscope.out"
 TMP_DIR="$(mktemp -d)"
@@ -53,7 +54,7 @@ target_pid=$!
 sleep 1
 
 sed "s/__TARGET_PID__/${target_pid}/g" \
-  "${COMMAND_DIR}/pyroscope_ebpf.alloy.template" >"${TMP_DIR}/pyroscope_ebpf.alloy"
+  "${HELPER_DIR}/pyroscope_ebpf.alloy.template" >"${TMP_DIR}/pyroscope_ebpf.alloy"
 
 alloy run --server.http.listen-addr="${ALLOY_HTTP_ADDR}" "${TMP_DIR}/pyroscope_ebpf.alloy" \
   >"${TMP_DIR}/alloy.stdout" 2>"${TMP_DIR}/alloy.stderr" &

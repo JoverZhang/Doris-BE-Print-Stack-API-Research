@@ -83,7 +83,7 @@ OBSERVER_BIN=/work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/o
 ```
 
 The recorded runtime uses podman AlmaLinux 8 with the main repo mounted at `/work` so the source-built
-observer RUNPATH can resolve its deps cache. The direct host source-build probe is still blocked because
+observer RUNPATH can resolve its deps cache. The direct host source build remains blocked because
 Arch lacks `rpmextract.sh`; that is an environment blocker, not an OceanBase compile failure.
 `minimal_impl/` was rerun separately on the host; the podman runtime uses `SKIP_MINIMAL=1` because the
 AlmaLinux 8 base repositories used here do not provide `libunwind-devel`.
@@ -93,7 +93,6 @@ AlmaLinux 8 base repositories used here do not provide `libunwind-devel`.
 | input | output | meaning |
 | --- | --- | --- |
 | `commands/observer_kill60.sh` | `commands/observer_kill60.out` | `kill -60` run against a real source-built observer and normalized stack result. |
-| `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Current source-build environment blocker and podman probe result. |
 
 ## Evidence
 

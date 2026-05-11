@@ -9,7 +9,7 @@ REPO_ROOT="$(git -C "$SCHEME_DIR" rev-parse --show-toplevel)"
 SOURCE_DIR="${OBSTACK_SOURCE_DIR:-$REPO_ROOT/repos/source/obstack-master}"
 JOBS="${OBSTACK_BUILD_JOBS:-4}"
 
-mkdir -p commands .cache
+mkdir -p .cache
 
 if [[ ! -d "$SOURCE_DIR/.git" ]]; then
   echo "BLOCKED: obstack source submodule is unavailable at $SOURCE_DIR. Run just repos-sync." >&2
@@ -21,6 +21,13 @@ if [[ "$actual_commit" != "$COMMIT" ]]; then
   echo "unexpected obstack commit: $actual_commit, expected $COMMIT" >&2
   exit 2
 fi
+
+for candidate in "$SOURCE_DIR"/build_release/src/obstack "$SOURCE_DIR"/build*/src/obstack; do
+  if [[ -x "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    exit 0
+  fi
+done
 
 build_with_host() {
   (

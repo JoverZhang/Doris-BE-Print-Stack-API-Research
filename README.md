@@ -11,6 +11,7 @@ The active contract is:
 - each scheme has `minimal_impl/`, derived from the source trace;
 - repo-owned `minimal_impl/` and `shared/` C++ fixtures are buildable from the root CMake project, which is the clangd/VSCode debug contract;
 - research command output sits next to its input and shares the same prefix: `thread_stack.sql` -> `thread_stack.out`, `perf_fp.sh` -> `perf_fp.out`, `bpftrace_ustack.bt` -> `bpftrace_ustack.out`;
+- `build.sh` owns source build or target build work; `commands/` is only for auditable research actions and their `.out` files, while helper wrappers/config templates live under `helpers/` or `shared/`;
 - upstream source trees under `repos/source/` are tracked by git submodules, not hand-downloaded implicit state;
 - build, fetch, install, and package-manager logs are not committed as research output.
 
@@ -21,7 +22,7 @@ The active contract is:
 | yes | 1 | `ck-system-stack-trace` | ClickHouse | done | done | done | done | in_review | One ClickHouse `system.stack_trace` scheme with two source-build variants: default Build ID `1a71bc7bc6667f8d465ff4ae3cb2bfb2549b39b1` and frame-pointer-preserving Build ID `073c6b8cde9d6091654051d6c7d333928a749e22`; FP is a build-condition/backend comparison, not a second ClickHouse API. |
 | yes | 1 | `ob-observer-kill60` | OceanBase observer | done | done | done | done | in_review | Source-built `v4.5.0_CE` observer under podman AlmaLinux 8 produced a real `kill -60` stack file; direct host build remains blocked by missing `rpmextract.sh`. |
 | yes | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance done | source unavailable | not possible | done | in_review | Official `obstack 2.0.4` package collected real stacks from the source-built `v4.5.0_CE` observer; requires ptrace-capable podman runtime. |
-| yes | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | done | done | done | done | in_review | Public source commit built under podman CentOS 7; synthetic attach and real source-built observer attach both PASS. Host Arch build remains blocked by upstream deps profile support. |
+| yes | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | done | done | done | done | in_review | Public source commit built under podman CentOS 7; real source-built observer attach PASS. Host Arch build remains blocked by upstream deps profile support. |
 | yes | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |
 | yes | 1 | `ebpf-alloy-pyroscope` | Alloy/Pyroscope | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`; uses shared eBPF profile target fixture. |
 | no | later | `gperftools-stacktrace` | gperftools | not started | not started | not started | not started | deferred | Capture backend/component. |
@@ -46,6 +47,7 @@ schemes/
     commands/ or queries/
       <input>.sql|sh|bt
       <input>.out
+    helpers/                 # optional non-evidence wrappers or config templates
     variants/                # optional, for build variants inside one scheme
     minimal_impl/
       README.md

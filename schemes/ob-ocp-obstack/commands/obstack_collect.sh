@@ -10,7 +10,7 @@ observer_bin="${OBSERVER_BIN:-$REPO_ROOT/repos/source/oceanbase-v4.5.0_CE/build_
 
 if ! ob_require_executable "OCP obstack binary" "$bin"; then
   cat <<'OUT'
-Run commands/provenance_probe.sh first or set OCP_OBSTACK_BIN.
+Run schemes/ob-ocp-obstack/build.sh first or set OCP_OBSTACK_BIN.
 OUT
   exit 2
 fi
@@ -76,6 +76,7 @@ ob_require_under_repo "OBSERVER_BIN" "$observer_bin" "$REPO_ROOT" || exit 2
 
 bin_rel="$(ob_repo_relpath "$bin" "$REPO_ROOT")"
 observer_rel="$(ob_repo_relpath "$observer_bin" "$REPO_ROOT")"
+export OB_PODMAN_TIMEOUT_SECONDS="${OB_PODMAN_TIMEOUT_SECONDS:-300}"
 
 ob_podman_with_timeout ob-ocp-obstack --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}" \
   -v "$REPO_ROOT:/work" -w /work \
@@ -85,7 +86,14 @@ ob_podman_with_timeout ob-ocp-obstack --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}
   docker.io/library/almalinux:8 bash -lc '
 set -euo pipefail
 source "$OB_RUNTIME_HELPER"
-dnf install -y ncurses-compat-libs zlib libaio procps-ng file >/tmp/ocp-obstack-yum.log 2>&1
+
+describe_file() {
+  if command -v file >/dev/null 2>&1; then
+    file -b "$1"
+  else
+    printf "%s\n" "file(1) unavailable in runtime image"
+  fi
+}
 
 run_dir=/work/schemes/ob-ocp-obstack/tmp/observer-collect
 ob_prepare_observer_run_dir "$run_dir"
@@ -107,7 +115,7 @@ echo "observer_pid=$OB_OBSERVER_PID"
 echo "observer_pid_source=$OB_OBSERVER_PID_SOURCE"
 ob_print_observer_binary_metadata "$OBSERVER_BIN"
 echo "obstack_binary=$OCP_OBSTACK_BIN"
-echo "obstack_binary_file=$(file -b "$OCP_OBSTACK_BIN")"
+echo "obstack_binary_file=$(describe_file "$OCP_OBSTACK_BIN")"
 echo "podman_security=--cap-add=SYS_PTRACE --security-opt seccomp=unconfined --security-opt label=disable"
 echo "mysql_port=$OB_OBSERVER_MYSQL_PORT"
 echo "rpc_port=$OB_OBSERVER_RPC_PORT"

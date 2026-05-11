@@ -73,12 +73,12 @@ commands/perf_dwarf.sh:13 perf record -F 99 -e cpu-clock:u --call-graph dwarf,81
 commands/bpftrace_ustack.bt:1 profile:hz:49
   -> commands/bpftrace_ustack.bt:4 ustack(20)
     -> sampled on-CPU user stack aggregation for the target PID
-      -> commands/run_bpftrace_ustack.sh:26-42 writes commands/bpftrace_ustack.out
+      -> helpers/run_bpftrace_ustack.sh:27-43 writes commands/bpftrace_ustack.out
 
 commands/bpftrace_offcpu.bt:1 tracepoint:sched:sched_switch
   -> commands/bpftrace_offcpu.bt:4 ustack(20)
     -> event-based stack aggregation when matching threads leave CPU
-      -> commands/run_bpftrace_offcpu.sh:26-43 writes commands/bpftrace_offcpu.out
+      -> helpers/run_bpftrace_offcpu.sh:27-44 writes commands/bpftrace_offcpu.out
 ```
 
 ## Run

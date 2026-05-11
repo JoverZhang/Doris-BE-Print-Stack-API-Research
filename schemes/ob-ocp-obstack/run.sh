@@ -4,7 +4,8 @@ set -euo pipefail
 SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCHEME_DIR"
 
-./build.sh
+./build.sh >/dev/null
+./commands/provenance_probe.sh > commands/provenance_probe.out
 set +e
 ./commands/obstack_collect.sh > commands/obstack_collect.out
 rc=$?

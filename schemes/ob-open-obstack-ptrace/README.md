@@ -2,7 +2,7 @@
 
 ## What This Verifies
 
-Open-source `oceanbase/obstack` built from source can perform external ptrace/remote-unwind stack collection against both a synthetic target and a source-built OceanBase observer.
+Open-source `oceanbase/obstack` built from source can perform external ptrace/remote-unwind stack collection against a source-built OceanBase observer.
 
 ## Source Trace
 
@@ -54,8 +54,6 @@ just ob-open-obstack-ptrace
 
 | input | output | meaning |
 | --- | --- | --- |
-| `commands/source_build_probe.sh` | `commands/source_build_probe.out` | Source-build public `oceanbase/obstack` under podman CentOS 7; host Arch remains an explicit environment blocker. |
-| `commands/attach_synthetic.sh` | `commands/attach_synthetic.out` | Attach to a controlled synthetic target. |
 | `commands/attach_observer.sh` | `commands/attach_observer.out` | Attach to the source-built OceanBase observer from `ob-observer-kill60`. |
 
 ## Minimal Impl
@@ -67,7 +65,7 @@ It omits BFD/LLVM symbolization, aggregation, CLI options, RPM packaging, and an
 ## Evidence Notes
 
 - Source commit: `d91edd6d882a33b69164f8d3e809092408da3a33`; no release tag is published.
-- Source build: PASS under podman `centos:7`; binary BuildID `3565e1a7959d74b2864ddfcd13bdb7cc9e0db659`.
+- Source build: `build.sh` builds the public source under podman `centos:7` when the binary is missing; current binary BuildID `3565e1a7959d74b2864ddfcd13bdb7cc9e0db659`.
 - Build workaround: upstream CMake leaves `REVISION` empty when `git log` runs from the build directory, so the reproducible build command passes `CXX_DEFINES=-DREVISION=\"d91edd6d882a33b69164f8d3e809092408da3a33\"` to `make`. Upstream source files are not patched.
-- Runtime: synthetic attach uses podman `centos:7`; real observer attach uses podman `almalinux:8` with `SYS_PTRACE` and `seccomp=unconfined`.
+- Runtime: real observer attach uses podman `almalinux:8` with `SYS_PTRACE` and `seccomp=unconfined`.
 - Real observer attach output: 379 tasks, 4,247 lines, 513,661 bytes, `ptrace_denied_lines=0`, symbolized stack sample present.

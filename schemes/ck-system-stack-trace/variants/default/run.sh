@@ -10,13 +10,13 @@ CLICKHOUSE_BIN="${CLICKHOUSE_BIN:-}"
 if [[ -z "$CLICKHOUSE_BIN" ]]; then
   if ! CLICKHOUSE_BIN="$(./build.sh | tail -n 1)"; then
     cat > queries/thread_stack.out <<'EOF'
-BLOCKED: source-built ClickHouse binary was not produced. See ../commands/source_build_probe.out.
+BLOCKED: source-built ClickHouse binary was not produced. Run variants/default/build.sh and check stderr.
 EOF
     cat > queries/thread_stack_symbols.out <<'EOF'
-BLOCKED: source-built ClickHouse binary was not produced. See ../commands/source_build_probe.out.
+BLOCKED: source-built ClickHouse binary was not produced. Run variants/default/build.sh and check stderr.
 EOF
     cat > queries/thread_stack_fileline.out <<'EOF'
-BLOCKED: source-built ClickHouse binary was not produced. See ../commands/source_build_probe.out.
+BLOCKED: source-built ClickHouse binary was not produced. Run variants/default/build.sh and check stderr.
 EOF
     ./minimal_impl/run.sh
     echo "BLOCKED: source-built ClickHouse binary was not produced. Default minimal impl output was refreshed." >&2

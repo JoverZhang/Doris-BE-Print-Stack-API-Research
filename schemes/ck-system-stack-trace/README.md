@@ -60,12 +60,10 @@ The Rust nightly is required by the ClickHouse source tree through `contrib/corr
 
 | input | output | meaning |
 | --- | --- | --- |
-| `variants/default/commands/source_build_probe.sh` | `variants/default/commands/source_build_probe.out` | Default source-build preflight: source tree, submodule, and Rust nightly requirements. |
 | `variants/default/commands/clickhouse_metadata.sh` | `variants/default/commands/clickhouse_metadata.out` | Default source-built binary version and build-id metadata. |
 | `variants/default/queries/thread_stack.sql` | `variants/default/queries/thread_stack.out` | Raw `system.stack_trace` query output from the default source build. |
 | `variants/default/queries/thread_stack_symbols.sql` | `variants/default/queries/thread_stack_symbols.out` | Symbolized frames via `addressToSymbol()` and `demangle()` from the default source build. |
 | `variants/default/queries/thread_stack_fileline.sql` | `variants/default/queries/thread_stack_fileline.out` | File/line output from the default source build with matching debug info. |
-| `variants/fp-build/commands/source_build_probe.sh` | `variants/fp-build/commands/source_build_probe.out` | Frame-pointer source-build preflight. |
 | `variants/fp-build/commands/clickhouse_metadata.sh` | `variants/fp-build/commands/clickhouse_metadata.out` | Frame-pointer source-built binary version and build-id metadata. |
 | `variants/fp-build/queries/thread_stack.sql` | `variants/fp-build/queries/thread_stack.out` | Raw `system.stack_trace` query output from the frame-pointer source build. |
 | `variants/fp-build/queries/thread_stack_fileline.sql` | `variants/fp-build/queries/thread_stack_fileline.out` | File/line output from the frame-pointer source build. |

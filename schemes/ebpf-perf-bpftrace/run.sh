@@ -27,5 +27,5 @@ fi
 "${SCRIPT_DIR}/minimal_impl/run.sh" >/dev/null
 "${SCRIPT_DIR}/commands/perf_fp.sh"
 "${SCRIPT_DIR}/commands/perf_dwarf.sh"
-"${SCRIPT_DIR}/commands/run_bpftrace_ustack.sh"
-"${SCRIPT_DIR}/commands/run_bpftrace_offcpu.sh"
+"${SCRIPT_DIR}/helpers/run_bpftrace_ustack.sh"
+"${SCRIPT_DIR}/helpers/run_bpftrace_offcpu.sh"

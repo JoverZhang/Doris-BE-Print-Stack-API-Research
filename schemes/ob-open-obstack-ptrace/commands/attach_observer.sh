@@ -9,7 +9,7 @@ observer_bin="${OBSERVER_BIN:-$REPO_ROOT/repos/source/oceanbase-v4.5.0_CE/build_
 
 if ! ob_require_executable "source-built open obstack binary" "$obstack_bin"; then
   cat <<'OUT'
-See commands/source_build_probe.out for the current source-build blocker.
+Run schemes/ob-open-obstack-ptrace/build.sh first or set OBSTACK_BIN.
 OUT
   exit 2
 fi
@@ -26,6 +26,7 @@ ob_require_under_repo "OBSERVER_BIN" "$observer_bin" "$REPO_ROOT" || exit 2
 
 obstack_rel="$(ob_repo_relpath "$obstack_bin" "$REPO_ROOT")"
 observer_rel="$(ob_repo_relpath "$observer_bin" "$REPO_ROOT")"
+export OB_PODMAN_TIMEOUT_SECONDS="${OB_PODMAN_TIMEOUT_SECONDS:-300}"
 
 ob_podman_with_timeout ob-open-obstack --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}" \
   -v "$REPO_ROOT:/work" -w /work \
@@ -36,7 +37,15 @@ ob_podman_with_timeout ob-open-obstack --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]
   docker.io/library/almalinux:8 bash -lc '
 set -euo pipefail
 source "$OB_RUNTIME_HELPER"
-dnf install -y ncurses-compat-libs zlib libaio procps-ng file >/tmp/open-obstack-observer-yum.log 2>&1
+dnf install -y --setopt=timeout=20 --setopt=retries=1 ncurses-compat-libs >/tmp/open-obstack-observer-yum.log 2>&1
+
+describe_file() {
+  if command -v file >/dev/null 2>&1; then
+    file -b "$1"
+  else
+    printf "%s\n" "file(1) unavailable in runtime image"
+  fi
+}
 
 run_dir=/work/schemes/ob-open-obstack-ptrace/tmp/observer-attach
 ob_prepare_observer_run_dir "$run_dir"
@@ -62,9 +71,9 @@ echo "command=$OBSTACK_BIN <source_built_observer_pid>"
 echo "observer_pid=$OB_OBSERVER_PID"
 echo "observer_pid_source=$OB_OBSERVER_PID_SOURCE"
 echo "observer_binary=$OBSERVER_BIN"
-echo "observer_binary_file=$(file -b "$OBSERVER_BIN")"
+echo "observer_binary_file=$(describe_file "$OBSERVER_BIN")"
 echo "obstack_binary=$OBSTACK_BIN"
-echo "obstack_binary_file=$(file -b "$OBSTACK_BIN")"
+echo "obstack_binary_file=$(describe_file "$OBSTACK_BIN")"
 echo "runtime=podman almalinux:8 with SYS_PTRACE and seccomp=unconfined"
 echo "exit_code=$rc"
 echo "obstack_output_bytes=$(wc -c <"$raw")"

@@ -58,8 +58,8 @@ Local scheme path:
 commands/alloy_pyroscope.sh:38-47 start or reuse local Pyroscope receiver
   -> commands/alloy_pyroscope.sh:49-51 start controlled target process
     -> commands/alloy_pyroscope.sh:54-58 render and run Alloy config
-      -> commands/pyroscope_ebpf.alloy.template:10 pyroscope.ebpf "target"
-        -> commands/pyroscope_ebpf.alloy.template:17 forward_to pyroscope.write.local.receiver
+      -> helpers/pyroscope_ebpf.alloy.template:10 pyroscope.ebpf "target"
+        -> helpers/pyroscope_ebpf.alloy.template:17 forward_to pyroscope.write.local.receiver
           -> commands/alloy_pyroscope.sh:63-66 scrape Alloy/Pyroscope readiness and metrics
             -> commands/alloy_pyroscope.sh:68-85 writes commands/alloy_pyroscope.out
 ```
@@ -81,7 +81,6 @@ STACKTRACE_VM_SSH=/path/to/main/vm/ubuntu-24.04/ssh.sh just ebpf-alloy-pyroscope
 | input | output | meaning |
 | --- | --- | --- |
 | `commands/alloy_pyroscope.sh` | `commands/alloy_pyroscope.out` | Alloy/Pyroscope eBPF profile delivery metrics and boundary evidence. |
-| `commands/pyroscope_ebpf.alloy.template` | included in `commands/alloy_pyroscope.out` | Alloy config proving the eBPF component and write receiver path. |
 | `shared/ebpf/profile_target/profile_target.cpp` | `minimal_impl/profile_target.out` | controlled shared target thread inventory. |
 
 ## Minimal Impl

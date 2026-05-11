@@ -9,7 +9,7 @@ TAG="${OCEANBASE_TAG:-v4.5.0_CE}"
 COMMIT="${OCEANBASE_COMMIT:-0e8d5ad012baf0953b2032a35a88bdf8886e9a7a}"
 SOURCE_DIR="${OCEANBASE_SOURCE_DIR:-$REPO_ROOT/repos/source/oceanbase-$TAG}"
 
-mkdir -p commands .cache
+mkdir -p .cache
 
 for observer_bin in \
   "$SOURCE_DIR/build_release/src/observer/observer" \
@@ -22,7 +22,6 @@ do
 done
 
 if [[ ! -d "$SOURCE_DIR/.git" ]]; then
-  ./commands/source_build_probe.sh > commands/source_build_probe.out
   echo "BLOCKED: OceanBase source submodule is unavailable at $SOURCE_DIR. Run just repos-sync." >&2
   exit 2
 fi
@@ -34,7 +33,6 @@ if [[ "$actual_commit" != "$COMMIT" ]]; then
 fi
 
 if [[ "${OB_FULL_SOURCE_BUILD:-0}" != "1" ]]; then
-  ./commands/source_build_probe.sh > commands/source_build_probe.out
   echo "BLOCKED: source-built observer binary is missing. Set OB_FULL_SOURCE_BUILD=1 after provisioning deps." >&2
   exit 2
 fi

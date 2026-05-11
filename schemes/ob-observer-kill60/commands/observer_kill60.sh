@@ -9,8 +9,8 @@ cd "$SCHEME_DIR"
 observer="${OBSERVER_BIN:-}"
 if ! ob_require_executable "source-built observer binary" "$observer"; then
   cat <<'OUT'
-See commands/source_build_probe.out for the current source-build blocker.
-No release binary or synthetic target is used for this real-observer output.
+Run schemes/ob-observer-kill60/build.sh first or set OBSERVER_BIN.
+No release binary is used for this real-observer output.
 OUT
   exit 2
 fi

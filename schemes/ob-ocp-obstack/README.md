@@ -68,6 +68,9 @@ just ob-ocp-obstack
 | `commands/provenance_probe.sh` | `commands/provenance_probe.out` | OCP package provenance, version, help, and binary string evidence. |
 | `commands/obstack_collect.sh` | `commands/obstack_collect.out` | OCP tool behavior against the source-built real observer from task #29. |
 
+`build.sh` only prepares the OCP binary cache through `helpers/prepare_obstack.sh`;
+it does not write research `.out` files.
+
 ## Minimal Impl
 
 No source-derived minimal implementation is possible for the OCP package without source. The open-source obstack ptrace minimal implementation in `../ob-open-obstack-ptrace/minimal_impl/` is related behavior evidence, not OCP implementation evidence.

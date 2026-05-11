@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-COMMAND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCHEME_DIR="$(cd "${COMMAND_DIR}/.." && pwd)"
+HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCHEME_DIR="$(cd "${HELPER_DIR}/.." && pwd)"
+COMMAND_DIR="${SCHEME_DIR}/commands"
 REPO_ROOT="$(cd "${SCHEME_DIR}/../.." && pwd)"
 TARGET="${REPO_ROOT}/shared/ebpf/profile_target/build/profile_target_fp"
 OUT="${COMMAND_DIR}/bpftrace_offcpu.out"

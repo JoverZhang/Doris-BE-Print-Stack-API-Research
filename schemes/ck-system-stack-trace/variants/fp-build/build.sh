@@ -17,9 +17,7 @@ if [[ -x "$BUILD_DIR/programs/clickhouse" ]]; then
 fi
 
 if [[ ! -d "$SRC_DIR/.git" ]]; then
-  "$VARIANT_DIR/commands/source_build_probe.sh" > "$VARIANT_DIR/commands/source_build_probe.out"
-  cat "$VARIANT_DIR/commands/source_build_probe.out" >&2
-  echo "BLOCKED: ClickHouse source tree is unavailable at $SRC_DIR." >&2
+  echo "BLOCKED: ClickHouse source tree is unavailable at $SRC_DIR. Run just repos-sync." >&2
   exit 2
 fi
 

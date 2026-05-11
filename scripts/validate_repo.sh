@@ -59,4 +59,15 @@ if git ls-files | grep -E '(^|/)outputs/|case\.yaml$|matrix\.csv$|^templates/|^r
   exit 1
 fi
 
+bad_command_files="$(
+  find schemes -path '*/commands/*' -type f \
+    \( -name 'source_build_probe.*' -o -name 'attach_synthetic.*' -o -name 'run_bpftrace_*.sh' -o -name '*.template' \) \
+    -print
+)"
+if [[ -n "$bad_command_files" ]]; then
+  echo "commands/ contains build probes or helper-only files" >&2
+  printf '%s\n' "$bad_command_files" >&2
+  exit 1
+fi
+
 echo "new contract skeleton ok"
