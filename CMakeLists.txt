@@ -60,6 +60,16 @@ target_link_options(ck_fp_vs_unwind_no_fp PRIVATE -rdynamic -no-pie)
 target_link_libraries(ck_fp_vs_unwind_no_fp PRIVATE unwind unwind-x86_64 dl)
 
 repo_executable(
+  inprocess_minidump
+  schemes/inprocess-minidump/minimal_impl/inprocess_minidump.cpp
+  schemes/inprocess-minidump/minimal_impl/build
+  inprocess_minidump
+)
+target_compile_options(inprocess_minidump PRIVATE -O2 -g)
+target_link_options(inprocess_minidump PRIVATE -rdynamic)
+target_link_libraries(inprocess_minidump PRIVATE unwind unwind-x86_64 dl Threads::Threads)
+
+repo_executable(
   ob_observer_kill60_minimal
   schemes/ob-observer-kill60/minimal_impl/observer_kill60_minimal.cpp
   schemes/ob-observer-kill60/minimal_impl/build
@@ -142,6 +152,7 @@ add_custom_target(
     ck_directed_signal_unwind
     ck_fp_vs_unwind_fp
     ck_fp_vs_unwind_no_fp
+    inprocess_minidump
     ob_observer_kill60_minimal
     ob_open_obstack_target
     ob_open_obstack_ptrace_remote_unwind

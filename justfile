@@ -23,6 +23,7 @@ all-minimal:
     just cmake-build
     ./schemes/ck-system-stack-trace/minimal_impl/default/run.sh
     ./schemes/ck-system-stack-trace/minimal_impl/fp-build/run.sh
+    ./schemes/inprocess-minidump/minimal_impl/run.sh
     ./schemes/ob-observer-kill60/minimal_impl/run.sh
     ./schemes/ob-open-obstack-ptrace/minimal_impl/run.sh
     ./schemes/ebpf-perf-bpftrace/minimal_impl/run.sh
@@ -33,6 +34,9 @@ risk-unwind-without-phdr-cache:
 
 ck-system-stack-trace:
     ./schemes/ck-system-stack-trace/run.sh
+
+inprocess-minidump:
+    ./schemes/inprocess-minidump/run.sh
 
 ob-observer-kill60:
     ./schemes/ob-observer-kill60/run.sh
@@ -53,6 +57,7 @@ all-evidence:
       exit 2; \
     fi
     just ck-system-stack-trace
+    just inprocess-minidump
     just ob-observer-kill60
     just ob-open-obstack-ptrace
     just ebpf-perf-bpftrace

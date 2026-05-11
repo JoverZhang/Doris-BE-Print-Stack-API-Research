@@ -29,6 +29,7 @@ required=(
 
 schemes=(
   ck-system-stack-trace
+  inprocess-minidump
   ob-observer-kill60
   ob-open-obstack-ptrace
   ebpf-perf-bpftrace
