@@ -2,23 +2,24 @@
 set -euo pipefail
 
 SCHEME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCHEME_DIR" rev-parse --show-toplevel)"
 TAG="${CLICKHOUSE_TAG:-v26.3.10.62-lts}"
 COMMIT="${CLICKHOUSE_COMMIT:-e1c11930c28196f954a93287e43c1aa112c8c607}"
-SRC_DIR="${CLICKHOUSE_SRC_DIR:-$SCHEME_DIR/.cache/ClickHouse-$TAG}"
+SRC_DIR="${CLICKHOUSE_SRC_DIR:-$REPO_ROOT/repos/source/ClickHouse-$TAG}"
 BUILD_DIR="${CLICKHOUSE_BUILD_DIR:-$SCHEME_DIR/build/default}"
 JOBS="${CLICKHOUSE_BUILD_JOBS:-$(nproc)}"
 RUST_TOOLCHAIN="${CLICKHOUSE_RUST_TOOLCHAIN:-nightly-2025-07-07}"
 
-if [[ "${CLICKHOUSE_ATTEMPT_SOURCE_BUILD:-0}" != "1" ]]; then
-  "$SCHEME_DIR/commands/source_build_probe.sh" > "$SCHEME_DIR/commands/source_build_probe.out"
-  cat "$SCHEME_DIR/commands/source_build_probe.out" >&2
-  echo "BLOCKED: set CLICKHOUSE_ATTEMPT_SOURCE_BUILD=1 to retry the long source build explicitly." >&2
-  exit 2
+if [[ -x "$BUILD_DIR/programs/clickhouse" ]]; then
+  echo "$BUILD_DIR/programs/clickhouse"
+  exit 0
 fi
 
 if [[ ! -d "$SRC_DIR/.git" ]]; then
-  mkdir -p "$(dirname "$SRC_DIR")"
-  git clone --depth 1 --branch "$TAG" https://github.com/ClickHouse/ClickHouse.git "$SRC_DIR"
+  "$SCHEME_DIR/commands/source_build_probe.sh" > "$SCHEME_DIR/commands/source_build_probe.out"
+  cat "$SCHEME_DIR/commands/source_build_probe.out" >&2
+  echo "BLOCKED: ClickHouse source tree is unavailable at $SRC_DIR." >&2
+  exit 2
 fi
 
 actual_commit="$(git -C "$SRC_DIR" rev-parse HEAD)"

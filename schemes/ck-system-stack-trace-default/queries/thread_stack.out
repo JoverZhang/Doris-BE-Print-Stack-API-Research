@@ -1,8 +1,8 @@
 Row 1:
 ──────
 thread_name:      clickhouse
-thread_id:        2305827 -- 2.31 million
-query_id:         0cd9b629-4659-4f77-ae3f-5ef22355b95b
+thread_id:        2666662 -- 2.67 million
+query_id:         412e08a1-694f-4e1b-a275-3fc2b94996c4
 trace_len:        25
 trace_head:       [651059,603036,603788,614504,668548837,333557925,505235859,505232853]
 untracked_memory: 205192
@@ -10,7 +10,7 @@ untracked_memory: 205192
 Row 2:
 ──────
 thread_name:      clickhouse
-thread_id:        2305836 -- 2.31 million
+thread_id:        2666665 -- 2.67 million
 query_id:
 trace_len:        11
 trace_head:       [651059,603036,603108,1102638,334237064,334237792,334228989,335619874]
@@ -19,8 +19,8 @@ untracked_memory: 0
 Row 3:
 ──────
 thread_name:      Collector
-thread_id:        2305837 -- 2.31 million
-query_id:         0cd9b629-4659-4f77-ae3f-5ef22355b95b
+thread_id:        2666666 -- 2.67 million
+query_id:         412e08a1-694f-4e1b-a275-3fc2b94996c4
 trace_len:        11
 trace_head:       [651059,603036,603788,613982,668548687,506862558,504440692,334846122]
 untracked_memory: 704
@@ -28,8 +28,8 @@ untracked_memory: 704
 Row 4:
 ──────
 thread_name:      QueryPullPipeEx
-thread_id:        2305838 -- 2.31 million
-query_id:         0cd9b629-4659-4f77-ae3f-5ef22355b95b
+thread_id:        2666667 -- 2.67 million
+query_id:         412e08a1-694f-4e1b-a275-3fc2b94996c4
 trace_len:        13
 trace_head:       [1146990,378143222,505029685,505028689,505144249,505086766,505084211,505083086]
-untracked_memory: -5024
+untracked_memory: -4960

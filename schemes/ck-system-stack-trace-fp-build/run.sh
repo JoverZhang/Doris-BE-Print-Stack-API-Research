@@ -24,7 +24,10 @@ mkdir -p tmp
 
 normalize_output() {
   local output="$1"
-  sed -i "s#${SCHEME_DIR}#<scheme>#g" "$output"
+  sed -i -E \
+    -e "s#${SCHEME_DIR}#<scheme>#g" \
+    -e 's#[^[:space:]]*/\.slock/agents/[A-Za-z0-9-]+/projects/stacktrace-research-repro[^[:space:]]*/schemes/ck-system-stack-trace-fp-build#<scheme>#g' \
+    "$output"
 }
 
 run_query() {
