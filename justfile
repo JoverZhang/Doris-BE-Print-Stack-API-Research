@@ -13,6 +13,21 @@ repos-sync:
 repos-check:
     ./scripts/validate_repos.sh
 
+cmake-configure:
+    cmake --preset debug
+
+cmake-build:
+    cmake --build --preset debug --target stacktrace_minimal_impls
+
+all-minimal:
+    just cmake-build
+    ./schemes/ck-system-stack-trace/minimal_impl/default/run.sh
+    ./schemes/ck-system-stack-trace/minimal_impl/fp-build/run.sh
+    ./schemes/ob-observer-kill60/minimal_impl/run.sh
+    ./schemes/ob-open-obstack-ptrace/minimal_impl/run.sh
+    ./schemes/ebpf-perf-bpftrace/minimal_impl/run.sh
+    ./schemes/ebpf-alloy-pyroscope/minimal_impl/run.sh
+
 ck-system-stack-trace:
     ./schemes/ck-system-stack-trace/run.sh
 
@@ -31,13 +46,23 @@ ebpf-perf-bpftrace:
 ebpf-alloy-pyroscope:
     ./schemes/ebpf-alloy-pyroscope/run.sh
 
-all-phase1:
+all-evidence:
+    @if [[ "$${RUN_HEAVY_EVIDENCE:-0}" != "1" ]]; then \
+      echo "Refusing to rerun heavyweight Phase 1 evidence by default."; \
+      echo "Use RUN_HEAVY_EVIDENCE=1 just all-evidence when you explicitly want CK/OB/eBPF project runs."; \
+      exit 2; \
+    fi
     just ck-system-stack-trace
     just ob-observer-kill60
     just ob-ocp-obstack
     just ob-open-obstack-ptrace
     just ebpf-perf-bpftrace
     just ebpf-alloy-pyroscope
+
+all-phase1:
+    @echo "all-phase1 now runs lightweight repo-owned minimal implementations only."
+    @echo "Use RUN_HEAVY_EVIDENCE=1 just all-evidence for heavyweight source-project evidence reruns."
+    just all-minimal
 
 vm-create:
     ./vm/ubuntu-24.04/create.sh

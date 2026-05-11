@@ -77,7 +77,7 @@ ob_require_under_repo "OBSERVER_BIN" "$observer_bin" "$REPO_ROOT" || exit 2
 bin_rel="$(ob_repo_relpath "$bin" "$REPO_ROOT")"
 observer_rel="$(ob_repo_relpath "$observer_bin" "$REPO_ROOT")"
 
-podman run --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}" \
+ob_podman_with_timeout ob-ocp-obstack --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}" \
   -v "$REPO_ROOT:/work" -w /work \
   -e "OCP_OBSTACK_BIN=/work/$bin_rel" \
   -e "OBSERVER_BIN=/work/$observer_rel" \

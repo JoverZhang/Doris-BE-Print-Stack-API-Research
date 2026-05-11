@@ -29,6 +29,7 @@ normalize_output() {
     -e "s#${SCHEME_DIR}#<scheme>#g" \
     -e "s#${VARIANT_DIR}#<scheme>/variants/fp-build#g" \
     -e 's#[^[:space:]]*/\.slock/agents/[A-Za-z0-9-]+/projects/stacktrace-research-repro[^[:space:]]*/schemes/ck-system-stack-trace#<scheme>#g' \
+    -e 's/[[:space:]]+$//' \
     "$output"
 }
 

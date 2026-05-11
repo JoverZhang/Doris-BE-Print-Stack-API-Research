@@ -37,7 +37,7 @@ stack_file="$(ls -1t stack."$target_pid".* 2>/dev/null | head -n 1 || true)"
     sed "s#$BASE_DIR#<minimal-dir>#g; s#$target_pid#<minimal-pid>#g" observer_kill60_minimal.program.out
     echo
     echo "maps_head:"
-    sed -n '1,12p' "$stack_file" | sed "s#$BASE_DIR#<minimal-dir>#g"
+    sed -n '1,12p' "$stack_file" | sed "s#$BASE_DIR#<minimal-dir>#g; s/[[:space:]]*$//"
     echo
     echo "thread_stack_lines:"
     grep '^tid:' "$stack_file" | sed "s#$BASE_DIR#<minimal-dir>#g"

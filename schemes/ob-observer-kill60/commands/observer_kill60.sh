@@ -23,7 +23,7 @@ if [[ "${OB_OBSERVER_KILL60_IN_PODMAN:-0}" != "1" ]]; then
   }
 
   observer_rel="$(ob_repo_relpath "$observer" "$REPO_ROOT")"
-  podman run --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}" \
+  ob_podman_with_timeout ob-kill60 --rm "${OB_PODMAN_PTRACE_SECURITY_ARGS[@]}" \
     -v "$REPO_ROOT:/work" -w /work \
     -e REPO_ROOT=/work \
     -e "OBSERVER_BIN=/work/$observer_rel" \

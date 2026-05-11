@@ -1,0 +1,8 @@
+{
+  "cmake.configurePreset": "debug",
+  "cmake.buildPreset": "debug",
+  "clangd.arguments": [
+    "--compile-commands-dir=build/cmake-debug",
+    "--query-driver=/usr/bin/c++,/usr/bin/g++,/usr/bin/clang++,/usr/bin/clang"
+  ]
+}

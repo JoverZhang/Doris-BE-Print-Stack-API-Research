@@ -2,11 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build"
-mkdir -p "${BUILD_DIR}"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+CMAKE_PRESET="${CMAKE_PRESET:-debug}"
+CMAKE_BUILD_PRESET="${CMAKE_BUILD_PRESET:-$CMAKE_PRESET}"
 
-c++ -std=c++17 -O2 -g -fno-omit-frame-pointer -pthread \
-  "${SCRIPT_DIR}/profile_target.cpp" -lm -o "${BUILD_DIR}/profile_target_fp"
-
-c++ -std=c++17 -O2 -g -fomit-frame-pointer -pthread \
-  "${SCRIPT_DIR}/profile_target.cpp" -lm -o "${BUILD_DIR}/profile_target_nofp"
+(cd "$REPO_ROOT" && cmake --preset "$CMAKE_PRESET" >/dev/null)
+(cd "$REPO_ROOT" && cmake --build --preset "$CMAKE_BUILD_PRESET" \
+  --target ebpf_profile_target_fp ebpf_profile_target_nofp >/dev/null
+)

@@ -1,0 +1,70 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "CK directed signal unwind",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/default/build/directed_signal_unwind",
+      "args": [],
+      "cwd": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/default",
+      "preLaunchTask": "cmake: build minimal impls"
+    },
+    {
+      "name": "CK FP walker",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/fp-build/build/fp_vs_unwind.fp",
+      "args": [],
+      "cwd": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/fp-build",
+      "preLaunchTask": "cmake: build minimal impls"
+    },
+    {
+      "name": "CK no-FP unwind control",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/fp-build/build/fp_vs_unwind.no_fp",
+      "args": [],
+      "cwd": "${workspaceFolder}/schemes/ck-system-stack-trace/minimal_impl/fp-build",
+      "preLaunchTask": "cmake: build minimal impls"
+    },
+    {
+      "name": "OB kill -60 minimal",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/schemes/ob-observer-kill60/minimal_impl/build/observer_kill60_minimal",
+      "args": [],
+      "cwd": "${workspaceFolder}/schemes/ob-observer-kill60/minimal_impl",
+      "preLaunchTask": "cmake: build minimal impls"
+    },
+    {
+      "name": "Open obstack ptrace minimal",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/schemes/ob-open-obstack-ptrace/minimal_impl/build/ptrace_remote_unwind",
+      "args": [
+        "${workspaceFolder}/schemes/ob-open-obstack-ptrace/minimal_impl/build/target"
+      ],
+      "cwd": "${workspaceFolder}/schemes/ob-open-obstack-ptrace/minimal_impl",
+      "preLaunchTask": "cmake: build minimal impls"
+    },
+    {
+      "name": "eBPF profile target",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/shared/ebpf/profile_target/build/profile_target_fp",
+      "args": [
+        "--cpu-threads",
+        "2",
+        "--sleep-threads",
+        "2",
+        "--blocked-threads",
+        "2",
+        "--seconds",
+        "8"
+      ],
+      "cwd": "${workspaceFolder}/shared/ebpf/profile_target",
+      "preLaunchTask": "cmake: build minimal impls"
+    }
+  ]
+}

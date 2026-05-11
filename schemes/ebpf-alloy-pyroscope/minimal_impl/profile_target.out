@@ -1,8 +1,8 @@
-pid=3927 main_tid=3927 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=2
-thread role=cpu id=0 tid=3928
-thread role=cpu id=1 tid=3929
-thread role=sleep id=0 tid=3930
-thread role=mutex_blocked id=0 tid=3932
-thread role=mutex_blocked id=1 tid=3933
-thread role=sleep id=1 tid=3931
-sink=463632130661456512
+pid=3504456 main_tid=3504456 cpu_threads=2 sleep_threads=2 blocked_threads=2 seconds=2
+thread role=cpu id=0 tid=3504457
+thread role=cpu id=1 tid=3504458
+thread role=sleep id=0 tid=3504459
+thread role=sleep id=1 tid=3504460
+thread role=mutex_blocked id=0 tid=3504461
+thread role=mutex_blocked id=1 tid=3504462
+sink=6358090918889574870

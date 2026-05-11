@@ -3,6 +3,12 @@ set -euo pipefail
 
 required=(
   .gitmodules
+  .clangd
+  .vscode/launch.json
+  .vscode/settings.json
+  .vscode/tasks.json
+  CMakeLists.txt
+  CMakePresets.json
   README.md
   justfile
   repos.lock

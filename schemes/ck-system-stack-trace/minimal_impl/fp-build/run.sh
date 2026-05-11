@@ -2,14 +2,15 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$DIR" rev-parse --show-toplevel)"
+CMAKE_PRESET="${CMAKE_PRESET:-debug}"
+CMAKE_BUILD_PRESET="${CMAKE_BUILD_PRESET:-$CMAKE_PRESET}"
 cd "$DIR"
 
-mkdir -p build
-CXX="${CXX:-g++}"
-COMMON=(-std=c++17 -O2 -g -rdynamic -no-pie -fno-optimize-sibling-calls fp_vs_unwind.cpp -lunwind -lunwind-x86_64 -ldl)
-
-"$CXX" -fno-omit-frame-pointer "${COMMON[@]}" -o build/fp_vs_unwind.fp
-"$CXX" -fomit-frame-pointer "${COMMON[@]}" -o build/fp_vs_unwind.no_fp
+(cd "$REPO_ROOT" && cmake --preset "$CMAKE_PRESET" >/dev/null)
+(cd "$REPO_ROOT" && cmake --build --preset "$CMAKE_BUILD_PRESET" \
+  --target ck_fp_vs_unwind_fp ck_fp_vs_unwind_no_fp >/dev/null
+)
 
 {
   echo "case=fp_enabled"

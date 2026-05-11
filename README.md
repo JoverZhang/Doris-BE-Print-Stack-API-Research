@@ -9,6 +9,7 @@ The active contract is:
 - no `case.yaml`, `matrix.csv`, `templates/`, or `reference_checklist/`;
 - each scheme README starts with a source trace: release tag, function names, file paths, and line numbers;
 - each scheme has `minimal_impl/`, derived from the source trace;
+- repo-owned `minimal_impl/` and `shared/` C++ fixtures are buildable from the root CMake project, which is the clangd/VSCode debug contract;
 - research command output sits next to its input and shares the same prefix: `thread_stack.sql` -> `thread_stack.out`, `perf_fp.sh` -> `perf_fp.out`, `bpftrace_ustack.bt` -> `bpftrace_ustack.out`;
 - upstream source trees under `repos/source/` are tracked by git submodules and described in `repos.lock`, not hand-downloaded implicit state;
 - build, fetch, install, and package-manager logs are not committed as research output.
@@ -60,6 +61,38 @@ vm/
 `shared/` contains helper code only. It is not a scheme namespace and entries
 under it do not appear in the checklist.
 
+## Local C++ LSP and Debug
+
+The root CMake project intentionally covers only repo-owned C++ code:
+
+- scheme `minimal_impl/` programs;
+- shared fixtures under `shared/`;
+- no ClickHouse/OceanBase/obstack upstream project targets.
+
+This keeps clangd and VSCode focused on code maintained in this repro repo. The
+large upstream source trees keep their own source-build commands and should only
+be indexed with their own compile databases when needed.
+
+```bash
+cmake --preset debug
+cmake --build --preset debug --target stacktrace_minimal_impls
+just all-minimal
+```
+
+`.clangd` points clangd at `build/cmake-debug/compile_commands.json`, and
+`.vscode/launch.json` contains debug launch entries for each minimal target.
+`just all-minimal` is the safe local development entrypoint. It rebuilds and
+runs only the repo-owned minimal implementations.
+
+Heavy project evidence reruns are explicit:
+
+```bash
+RUN_HEAVY_EVIDENCE=1 just all-evidence
+```
+
+`just all-phase1` is kept as a safe alias for `just all-minimal`. It no longer
+runs the heavyweight ClickHouse/OceanBase/eBPF evidence chain by default.
+
 ## Scheme README Contract
 
 Every scheme README must contain only the details needed to verify the scheme:
@@ -95,6 +128,9 @@ just <scheme-id>
 
 ```bash
 just --list
+just cmake-configure
+just cmake-build
+just all-minimal
 just repos-check
 just repos-sync
 just validate

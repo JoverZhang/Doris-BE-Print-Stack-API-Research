@@ -11,6 +11,35 @@ OB_PODMAN_PTRACE_SECURITY_ARGS=(
   --security-opt label=disable
 )
 
+ob_podman_with_timeout() {
+  local label="$1"
+  shift
+  local timeout_seconds="${OB_PODMAN_TIMEOUT_SECONDS:-900}"
+  local container_name="stacktrace-${label}-$$"
+
+  cleanup() {
+    podman rm -f "$container_name" >/dev/null 2>&1 || true
+  }
+
+  on_signal() {
+    cleanup
+    trap - EXIT INT TERM
+    exit 130
+  }
+
+  trap cleanup EXIT
+  trap on_signal INT TERM
+  local rc=0
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --foreground "${timeout_seconds}s" podman run --name "$container_name" "$@" || rc=$?
+  else
+    podman run --name "$container_name" "$@" || rc=$?
+  fi
+  cleanup
+  trap - EXIT INT TERM
+  return "$rc"
+}
+
 ob_default_observer_optstr() {
   printf '%s\n' "memory_limit=6G,system_memory=1G,__min_full_resource_pool_memory=1073741824,datafile_size=2G,log_disk_size=2G,datafile_next=2G,datafile_maxsize=8G,production_mode=false,devname=lo"
 }

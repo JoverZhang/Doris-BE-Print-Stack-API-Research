@@ -2,10 +2,9 @@
 set -euo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$BASE_DIR"
+REPO_ROOT="$(git -C "$BASE_DIR" rev-parse --show-toplevel)"
+CMAKE_PRESET="${CMAKE_PRESET:-debug}"
+CMAKE_BUILD_PRESET="${CMAKE_BUILD_PRESET:-$CMAKE_PRESET}"
 
-mkdir -p build
-c++ -std=c++17 -O2 -g -fno-omit-frame-pointer -pthread \
-  observer_kill60_minimal.cpp \
-  -lunwind -lunwind-x86_64 \
-  -o build/observer_kill60_minimal
+(cd "$REPO_ROOT" && cmake --preset "$CMAKE_PRESET" >/dev/null)
+(cd "$REPO_ROOT" && cmake --build --preset "$CMAKE_BUILD_PRESET" --target ob_observer_kill60_minimal >/dev/null)
