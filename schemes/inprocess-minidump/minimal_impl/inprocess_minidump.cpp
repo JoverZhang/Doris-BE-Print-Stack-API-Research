@@ -441,6 +441,7 @@ static void worker_thread_main(int index)
 int main()
 {
     static_assert(std::atomic<int>::is_always_lock_free, "signal handler uses lock-free atomic<int>");
+    static_assert(std::atomic<uint64_t>::is_always_lock_free, "signal handler uses lock-free atomic<uint64_t>");
     set_thread_name("normal");
 
     if (pipe(g_ack_pipe) != 0)
