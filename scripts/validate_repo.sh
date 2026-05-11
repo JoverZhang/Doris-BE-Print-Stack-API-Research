@@ -25,7 +25,6 @@ required=(
 schemes=(
   ck-system-stack-trace
   ob-observer-kill60
-  ob-ocp-obstack
   ob-open-obstack-ptrace
   ebpf-perf-bpftrace
   ebpf-alloy-pyroscope

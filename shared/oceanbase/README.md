@@ -6,7 +6,6 @@ This directory is not a research scheme and must not be added to the root
 README checklist. Scheme evidence remains owned by:
 
 - `schemes/ob-observer-kill60`
-- `schemes/ob-ocp-obstack`
 - `schemes/ob-open-obstack-ptrace`
 
 The helper only centralizes duplicated runtime mechanics:

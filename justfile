@@ -34,9 +34,6 @@ ck-system-stack-trace:
 ob-observer-kill60:
     ./schemes/ob-observer-kill60/run.sh
 
-ob-ocp-obstack:
-    ./schemes/ob-ocp-obstack/run.sh
-
 ob-open-obstack-ptrace:
     ./schemes/ob-open-obstack-ptrace/run.sh
 
@@ -54,7 +51,6 @@ all-evidence:
     fi
     just ck-system-stack-trace
     just ob-observer-kill60
-    just ob-ocp-obstack
     just ob-open-obstack-ptrace
     just ebpf-perf-bpftrace
     just ebpf-alloy-pyroscope
