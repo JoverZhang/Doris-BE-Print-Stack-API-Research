@@ -23,7 +23,7 @@ The active contract is:
 | yes | 1 | `ob-ocp-obstack` | OceanBase/OCP | provenance done | source unavailable | not possible | done | in_review | Official `obstack 2.0.4` package collected real stacks from the source-built `v4.5.0_CE` observer; requires ptrace-capable podman runtime. |
 | yes | 1 | `ob-open-obstack-ptrace` | `oceanbase/obstack` | done | done | done | done | in_review | Public source commit built under podman CentOS 7; synthetic attach and real source-built observer attach both PASS. Host Arch build remains blocked by upstream deps profile support. |
 | yes | 1 | `ebpf-perf-bpftrace` | Linux perf/bpftrace | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |
-| yes | 1 | `ebpf-industry-profiler` | Alloy/Pyroscope | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`. |
+| yes | 1 | `ebpf-alloy-pyroscope` | Alloy/Pyroscope | target source built | done | done | done | in_review | PASS = VM/root profiling route reproduced; `all_native_threads=no`; `live_api_fit=no`; uses shared eBPF profile target fixture. |
 | no | later | `gperftools-stacktrace` | gperftools | not started | not started | not started | not started | deferred | Capture backend/component. |
 | no | later | `libbacktrace-boost-folly` | common C++ stack libraries | not started | not started | not started | not started | deferred | Current-thread/symbolization components. |
 | no | later | `crashpad-breakpad` | crash/minidump tooling | not started | not started | not started | not started | deferred | Crash/minidump semantics, not live dump API. |
@@ -36,6 +36,8 @@ The active contract is:
 repos.lock
 repos/
   source/                    # git submodules pinned by .gitmodules + repos.lock
+shared/
+  ebpf/profile_target/
 schemes/
   <scheme-id>/
     README.md

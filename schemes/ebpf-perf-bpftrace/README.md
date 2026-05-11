@@ -46,7 +46,20 @@ src/ast/attachpoint_parser.cpp:216 profile provider dispatch
                   -> src/ast/irbuilderbpf.cpp:1428 sets user-stack flag
                     -> src/ast/irbuilderbpf.cpp:1438 emits BPF_FUNC_get_stackid
 
-Local fixture path:
+Shared fixture path:
+shared/ebpf/profile_target/profile_target.cpp:54 cpu_worker
+  -> shared/ebpf/profile_target/profile_target.cpp:50 target_level_one
+    -> shared/ebpf/profile_target/profile_target.cpp:46 target_level_two
+      -> shared/ebpf/profile_target/profile_target.cpp:42 target_level_three
+        -> shared/ebpf/profile_target/profile_target.cpp:32 target_leaf
+          -> sampled stack symbol sequence in commands/*.out
+
+shared/ebpf/profile_target/profile_target.cpp:63 sleep_worker
+shared/ebpf/profile_target/profile_target.cpp:70 mutex_block_worker
+  -> printed in target thread inventory
+  -> expected negative evidence: not covered by on-CPU samples as current stacks
+
+Local scheme path:
 commands/perf_fp.sh:13 perf record -F 99 -e cpu-clock:u --call-graph fp,64
   -> perf_event sampling on CPU-clock user events
     -> sampled target context unwinds user stack with frame pointers
@@ -66,18 +79,6 @@ commands/bpftrace_offcpu.bt:1 tracepoint:sched:sched_switch
   -> commands/bpftrace_offcpu.bt:4 ustack(20)
     -> event-based stack aggregation when matching threads leave CPU
       -> commands/run_bpftrace_offcpu.sh:26-43 writes commands/bpftrace_offcpu.out
-
-minimal_impl/profile_target.cpp:54 cpu_worker
-  -> minimal_impl/profile_target.cpp:50 target_level_one
-    -> minimal_impl/profile_target.cpp:46 target_level_two
-      -> minimal_impl/profile_target.cpp:42 target_level_three
-        -> minimal_impl/profile_target.cpp:32 target_leaf
-          -> sampled stack symbol sequence in commands/*.out
-
-minimal_impl/profile_target.cpp:63 sleep_worker
-minimal_impl/profile_target.cpp:70 mutex_block_worker
-  -> printed in target thread inventory
-  -> expected negative evidence: not covered by on-CPU samples as current stacks
 ```
 
 ## Run
@@ -100,11 +101,11 @@ STACKTRACE_VM_SSH=/path/to/main/vm/ubuntu-24.04/ssh.sh just ebpf-perf-bpftrace
 | `commands/perf_dwarf.sh` | `commands/perf_dwarf.out` | perf DWARF callgraph evidence on the no-FP target. |
 | `commands/bpftrace_ustack.bt` | `commands/bpftrace_ustack.out` | bpftrace on-CPU user-stack sampling evidence. |
 | `commands/bpftrace_offcpu.bt` | `commands/bpftrace_offcpu.out` | sched-switch event/off-CPU evidence, not a current stack snapshot. |
-| `minimal_impl/profile_target.cpp` | `minimal_impl/profile_target.out` | controlled target thread inventory. |
+| `shared/ebpf/profile_target/profile_target.cpp` | `minimal_impl/profile_target.out` | controlled shared target thread inventory. |
 
 ## Minimal Impl
 
-`minimal_impl/` keeps only the source-trace nodes needed to prove the semantic boundary:
+`minimal_impl/` uses `shared/ebpf/profile_target/` and keeps only the source-trace nodes needed to prove the semantic boundary:
 
 - CPU workers with a stable symbol chain: `cpu_worker -> target_level_one -> target_level_two -> target_level_three -> target_leaf`.
 - Sleeping and mutex-blocked workers with printed TIDs.

@@ -1,6 +1,7 @@
 # Minimal Impl
 
-This scheme uses the same controlled target shape as `ebpf-perf-bpftrace`:
+This scheme uses the same controlled target shape as `ebpf-perf-bpftrace`.
+The actual C++ fixture lives in `../../../shared/ebpf/profile_target/`:
 
 - two CPU-running worker threads;
 - two sleeping worker threads;
