@@ -6,22 +6,142 @@ program_stdout:
 pid=<minimal-pid>
 
 maps_head:
-5561b1a3f000-5561b1a41000 r--p 00000000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5561b1a41000-5561b1a43000 r-xp 00002000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5561b1a43000-5561b1a44000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5561b1a44000-5561b1a45000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5561b1a45000-5561b1a46000 rw-p 00005000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
-5561d99df000-5561d9a12000 rw-p 00000000 00:00 0                          [heap]
-7fda47009000-7fda4a00f000 rw-p 00000000 00:00 0
-7fda4a00f000-7fda4a033000 r--p 00000000 103:02 99355590                  /usr/lib/libc.so.6
-7fda4a033000-7fda4a1a4000 r-xp 00024000 103:02 99355590                  /usr/lib/libc.so.6
-7fda4a1a4000-7fda4a1f2000 r--p 00195000 103:02 99355590                  /usr/lib/libc.so.6
-7fda4a1f2000-7fda4a1f6000 r--p 001e2000 103:02 99355590                  /usr/lib/libc.so.6
-7fda4a1f6000-7fda4a1f8000 rw-p 001e6000 103:02 99355590                  /usr/lib/libc.so.6
+55e055257000-55e055259000 r--p 00000000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55e055259000-55e05525b000 r-xp 00002000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55e05525b000-55e05525c000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55e05525c000-55e05525d000 r--p 00004000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55e05525d000-55e05525e000 rw-p 00005000 103:02 107759747                 <minimal-dir>/build/observer_kill60_minimal
+55e08eaf6000-55e08eb29000 rw-p 00000000 00:00 0                          [heap]
+7febbeeeb000-7febc1ef1000 rw-p 00000000 00:00 0
+7febc1ef1000-7febc1f15000 r--p 00000000 103:02 99355590                  /usr/lib/libc.so.6
+7febc1f15000-7febc2086000 r-xp 00024000 103:02 99355590                  /usr/lib/libc.so.6
+7febc2086000-7febc20d4000 r--p 00195000 103:02 99355590                  /usr/lib/libc.so.6
+7febc20d4000-7febc20d8000 r--p 001e2000 103:02 99355590                  /usr/lib/libc.so.6
+7febc20d8000-7febc20da000 rw-p 001e6000 103:02 99355590                  /usr/lib/libc.so.6
 
 thread_stack_lines:
-tid: 3610768, tname: observer_kill60, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a4176b 0x7fda4a0366c1 0x7fda4a0367f9 0x5561b1a41895
-tid: 3610773, tname: worker-0, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a41a61 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc
-tid: 3610774, tname: worker-1, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a41a61 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc
-tid: 3610775, tname: worker-2, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x7fda4a0adf32 0x7fda4a0a239c 0x7fda4a0f2452 0x7fda4a0fe537 0x5561b1a41a61 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc
-tid: 3610776, tname: worker-3, lbt: 0x5561b1a41afe 0x5561b1a42321 0x7fda4a04d2d0 0x5561b1a41a1e 0x7fda4a2e55a4 0x7fda4a0a597a 0x7fda4a1292bc
+tid: 1197997, tname: observer_kill60, lbt: 0x55e055259afe 0x55e05525a321 0x7febc1f2f2d0 0x7febc1f8ff32 0x7febc1f8439c 0x7febc1fd4452 0x7febc1fe0537 0x55e05525976b 0x7febc1f186c1 0x7febc1f187f9 0x55e055259895
+tid: 1198001, tname: worker-0, lbt: 0x55e055259afe 0x55e05525a321 0x7febc1f2f2d0 0x7febc1f8ff32 0x7febc1f8439c 0x7febc1fd4452 0x7febc1fe0537 0x55e055259a61 0x7febc22e55a4 0x7febc1f8797a 0x7febc200b2bc
+tid: 1198002, tname: worker-1, lbt: 0x55e055259afe 0x55e05525a321 0x7febc1f2f2d0 0x7febc1f8ff32 0x7febc1f8439c 0x7febc1fd4452 0x7febc1fe0537 0x55e055259a61 0x7febc22e55a4 0x7febc1f8797a 0x7febc200b2bc
+tid: 1198003, tname: worker-2, lbt: 0x55e055259afe 0x55e05525a321 0x7febc1f2f2d0 0x7febc1f8ff32 0x7febc1f8439c 0x7febc1fd4452 0x7febc1fe0537 0x55e055259a61 0x7febc22e55a4 0x7febc1f8797a 0x7febc200b2bc
+tid: 1198004, tname: worker-3, lbt: 0x55e055259afe 0x55e05525a321 0x7febc1f2f2d0 0x7febc1f8ff32 0x7febc1f8439c 0x7febc1fd4452 0x7febc1fe0537 0x55e055259a61 0x7febc22e55a4 0x7febc1f8797a 0x7febc200b2bc
+
+symbolized_thread_stack_sample:
+stack_file=<minimal-dir>/stack.1197997.1779020600
+main_binary=<minimal-dir>/build/observer_kill60_minimal
+symbolizer=/usr/bin/llvm-addr2line
+tid: 1197997, tname: observer_kill60
+  #00 0x55e055259afe <minimal-dir>/build/observer_kill60_minimal@0x2afe
+      Processor::prepare() (.isra.0) at <minimal-dir>/observer_kill60_minimal.cpp:75 (discriminator 2)
+  #01 0x55e05525a321 <minimal-dir>/build/observer_kill60_minimal@0x3321
+      directed_signal_handler(int, siginfo_t*, void*) at <minimal-dir>/observer_kill60_minimal.cpp:130
+  #02 0x7febc1f2f2d0 /usr/lib/libc.so.6@0x3e2d0
+      ?? at ??:0
+  #03 0x7febc1f8ff32 /usr/lib/libc.so.6@0x9ef32
+      ?? at ??:0
+  #04 0x7febc1f8439c /usr/lib/libc.so.6@0x9339c
+      ?? at ??:0
+  #05 0x7febc1fd4452 /usr/lib/libc.so.6@0xe3452
+      clock_nanosleep at ??:0
+  #06 0x7febc1fe0537 /usr/lib/libc.so.6@0xef537
+      __nanosleep at ??:0
+  #07 0x55e05525976b <minimal-dir>/build/observer_kill60_minimal@0x276b
+      void std::this_thread::sleep_for<long, std::ratio<1l, 1000l>>(std::chrono::duration<long, std::ratio<1l, 1000l>> const&) at /usr/include/c++/15.2.1/bits/this_thread_sleep.h:82 (discriminator 2)
+  #08 0x7febc1f186c1 /usr/lib/libc.so.6@0x276c1
+      ?? at ??:0
+  #09 0x7febc1f187f9 /usr/lib/libc.so.6@0x277f9
+      __libc_start_main at ??:0
+  #10 0x55e055259895 <minimal-dir>/build/observer_kill60_minimal@0x2895
+      _start at ??:0
+tid: 1198001, tname: worker-0
+  #00 0x55e055259afe <minimal-dir>/build/observer_kill60_minimal@0x2afe
+      Processor::prepare() (.isra.0) at <minimal-dir>/observer_kill60_minimal.cpp:75 (discriminator 2)
+  #01 0x55e05525a321 <minimal-dir>/build/observer_kill60_minimal@0x3321
+      directed_signal_handler(int, siginfo_t*, void*) at <minimal-dir>/observer_kill60_minimal.cpp:130
+  #02 0x7febc1f2f2d0 /usr/lib/libc.so.6@0x3e2d0
+      ?? at ??:0
+  #03 0x7febc1f8ff32 /usr/lib/libc.so.6@0x9ef32
+      ?? at ??:0
+  #04 0x7febc1f8439c /usr/lib/libc.so.6@0x9339c
+      ?? at ??:0
+  #05 0x7febc1fd4452 /usr/lib/libc.so.6@0xe3452
+      clock_nanosleep at ??:0
+  #06 0x7febc1fe0537 /usr/lib/libc.so.6@0xef537
+      __nanosleep at ??:0
+  #07 0x55e055259a61 <minimal-dir>/build/observer_kill60_minimal@0x2a61
+      void std::this_thread::sleep_for<long, std::ratio<1l, 1000l>>(std::chrono::duration<long, std::ratio<1l, 1000l>> const&) at /usr/include/c++/15.2.1/bits/this_thread_sleep.h:82 (discriminator 2)
+  #08 0x7febc22e55a4 /usr/lib/libstdc++.so.6.0.34@0xe55a4
+      ?? at ??:0
+  #09 0x7febc1f8797a /usr/lib/libc.so.6@0x9697a
+      ?? at ??:0
+  #10 0x7febc200b2bc /usr/lib/libc.so.6@0x11a2bc
+      ?? at ??:0
+tid: 1198002, tname: worker-1
+  #00 0x55e055259afe <minimal-dir>/build/observer_kill60_minimal@0x2afe
+      Processor::prepare() (.isra.0) at <minimal-dir>/observer_kill60_minimal.cpp:75 (discriminator 2)
+  #01 0x55e05525a321 <minimal-dir>/build/observer_kill60_minimal@0x3321
+      directed_signal_handler(int, siginfo_t*, void*) at <minimal-dir>/observer_kill60_minimal.cpp:130
+  #02 0x7febc1f2f2d0 /usr/lib/libc.so.6@0x3e2d0
+      ?? at ??:0
+  #03 0x7febc1f8ff32 /usr/lib/libc.so.6@0x9ef32
+      ?? at ??:0
+  #04 0x7febc1f8439c /usr/lib/libc.so.6@0x9339c
+      ?? at ??:0
+  #05 0x7febc1fd4452 /usr/lib/libc.so.6@0xe3452
+      clock_nanosleep at ??:0
+  #06 0x7febc1fe0537 /usr/lib/libc.so.6@0xef537
+      __nanosleep at ??:0
+  #07 0x55e055259a61 <minimal-dir>/build/observer_kill60_minimal@0x2a61
+      void std::this_thread::sleep_for<long, std::ratio<1l, 1000l>>(std::chrono::duration<long, std::ratio<1l, 1000l>> const&) at /usr/include/c++/15.2.1/bits/this_thread_sleep.h:82 (discriminator 2)
+  #08 0x7febc22e55a4 /usr/lib/libstdc++.so.6.0.34@0xe55a4
+      ?? at ??:0
+  #09 0x7febc1f8797a /usr/lib/libc.so.6@0x9697a
+      ?? at ??:0
+  #10 0x7febc200b2bc /usr/lib/libc.so.6@0x11a2bc
+      ?? at ??:0
+tid: 1198003, tname: worker-2
+  #00 0x55e055259afe <minimal-dir>/build/observer_kill60_minimal@0x2afe
+      Processor::prepare() (.isra.0) at <minimal-dir>/observer_kill60_minimal.cpp:75 (discriminator 2)
+  #01 0x55e05525a321 <minimal-dir>/build/observer_kill60_minimal@0x3321
+      directed_signal_handler(int, siginfo_t*, void*) at <minimal-dir>/observer_kill60_minimal.cpp:130
+  #02 0x7febc1f2f2d0 /usr/lib/libc.so.6@0x3e2d0
+      ?? at ??:0
+  #03 0x7febc1f8ff32 /usr/lib/libc.so.6@0x9ef32
+      ?? at ??:0
+  #04 0x7febc1f8439c /usr/lib/libc.so.6@0x9339c
+      ?? at ??:0
+  #05 0x7febc1fd4452 /usr/lib/libc.so.6@0xe3452
+      clock_nanosleep at ??:0
+  #06 0x7febc1fe0537 /usr/lib/libc.so.6@0xef537
+      __nanosleep at ??:0
+  #07 0x55e055259a61 <minimal-dir>/build/observer_kill60_minimal@0x2a61
+      void std::this_thread::sleep_for<long, std::ratio<1l, 1000l>>(std::chrono::duration<long, std::ratio<1l, 1000l>> const&) at /usr/include/c++/15.2.1/bits/this_thread_sleep.h:82 (discriminator 2)
+  #08 0x7febc22e55a4 /usr/lib/libstdc++.so.6.0.34@0xe55a4
+      ?? at ??:0
+  #09 0x7febc1f8797a /usr/lib/libc.so.6@0x9697a
+      ?? at ??:0
+  #10 0x7febc200b2bc /usr/lib/libc.so.6@0x11a2bc
+      ?? at ??:0
+tid: 1198004, tname: worker-3
+  #00 0x55e055259afe <minimal-dir>/build/observer_kill60_minimal@0x2afe
+      Processor::prepare() (.isra.0) at <minimal-dir>/observer_kill60_minimal.cpp:75 (discriminator 2)
+  #01 0x55e05525a321 <minimal-dir>/build/observer_kill60_minimal@0x3321
+      directed_signal_handler(int, siginfo_t*, void*) at <minimal-dir>/observer_kill60_minimal.cpp:130
+  #02 0x7febc1f2f2d0 /usr/lib/libc.so.6@0x3e2d0
+      ?? at ??:0
+  #03 0x7febc1f8ff32 /usr/lib/libc.so.6@0x9ef32
+      ?? at ??:0
+  #04 0x7febc1f8439c /usr/lib/libc.so.6@0x9339c
+      ?? at ??:0
+  #05 0x7febc1fd4452 /usr/lib/libc.so.6@0xe3452
+      clock_nanosleep at ??:0
+  #06 0x7febc1fe0537 /usr/lib/libc.so.6@0xef537
+      __nanosleep at ??:0
+  #07 0x55e055259a61 <minimal-dir>/build/observer_kill60_minimal@0x2a61
+      void std::this_thread::sleep_for<long, std::ratio<1l, 1000l>>(std::chrono::duration<long, std::ratio<1l, 1000l>> const&) at /usr/include/c++/15.2.1/bits/this_thread_sleep.h:82 (discriminator 2)
+  #08 0x7febc22e55a4 /usr/lib/libstdc++.so.6.0.34@0xe55a4
+      ?? at ??:0
+  #09 0x7febc1f8797a /usr/lib/libc.so.6@0x9697a
+      ?? at ??:0
+  #10 0x7febc200b2bc /usr/lib/libc.so.6@0x11a2bc
+      ?? at ??:0

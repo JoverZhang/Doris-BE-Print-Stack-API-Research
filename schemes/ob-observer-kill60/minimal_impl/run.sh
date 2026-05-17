@@ -2,6 +2,7 @@
 set -euo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$BASE_DIR" rev-parse --show-toplevel)"
 cd "$BASE_DIR"
 
 ./build.sh
@@ -41,6 +42,14 @@ stack_file="$(ls -1t stack."$target_pid".* 2>/dev/null | head -n 1 || true)"
     echo
     echo "thread_stack_lines:"
     grep '^tid:' "$stack_file" | sed "s#$BASE_DIR#<minimal-dir>#g"
+    echo
+    python3 "$BASE_DIR/../helpers/symbolize_stack.py" \
+      --stack-file "$stack_file" \
+      --main-binary "$BASE_DIR/build/observer_kill60_minimal" \
+      --repo-root "$REPO_ROOT" \
+      --display-prefix "$BASE_DIR=<minimal-dir>" \
+      --limit-threads "${OB_KILL60_SYMBOLIZE_THREADS:-5}" \
+      --limit-frames "${OB_KILL60_SYMBOLIZE_FRAMES:-12}"
   else
     echo "status=FAIL"
     echo "reason=no stack file"

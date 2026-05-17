@@ -16,3 +16,9 @@ shell kill -60 <pid>
 
 It intentionally omits OceanBase storage, SQL, election, tenants, deployment,
 and logging. It proves only the in-process directed-signal/local-unwind shape.
+
+`run.sh` keeps the raw `tid/tname/lbt` lines and appends a
+`symbolized_thread_stack_sample` section produced by
+`../helpers/symbolize_stack.py`. This mirrors the real observer scheme: stack
+capture stays raw, and source/function names are added as an offline
+post-processing step using the matching debug binary.

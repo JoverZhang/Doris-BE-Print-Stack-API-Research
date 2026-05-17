@@ -92,14 +92,16 @@ AlmaLinux 8 base repositories used here do not provide `libunwind-devel`.
 
 | input | output | meaning |
 | --- | --- | --- |
-| `commands/observer_kill60.sh` | `commands/observer_kill60.out` | `kill -60` run against a real source-built observer and normalized stack result. |
+| `commands/observer_kill60.sh` | `commands/observer_kill60.out` | `kill -60` run against a real source-built observer, raw stack sample, and offline-symbolized sample. |
+| `helpers/symbolize_stack.py` | `symbolized_thread_stack_sample` section | post-processes the raw `stack.<pid>.<datetime>` file with matching debug info. |
 
 ## Evidence
 
 - Source build: PASS in podman AlmaLinux 8 from `repos/source/oceanbase-v4.5.0_CE` at commit `0e8d5ad012baf0953b2032a35a88bdf8886e9a7a`.
 - Observer binary: `/work/repos/source/oceanbase-v4.5.0_CE/build_release/src/observer/observer`, 4550125568 bytes, BuildID `5b9de1e9d53c4ad19d9cf908f44f6b513d2a8da8`, with debug info, not stripped.
 - Dependency workaround: podman `wget` against upstream RPMs was unstable, so host `curl -C -` prefetched 50 RPMs and the container wrapper copied only from the complete cache.
-- Runtime: PASS. `kill -60` against the source-built observer produced `stack.109.202651020300`, 82686 bytes, with 377 `tid:` stack lines.
+- Runtime: PASS. `kill -60` against the source-built observer produced `stack.51.202651712247`, 50141 bytes, with 229 `tid:` stack lines in the recorded output.
+- Symbolization: PASS. The raw `lbt` addresses are symbolized offline with `llvm-addr2line` against the source-built observer binary; this does not change the signal-handler/runtime capture path.
 - Runtime requirements found during reproduction: run observer with `-N`, use the background child pid because `run/observer.pid` is not created in this mode, precreate `store/{clog,slog,sstable}` and `run`, and set `__min_full_resource_pool_memory=1073741824` with `system_memory=1G`.
 
 ## Minimal Impl
