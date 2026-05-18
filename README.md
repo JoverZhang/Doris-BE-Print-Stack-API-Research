@@ -14,19 +14,23 @@ Research practical approaches to dump live stacks of `doris_be` with:
 This repository is an investigation workspace for first-stage research. It is not
 a final design proposal yet.
 
+Related sampled profiling notes are tracked separately in
+[PROFILING.md](./PROFILING.md).
+
 ## 2. Current Status
 
 | Area | Status |
 | --- | --- |
 | ClickHouse `system.stack_trace` | Built and reproduced from source; on-demand current-thread snapshot API. |
-| ClickHouse sampling query profiler / `system.trace_log` | Built and reproduced from source; sampled profiling path, not a live dump API. |
 | OceanBase `kill -60` | Built and reproduced from source; raw stack file plus offline symbolized sample. |
 | OceanBase `faststack()` / `obstack` | Source path inspected; `obstack` attach run reproduced; ptrace remote unwind path. |
 | signal-handler unwind demo | Runnable minimal prototype. |
 | stack-snapshot hybrid demo | Runnable minimal prototype. |
 | performance / stability verification | Not started. |
 
-## 3. Terminology / Taxonomy
+## 3. Reference Taxonomy
+
+This repository's main scope is on-demand current stack dump.
 
 The important correction is that OceanBase `kill -60` and `obstack` are not one
 single path. OceanBase currently has at least two distinct stack collection
@@ -39,30 +43,26 @@ paths:
   the external `obstack` binary. `obstack` enumerates `/proc/<pid>/task`,
   attaches with `ptrace`, performs remote unwind, then symbolizes and aggregates.
 
-| System | Path | Trigger | Capture model | Output | Current snapshot | Sampled | ptrace | Fit for Doris live dump |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| OceanBase | `kill -60` | `kill -60 <observer_pid>` | observer signal worker sends directed `SIGURG`; target threads local-unwind | `stack.<pid>.<time>` raw addresses; offline symbolization in this repo | yes | no | no | high relevance |
-| OceanBase | `faststack()` / `obstack` | internal `faststack()` triggers or `obstack <pid>` CLI | external process attaches each thread and remote-unwinds with libunwind ptrace backend | symbolized and aggregated stacks | yes | no | yes | useful diagnostic reference, not primary low-impact direction |
-| ClickHouse | `system.stack_trace` | `SELECT * FROM system.stack_trace` | in-process table enumerates tasks, sends directed service signal, target threads local-unwind | SQL rows with raw `trace`; symbols/file-lines via introspection functions | yes | no | no | high relevance |
-| ClickHouse | sampling query profiler | query settings such as `query_profiler_cpu_time_period_ns`; read `system.trace_log` | per-thread POSIX timers deliver `SIGUSR1`/`SIGUSR2`; handler local-unwinds | sampled `system.trace_log` rows; supports symbols and flame graphs | no | yes | no | useful contrast, not a live dump API |
-| eBPF / perf / Pyroscope | external sampling profiler | `perf`, `bpftrace`, Alloy/Pyroscope configs | kernel or eBPF sampling | profiles / flame graphs | no | yes | usually no | profiling baseline, not all-thread live dump |
+| System | Path | Trigger | Capture model | Output | ptrace | Fit for Doris live dump |
+| --- | --- | --- | --- | --- | --- | --- |
+| ClickHouse | `system.stack_trace` | `SELECT * FROM system.stack_trace` | in-process table enumerates tasks, sends directed service signal, target threads local-unwind | SQL rows with raw `trace`; symbols/file-lines via introspection functions | no | primary reference |
+| OceanBase | `kill -60` | `kill -60 <observer_pid>` | observer signal worker sends directed `SIGURG`; target threads local-unwind | `stack.<pid>.<time>` raw addresses; offline symbolization in this repo | no | primary reference |
+| OceanBase | `faststack()` / `obstack` | internal `faststack()` triggers or `obstack <pid>` CLI | external process attaches each thread and remote-unwinds with libunwind ptrace backend | symbolized and aggregated stacks | yes | heavy diagnostic reference |
 
-## 4. Chronology Notes
+### Chronology
 
 | Item | Public evidence in this workspace |
 | --- | --- |
-| ClickHouse query profiler / `system.trace_log` | `system.trace_log` write path appears by ClickHouse commit `5c54bbb7506803899f45d0e73f8f7a2a9e5b0c4c` on 2019-02-03; CPU timer support appears by `6367e15e4eea5cd1ef49d51ef7a5953cbecd85ea` on 2019-03-04. |
 | ClickHouse `system.stack_trace` | Commit `e0000bef989a7fff327f22e8cf4e4443e0e45dff`, 2019-12-22, "Added system.stack_trace table". |
 | OceanBase `kill -60` | Present in the public initial OceanBase import `cea7de1475674a82a317f7f550d141c6096d487e`, 2021-05-31. |
 | OceanBase `faststack()` calling `obstack` | Present in public OceanBase commit `d627936f7ddd11761189f3d72e5fa729094f24c3`, 2023-06-05. |
 | Open-source `oceanbase/obstack` ptrace CLI | Public source import `d91edd6d882a33b69164f8d3e809092408da3a33`, 2024-07-05. |
 
-Interpretation: ClickHouse's profiling path predates `system.stack_trace`.
-OceanBase `kill -60` predates the public `faststack()` / `obstack` integration.
-The open-source `obstack` ptrace code is later than both OceanBase `kill -60`
-and ClickHouse `system.stack_trace`.
+Interpretation: OceanBase `kill -60` predates the public `faststack()` /
+`obstack` integration. The open-source `obstack` ptrace code is later than both
+OceanBase `kill -60` and ClickHouse `system.stack_trace`.
 
-## 5. Candidate Directions
+## 4. Candidate Directions
 
 ### Direction A: unwind in signal handler
 
@@ -76,8 +76,6 @@ References:
 
 - ClickHouse `system.stack_trace`
 - OceanBase `kill -60`
-- ClickHouse sampling query profiler, as a sampled variant with a similar
-  timer/signal/local-unwind core
 
 Main open question:
 
@@ -101,7 +99,7 @@ Main open question:
 - Whether this can reconstruct accurate enough stack traces.
 - Need to verify implementation complexity, performance, and correctness.
 
-## 6. Next Steps
+## 5. Next Steps
 
 1. Stress test the signal-handler unwind demo under allocation, lock, and high
    concurrency scenarios.
