@@ -1,0 +1,51 @@
+clickhouse_binary=<repo>/schemes/ck-system-stack-trace/build/default/programs/clickhouse
+clickhouse_version=ClickHouse local version 26.3.10.1.
+source_config=<repo>/repos/source/ClickHouse-v26.3.10.62-lts/programs/server/config.xml
+tcp_port=19000
+query_id=ck_query_profiler_cpu_sample
+cpu_period_ns=1000000
+rows=100000000
+
+workload_query:
+SELECT sum(number)
+FROM numbers(100000000)
+SETTINGS
+    query_profiler_cpu_time_period_ns = 1000000,
+    query_profiler_real_time_period_ns = 0
+
+workload_result:
+4999999950000000
+
+trace_log_summary:
+Row 1:
+──────
+trace_type:      CPU
+samples:         13
+sampled_threads: 1
+min_frames:      13
+max_frames:      23
+
+trace_log_symbol_sample:
+Row 1:
+──────
+trace_type: CPU
+thread_id:  1068622 -- 1.07 million
+frames:     23
+symbols:    ['extent_split_impl','extent_recycle','ecache_alloc','pac_alloc_real','pac_alloc_impl','pa_alloc','arena_extent_alloc_large','large_palloc']
+lines:      ['<repo>/large.c:37']
+
+Row 2:
+──────
+trace_type: CPU
+thread_id:  1068622 -- 1.07 million
+frames:     18
+symbols:    ['pthread_mutex_trylock','extent_record','pac_dalloc_impl','large_dalloc','free_default','Allocator<false, false>::free(void*, unsigned long, unsigned long)','DB::ColumnVector<unsigned long>::~ColumnVector()','DB::AggregatingTransform::consume(DB::Chunk)']
+lines:      ['<repo>/schemes/ck-system-stack-trace/build/default/programs/clickhouse','./contrib/jemalloc/include/jemalloc/internal/mutex.h:161','<repo>/intrusive_ptr.hpp:0']
+
+Row 3:
+──────
+trace_type: CPU
+thread_id:  1068622 -- 1.07 million
+frames:     14
+symbols:    ['void DB::AggregateFunctionSumData<unsigned long>::addManyImpl_x86_64_v4<unsigned long>(unsigned long const*, unsigned long, unsigned long)','DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*, bool) const','DB::Aggregator::executeOnBlock(std::__1::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::__1::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn>>>, unsigned long, unsigned long, DB::AggregatedDataVariants&, std::__1::vector<DB::IColumn const*, std::__1::allocator<DB::IColumn const*>>&, std::__1::vector<std::__1::vector<DB::IColumn const*, std::__1::allocator<DB::IColumn const*>>, std::__1::allocator<std::__1::vector<DB::IColumn const*, std::__1::allocator<DB::IColumn const*>>>>&, bool&) const','DB::AggregatingTransform::consume(DB::Chunk)','DB::AggregatingTransform::work()','DB::ExecutionThreadContext::executeTask()','DB::PipelineExecutor::executeStepImpl(unsigned long, DB::IAcquiredSlot*, std::__1::atomic<bool>*)','void std::__1::__function::__policy_func<void ()>::__call_func[abi:fe210105]<DB::PipelineExecutor::spawnThreads(std::__1::shared_ptr<DB::IAcquiredSlot>)::$_0>(std::__1::__function::__policy_storage const*)']
+lines:      ['./src/AggregateFunctions/AggregateFunctionSum.h:61','./contrib/llvm-project/libcxx/include/__vector/vector.h:388','<repo>/PipelineExecutor.cpp:0']

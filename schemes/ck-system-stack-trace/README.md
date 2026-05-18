@@ -43,6 +43,8 @@ Dump style: `system.stack_trace` is an on-demand table read. It enumerates nativ
 
 The frame-pointer build is a build-condition/backend comparison only. It is not a second ClickHouse user API and should not be counted as a separate research route.
 
+This is also separate from ClickHouse's sampling query profiler. The profiler writes samples to `system.trace_log`; see `schemes/ck-query-profiler-trace-log/`.
+
 ## Run
 
 ```bash

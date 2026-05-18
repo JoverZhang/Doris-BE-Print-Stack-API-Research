@@ -4,6 +4,8 @@
 
 Open-source `oceanbase/obstack` built from source can perform external ptrace/remote-unwind stack collection against a source-built OceanBase observer.
 
+OceanBase can invoke this external tool from `faststack()` in selected internal diagnostic paths. This is separate from the observer `kill -60` signal-worker path.
+
 ## Source Trace
 
 release tag: no release tag published; public source is `master`

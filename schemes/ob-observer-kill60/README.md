@@ -4,6 +4,8 @@
 
 OceanBase observer built from source can handle `kill -60 <observer_pid>` and emit real observer stack output.
 
+This path is not `obstack`: it stays inside the observer process, uses the observer signal worker, and does not use `ptrace`.
+
 ## Source Trace
 
 release tag: `v4.5.0_CE`

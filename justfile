@@ -37,6 +37,9 @@ risk-unwind-without-phdr-cache:
 ck-system-stack-trace:
     ./schemes/ck-system-stack-trace/run.sh
 
+ck-query-profiler-trace-log:
+    ./schemes/ck-query-profiler-trace-log/run.sh
+
 inprocess-minidump:
     ./schemes/inprocess-minidump/run.sh
 
@@ -59,6 +62,7 @@ all-evidence:
       exit 2; \
     fi
     just ck-system-stack-trace
+    just ck-query-profiler-trace-log
     just inprocess-minidump
     just ob-observer-kill60
     just ob-open-obstack-ptrace
