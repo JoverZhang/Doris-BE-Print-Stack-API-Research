@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <new>
 #include <thread>
 #include <vector>
@@ -24,7 +25,41 @@ namespace doris::stacktrace {
 
 namespace {
 thread_local std::uintptr_t tls_stack_high = 0;
+
+// See kill60.cpp for the lifetime rationale. The graveyard prevents UAF when
+// a late signal handler fires on a frame the entry thread has already given
+// up on.
+std::mutex                          g_snap_graveyard_mu;
+std::vector<internal::SnapshotFrame *> g_snap_graveyard;
+
+void destroy_snapshot_frame(internal::SnapshotFrame *f) {
+  f->~SnapshotFrame();
+  ::operator delete(f, std::align_val_t{16});
 }
+
+void sweep_snap_graveyard() {
+  std::lock_guard<std::mutex> g(g_snap_graveyard_mu);
+  auto it = g_snap_graveyard.begin();
+  while (it != g_snap_graveyard.end()) {
+    if ((*it)->status.load(std::memory_order_acquire) != 0) {
+      destroy_snapshot_frame(*it);
+      it = g_snap_graveyard.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void retire_snapshot_frame(internal::SnapshotFrame *f) {
+  if (f->status.load(std::memory_order_acquire) != 0) {
+    destroy_snapshot_frame(f);
+    return;
+  }
+  std::lock_guard<std::mutex> g(g_snap_graveyard_mu);
+  g_snap_graveyard.push_back(f);
+}
+
+}  // namespace
 
 void snapshot_register_self() {
   pthread_attr_t attr;
@@ -73,6 +108,7 @@ DumpResult dump_all_threads_snapshot(std::chrono::milliseconds per_thread_timeou
   auto t0 = clock::now();
 
   internal::ensure_capture_handler_installed();
+  sweep_snap_graveyard();
   internal::rebuild_dso_cache();
   auto tids = internal::enumerate_tasks_except_self();
 
@@ -146,10 +182,9 @@ DumpResult dump_all_threads_snapshot(std::chrono::milliseconds per_thread_timeou
     result.threads.push_back(std::move(td));
   }
 
-  for (auto *f : frames) {
-    f->~SnapshotFrame();
-    ::operator delete(f, std::align_val_t{16});
-  }
+  // Retire frames: completed now, pending to graveyard so a late signal
+  // handler cannot write into freed memory.
+  for (auto *f : frames) retire_snapshot_frame(f);
 
   result.elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - t0);
   return result;

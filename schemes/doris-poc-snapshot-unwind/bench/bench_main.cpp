@@ -52,6 +52,16 @@ Args parse(int argc, char **argv) {
       std::exit(2);
     }
   }
+  if (a.impl != "kill60" && a.impl != "snapshot") {
+    std::fprintf(stderr, "--impl must be kill60 or snapshot (got %s)\n", a.impl.c_str());
+    std::exit(2);
+  }
+  if (a.workload != "idle" && a.workload != "spin" && a.workload != "alloc" &&
+      a.workload != "lock" && a.workload != "dlopen") {
+    std::fprintf(stderr, "--workload must be idle|spin|alloc|lock|dlopen (got %s)\n",
+                 a.workload.c_str());
+    std::exit(2);
+  }
   return a;
 }
 
@@ -92,12 +102,23 @@ int main(int argc, char **argv) {
   std::ofstream out(a.out, std::ios::app);
   if (a.header) {
     out << "impl,workload,thread_count,copy_bytes,iter,e2e_ns,"
-           "pause_p50_ns,pause_p99_ns,dispatch_p50_ns,dispatch_p99_ns,"
+           "pause_p50_ns,pause_p99_ns,pause_max_ns,"
+           "dispatch_p50_ns,dispatch_p99_ns,dispatch_max_ns,"
            "ok_count,truncated_count,timed_out_count,unregistered_count,error_count\n";
   }
 
+  std::uint64_t timeout_ns = static_cast<std::uint64_t>(a.timeout_ms) * 1000000ull;
+
   for (int i = 0; i < a.iters; ++i) {
     auto r = run_dump();
+    // Distribution includes TIMED_OUT threads at >= timeout_ms so worst-case
+    // in-handler latency isn't silently dropped. ERROR / UNREGISTERED are
+    // excluded — they never entered the handler.
+    //
+    // Note: p99 over 32-128 samples picks index floor(0.99*(n-1)), so a
+    // single TIMED_OUT thread at sort position n-1 falls outside p99.
+    // pause_max_ns / dispatch_max_ns are the true tail; consult those for
+    // worst-case behavior under sparse timeouts.
     std::vector<std::uint64_t> pause, dispatch;
     pause.reserve(r.threads.size());
     dispatch.reserve(r.threads.size());
@@ -113,16 +134,22 @@ int main(int argc, char **argv) {
       if (t.status == dst::DumpStatus::OK) {
         pause.push_back(static_cast<std::uint64_t>(t.handler_ns.count()));
         dispatch.push_back(static_cast<std::uint64_t>(t.dispatch_ns.count()));
+      } else if (t.status == dst::DumpStatus::TIMED_OUT) {
+        pause.push_back(timeout_ns);
+        dispatch.push_back(timeout_ns);
       }
     }
-    std::uint64_t p50 = pctile(pause,    0.50);
-    std::uint64_t p99 = pctile(pause,    0.99);
-    std::uint64_t d50 = pctile(dispatch, 0.50);
-    std::uint64_t d99 = pctile(dispatch, 0.99);
+    std::uint64_t p50  = pctile(pause,    0.50);
+    std::uint64_t p99  = pctile(pause,    0.99);
+    std::uint64_t pmax = pause.empty()    ? 0 : *std::max_element(pause.begin(),    pause.end());
+    std::uint64_t d50  = pctile(dispatch, 0.50);
+    std::uint64_t d99  = pctile(dispatch, 0.99);
+    std::uint64_t dmax = dispatch.empty() ? 0 : *std::max_element(dispatch.begin(), dispatch.end());
 
     out << a.impl << "," << a.workload << "," << a.threads << ","
         << dst::kStackCopyBytes << "," << i << "," << r.elapsed_ns.count() << ","
-        << p50 << "," << p99 << "," << d50 << "," << d99 << ","
+        << p50 << "," << p99 << "," << pmax << ","
+        << d50 << "," << d99 << "," << dmax << ","
         << ok << "," << trunc << "," << to << "," << unreg << "," << err << "\n";
   }
 

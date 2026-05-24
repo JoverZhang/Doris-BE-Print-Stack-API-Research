@@ -1,48 +1,48 @@
-=== kill60  elapsed=0.399 ms  threads=4
-  tid=3027112 name=spin-0          status=OK           frames= 5 trunc=0 dispatch=11.71us handler=86.93us
-    #0  0x55c9484fd0cd ?+0x0 (doris_poc_smoke)
-    #1  0x55c9484fd18a ?+0x0 (doris_poc_smoke)
-    #2  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #3  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #4  0x7f26c91292bc ?+0x0 (libc.so.6)
-  tid=3027113 name=spin-1          status=OK           frames= 5 trunc=0 dispatch=7.64us handler=83.31us
-    #0  0x55c9484fd0cd ?+0x0 (doris_poc_smoke)
-    #1  0x55c9484fd18a ?+0x0 (doris_poc_smoke)
-    #2  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #3  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #4  0x7f26c91292bc ?+0x0 (libc.so.6)
-  tid=3027114 name=spin-2          status=OK           frames= 5 trunc=0 dispatch=8.50us handler=84.83us
-    #0  0x55c9484fd0cd ?+0x0 (doris_poc_smoke)
-    #1  0x55c9484fd18a ?+0x0 (doris_poc_smoke)
-    #2  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #3  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #4  0x7f26c91292bc ?+0x0 (libc.so.6)
-  tid=3027115 name=spin-3          status=OK           frames= 4 trunc=0 dispatch=10.22us handler=69.91us
-    #0  0x55c9484fd190 ?+0x0 (doris_poc_smoke)
-    #1  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #2  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #3  0x7f26c91292bc ?+0x0 (libc.so.6)
-=== snapshot  elapsed=0.351 ms  threads=4
-  tid=3027112 name=spin-0          status=OK           frames= 5 trunc=0 dispatch=3.18us handler=2.46us
-    #0  0x55c9484fd0cd ?+0x0 (doris_poc_smoke)
-    #1  0x55c9484fd18a ?+0x0 (doris_poc_smoke)
-    #2  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #3  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #4  0x7f26c91292bc ?+0x0 (libc.so.6)
-  tid=3027113 name=spin-1          status=OK           frames= 5 trunc=0 dispatch=2.63us handler=2.33us
-    #0  0x55c9484fd0cd ?+0x0 (doris_poc_smoke)
-    #1  0x55c9484fd18a ?+0x0 (doris_poc_smoke)
-    #2  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #3  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #4  0x7f26c91292bc ?+0x0 (libc.so.6)
-  tid=3027114 name=spin-2          status=OK           frames= 4 trunc=0 dispatch=3.23us handler=2.14us
-    #0  0x55c9484fd190 ?+0x0 (doris_poc_smoke)
-    #1  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #2  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #3  0x7f26c91292bc ?+0x0 (libc.so.6)
-  tid=3027115 name=spin-3          status=OK           frames= 5 trunc=0 dispatch=3.31us handler=2.04us
-    #0  0x55c9484fd0cd ?+0x0 (doris_poc_smoke)
-    #1  0x55c9484fd18a ?+0x0 (doris_poc_smoke)
-    #2  0x7f26c92e55a4 ?+0x0 (libstdc++.so.6)
-    #3  0x7f26c90a597a ?+0x0 (libc.so.6)
-    #4  0x7f26c91292bc ?+0x0 (libc.so.6)
+=== kill60  elapsed=0.425 ms  threads=4
+  tid=2646172 name=spin-0          status=OK           frames= 5 trunc=0 dispatch=20.63us handler=71.92us
+    #0  0x55ebf10b820d ?+0x0 (doris_poc_smoke)
+    #1  0x55ebf10b82ca ?+0x0 (doris_poc_smoke)
+    #2  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #3  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #4  0x7f4e37dde2bc ?+0x0 (libc.so.6)
+  tid=2646173 name=spin-1          status=OK           frames= 5 trunc=0 dispatch=9.21us handler=82.80us
+    #0  0x55ebf10b820d ?+0x0 (doris_poc_smoke)
+    #1  0x55ebf10b82ca ?+0x0 (doris_poc_smoke)
+    #2  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #3  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #4  0x7f4e37dde2bc ?+0x0 (libc.so.6)
+  tid=2646174 name=spin-2          status=OK           frames= 4 trunc=0 dispatch=8.37us handler=72.66us
+    #0  0x55ebf10b82d0 ?+0x0 (doris_poc_smoke)
+    #1  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #2  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #3  0x7f4e37dde2bc ?+0x0 (libc.so.6)
+  tid=2646175 name=spin-3          status=OK           frames= 5 trunc=0 dispatch=7.25us handler=78.93us
+    #0  0x55ebf10b820a ?+0x0 (doris_poc_smoke)
+    #1  0x55ebf10b82ca ?+0x0 (doris_poc_smoke)
+    #2  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #3  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #4  0x7f4e37dde2bc ?+0x0 (libc.so.6)
+=== snapshot  elapsed=0.414 ms  threads=4
+  tid=2646172 name=spin-0          status=OK           frames= 4 trunc=0 dispatch=4.89us handler=2.14us
+    #0  0x55ebf10b82d0 ?+0x0 (doris_poc_smoke)
+    #1  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #2  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #3  0x7f4e37dde2bc ?+0x0 (libc.so.6)
+  tid=2646173 name=spin-1          status=OK           frames= 5 trunc=0 dispatch=3.36us handler=2.52us
+    #0  0x55ebf10b820d ?+0x0 (doris_poc_smoke)
+    #1  0x55ebf10b82ca ?+0x0 (doris_poc_smoke)
+    #2  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #3  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #4  0x7f4e37dde2bc ?+0x0 (libc.so.6)
+  tid=2646174 name=spin-2          status=OK           frames= 5 trunc=0 dispatch=3.00us handler=2.08us
+    #0  0x55ebf10b820d ?+0x0 (doris_poc_smoke)
+    #1  0x55ebf10b82ca ?+0x0 (doris_poc_smoke)
+    #2  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #3  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #4  0x7f4e37dde2bc ?+0x0 (libc.so.6)
+  tid=2646175 name=spin-3          status=OK           frames= 5 trunc=0 dispatch=3.02us handler=2.35us
+    #0  0x55ebf10b820d ?+0x0 (doris_poc_smoke)
+    #1  0x55ebf10b82ca ?+0x0 (doris_poc_smoke)
+    #2  0x7f4e380e55a4 ?+0x0 (libstdc++.so.6)
+    #3  0x7f4e37d5a97a ?+0x0 (libc.so.6)
+    #4  0x7f4e37dde2bc ?+0x0 (libc.so.6)

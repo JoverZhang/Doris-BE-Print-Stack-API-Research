@@ -210,11 +210,14 @@ function(doris_poc_executable tgt source lib outname)
   target_link_options(${tgt} PRIVATE -rdynamic)
 endfunction()
 
-doris_poc_executable(doris_poc_bench_4k   bench_main.cpp doris_stacktrace_lib_4k  doris_poc_bench_4k)
-doris_poc_executable(doris_poc_bench_8k   bench_main.cpp doris_stacktrace_lib_8k  doris_poc_bench_8k)
-doris_poc_executable(doris_poc_bench_16k  bench_main.cpp doris_stacktrace_lib_16k doris_poc_bench_16k)
-doris_poc_executable(doris_poc_bench_32k  bench_main.cpp doris_stacktrace_lib_32k doris_poc_bench_32k)
-doris_poc_executable(doris_poc_smoke      smoke.cpp      doris_stacktrace_lib_8k  doris_poc_smoke)
+doris_poc_executable(doris_poc_bench_4k   bench_main.cpp        doris_stacktrace_lib_4k  doris_poc_bench_4k)
+doris_poc_executable(doris_poc_bench_8k   bench_main.cpp        doris_stacktrace_lib_8k  doris_poc_bench_8k)
+doris_poc_executable(doris_poc_bench_16k  bench_main.cpp        doris_stacktrace_lib_16k doris_poc_bench_16k)
+doris_poc_executable(doris_poc_bench_32k  bench_main.cpp        doris_stacktrace_lib_32k doris_poc_bench_32k)
+doris_poc_executable(doris_poc_smoke      smoke.cpp             doris_stacktrace_lib_8k  doris_poc_smoke)
+doris_poc_executable(doris_poc_remote_unwind_test remote_unwind_test.cpp doris_stacktrace_lib_8k doris_poc_remote_unwind_test)
+target_include_directories(doris_poc_remote_unwind_test PRIVATE ${DORIS_POC_DIR}/src)
+target_compile_options(doris_poc_remote_unwind_test PRIVATE -fno-optimize-sibling-calls)
 
 add_library(doris_bench_dso SHARED ${DORIS_POC_DIR}/bench/test_dso.cpp)
 set_target_properties(doris_bench_dso PROPERTIES
@@ -232,5 +235,6 @@ add_custom_target(
     doris_poc_bench_16k
     doris_poc_bench_32k
     doris_poc_smoke
+    doris_poc_remote_unwind_test
     doris_bench_dso
 )

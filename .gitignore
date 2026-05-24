@@ -28,3 +28,4 @@ risk_cases/*/*.raw
 *.deb
 *.rpm
 .task29-dep-cache/
+.claude/
