@@ -55,6 +55,12 @@ ebpf-perf-bpftrace:
 ebpf-alloy-pyroscope:
     ./schemes/ebpf-alloy-pyroscope/run.sh
 
+doris-poc-snapshot-unwind:
+    ./schemes/doris-poc-snapshot-unwind/run.sh
+
+doris-poc-build:
+    ./schemes/doris-poc-snapshot-unwind/build.sh
+
 all-evidence:
     @if [[ "$${RUN_HEAVY_EVIDENCE:-0}" != "1" ]]; then \
       echo "Refusing to rerun heavyweight Phase 1 evidence by default."; \

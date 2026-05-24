@@ -17,6 +17,7 @@ schemes/*/minimal_impl/target.pid
 schemes/*/minimal_impl/*.program.out
 schemes/*/minimal_impl/*.raw
 schemes/*/minimal_impl/stack.*
+schemes/*/*.o
 schemes/*/tmp/
 shared/ebpf/profile_target/build/
 risk_cases/*/build/

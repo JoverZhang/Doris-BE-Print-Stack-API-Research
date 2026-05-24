@@ -166,3 +166,71 @@ add_custom_target(
     risk_ck_unwind_no_phdr_cache
     risk_ck_unwind_with_phdr_cache
 )
+
+# ---------------------------------------------------------------------------
+# Doris POC: snapshot-unwind stack dumper (Impl A kill60 + Impl B snapshot)
+# ---------------------------------------------------------------------------
+
+set(DORIS_POC_DIR ${CMAKE_SOURCE_DIR}/schemes/doris-poc-snapshot-unwind)
+set(DORIS_POC_SOURCES
+  ${DORIS_POC_DIR}/src/common.cpp
+  ${DORIS_POC_DIR}/src/kill60.cpp
+  ${DORIS_POC_DIR}/src/snapshot.cpp
+  ${DORIS_POC_DIR}/src/dwarf_finder.cpp
+)
+set(DORIS_POC_COMPILE_OPTS -O2 -g -fomit-frame-pointer -fasynchronous-unwind-tables)
+
+function(doris_poc_library tgt copy_bytes)
+  add_library(${tgt} STATIC ${DORIS_POC_SOURCES})
+  target_include_directories(${tgt} PUBLIC ${DORIS_POC_DIR}/include)
+  target_include_directories(${tgt} PRIVATE ${DORIS_POC_DIR}/src)
+  target_compile_features(${tgt} PUBLIC cxx_std_17)
+  target_compile_options(${tgt} PRIVATE ${DORIS_POC_COMPILE_OPTS})
+  target_compile_definitions(${tgt} PUBLIC DORIS_STACKTRACE_COPY_BYTES=${copy_bytes})
+  target_link_libraries(${tgt} PUBLIC unwind unwind-x86_64 dl Threads::Threads)
+endfunction()
+
+doris_poc_library(doris_stacktrace_lib_4k   4096)
+doris_poc_library(doris_stacktrace_lib_8k   8192)
+doris_poc_library(doris_stacktrace_lib_16k 16384)
+doris_poc_library(doris_stacktrace_lib_32k 32768)
+
+function(doris_poc_executable tgt source lib outname)
+  add_executable(${tgt}
+    ${DORIS_POC_DIR}/bench/${source}
+    ${DORIS_POC_DIR}/bench/workloads.cpp
+  )
+  set_target_properties(${tgt} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${DORIS_POC_DIR}/build"
+    OUTPUT_NAME "${outname}"
+  )
+  target_include_directories(${tgt} PRIVATE ${DORIS_POC_DIR}/bench)
+  target_compile_options(${tgt} PRIVATE ${DORIS_POC_COMPILE_OPTS})
+  target_link_libraries(${tgt} PRIVATE ${lib})
+  target_link_options(${tgt} PRIVATE -rdynamic)
+endfunction()
+
+doris_poc_executable(doris_poc_bench_4k   bench_main.cpp doris_stacktrace_lib_4k  doris_poc_bench_4k)
+doris_poc_executable(doris_poc_bench_8k   bench_main.cpp doris_stacktrace_lib_8k  doris_poc_bench_8k)
+doris_poc_executable(doris_poc_bench_16k  bench_main.cpp doris_stacktrace_lib_16k doris_poc_bench_16k)
+doris_poc_executable(doris_poc_bench_32k  bench_main.cpp doris_stacktrace_lib_32k doris_poc_bench_32k)
+doris_poc_executable(doris_poc_smoke      smoke.cpp      doris_stacktrace_lib_8k  doris_poc_smoke)
+
+add_library(doris_bench_dso SHARED ${DORIS_POC_DIR}/bench/test_dso.cpp)
+set_target_properties(doris_bench_dso PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY "${DORIS_POC_DIR}/build"
+  OUTPUT_NAME "doris_bench_dso"
+  PREFIX "lib"
+)
+target_compile_options(doris_bench_dso PRIVATE -O2 -g)
+
+add_custom_target(
+  doris_poc_snapshot_unwind
+  DEPENDS
+    doris_poc_bench_4k
+    doris_poc_bench_8k
+    doris_poc_bench_16k
+    doris_poc_bench_32k
+    doris_poc_smoke
+    doris_bench_dso
+)
