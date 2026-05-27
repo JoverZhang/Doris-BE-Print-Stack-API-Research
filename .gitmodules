@@ -12,3 +12,7 @@
 	path = repos/source/obstack-master
 	url = https://github.com/oceanbase/obstack.git
 	ignore = untracked
+[submodule "repos/source/doris-master"]
+	path = repos/source/doris-master
+	url = https://github.com/apache/doris.git
+	ignore = untracked
