@@ -11,6 +11,14 @@ Use these directories:
 - `patches/common/` for common API changes
 - `patches/<variant>/` for variant-only changes
 
+Put test patches in `patches/common/`.
+Use a `tests-` patch name prefix so reviewers can find test changes quickly.
+
+Examples:
+
+- `0004-tests-native-stack-api.patch`
+- `0005-tests-native-stack-timeout.patch`
+
 ## Split Rules
 
 Use one `.patch` for one file difference.
@@ -73,4 +81,18 @@ If there is no reference source, explain the local reason:
 
 ```cpp
 // Reason: tracks one in-flight dump so concurrent HTTP requests return busy.
+```
+
+If a function has several core steps, add a numbered comment before each step.
+Keep the comment short.
+
+```cpp
+// 1. Collect target thread ids.
+collect_tids();
+
+// 2. Interrupt each target thread.
+signal_tids();
+
+// 3. Build the response from captured frames.
+write_response();
 ```

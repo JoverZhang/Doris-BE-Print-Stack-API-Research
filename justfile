@@ -13,6 +13,9 @@ repos-check:
 phase2-apply target:
     @./scripts/phase2_patches.sh apply "{{target}}"
 
+phase2-clean-apply target:
+    @./scripts/phase2_patches.sh clean-apply "{{target}}"
+
 phase2-diff target:
     @./scripts/phase2_patches.sh diff "{{target}}"
 

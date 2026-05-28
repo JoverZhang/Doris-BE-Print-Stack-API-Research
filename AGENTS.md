@@ -14,6 +14,9 @@ Use `phase2/*` as reproducible worktrees with build caches.
 Do this:
 
 - Run `just phase2-apply <target>` before building a target.
+- Run `just phase2-clean-apply <target>` only when the user explicitly asks
+  for a clean re-apply. It deletes untracked and ignored files under
+  `phase2/<target>`, including build caches.
 - Run `just phase2-diff <target>` to inspect temporary worktree changes.
 - Run `just phase2-export <target>` only when you intentionally move committed
   worktree changes back into `patches/`.
@@ -21,6 +24,7 @@ Do this:
 Do not do this:
 
 - Do not run `git clean -xfd` in `phase2/*` unless the user asks.
+- Do not run `just phase2-clean-apply <target>` unless the user asks.
 - Do not commit full all-thread JSON, full build logs, BE logs,
   `/proc/<pid>/maps`, binaries, or dumps.
 - Do not rebuild thirdparty dependencies unless the user asks.
@@ -62,6 +66,7 @@ Use patch-first phase2 worktrees:
 
 - `just phase2-status`
 - `just phase2-apply <target>`
+- `just phase2-clean-apply <target>`
 - `just phase2-diff <target>`
 - `just phase2-export <target>`
 

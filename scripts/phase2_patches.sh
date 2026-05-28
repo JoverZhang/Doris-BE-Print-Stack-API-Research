@@ -14,12 +14,17 @@ usage() {
   cat <<'EOF'
 usage:
   scripts/phase2_patches.sh apply <target>
+  scripts/phase2_patches.sh clean-apply <target>
   scripts/phase2_patches.sh diff <target> [--output FILE]
   scripts/phase2_patches.sh export <target>
   scripts/phase2_patches.sh status [target]
 
 targets:
   common, common-api, or a directory under patches/ such as fp-walk
+
+notes:
+  clean-apply deletes untracked and ignored files under phase2/<target>.
+  Use it only when the user explicitly asks for a clean re-apply.
 EOF
 }
 
@@ -134,6 +139,19 @@ git_am_patches() {
     am --3way --keep-non-patch --committer-date-is-author-date "$@"
 }
 
+apply_patch_series() {
+  local target="$1"
+  local wt="$2"
+
+  collect_patches "$COMMON_TARGET"
+  git_am_patches "$wt" "${PATCH_FILES[@]}"
+
+  if [[ "$target" != "$COMMON_TARGET" ]]; then
+    collect_patches "$target"
+    git_am_patches "$wt" "${PATCH_FILES[@]}"
+  fi
+}
+
 common_patch_count() {
   collect_patches "$COMMON_TARGET"
   echo "${#PATCH_FILES[@]}"
@@ -175,13 +193,26 @@ cmd_apply() {
 
   git -C "$wt" reset --hard "$BASE_COMMIT" >/dev/null
 
-  collect_patches "$COMMON_TARGET"
-  git_am_patches "$wt" "${PATCH_FILES[@]}"
+  apply_patch_series "$target" "$wt"
 
-  if [[ "$target" != "$COMMON_TARGET" ]]; then
-    collect_patches "$target"
-    git_am_patches "$wt" "${PATCH_FILES[@]}"
-  fi
+  echo "applied target=$target worktree=$wt head=$(git -C "$wt" rev-parse --short HEAD)"
+}
+
+cmd_clean_apply() {
+  local target
+  target="$(normalize_target "${1:-}")"
+  ensure_known_target "$target"
+  ensure_worktree "$target"
+
+  local wt
+  wt="$(worktree_for "$target")"
+  require_no_git_operation_in_progress "$wt"
+
+  echo "cleaning target=$target worktree=$wt"
+  git -C "$wt" reset --hard "$BASE_COMMIT" >/dev/null
+  git -C "$wt" clean -ffdx
+
+  apply_patch_series "$target" "$wt"
 
   echo "applied target=$target worktree=$wt head=$(git -C "$wt" rev-parse --short HEAD)"
 }
@@ -301,6 +332,7 @@ main() {
 
   case "$cmd" in
     apply) cmd_apply "$@" ;;
+    clean-apply) cmd_clean_apply "$@" ;;
     diff) cmd_diff "$@" ;;
     export) cmd_export "$@" ;;
     status) cmd_status "$@" ;;
