@@ -1,0 +1,436 @@
+From 75d8a4e021a23b6352a74d9786c9b89e6ed731f1 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 23:47:54 +0800
+Subject: [PATCH 4/5] [feature](be) Add snapshot remote unwind accessors
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Implements the unw_accessors_t callbacks the HTTP coordinator hands to
+unw_create_addr_space + unw_init_remote so libunwind walks frames out
+of the in-memory snapshot (ucontext_t + 8 KiB stack slice) captured by
+the worker signal handler. Mirrors obstack-master's shape (ptrace
+_UPT_accessors → in-memory accessors) so the unwind half of this
+variant is auditable against an existing libunwind remote consumer.
+
+Key accessors:
+- access_mem prefers the captured stack slice for stack-pointer reads;
+  falls through to live process memory for readable mappings (DWARF
+  tables, GOT). Returns -UNW_EINVAL outside both so the unwind
+  terminates rather than wandering into unmapped memory.
+- access_reg maps libunwind's UNW_X86_64_* reg numbers onto glibc's
+  ucontext_t gregs[] indices; x86_64 only (early-return -UNW_EBADREG
+  on other arches, mirroring the snapshot handler).
+- find_proc_info / put_unwind_info / get_dyn_info_list_addr delegate to
+  libunwind's local accessors so the binary's .eh_frame is the source of
+  truth for proc info. Safe because the coordinator runs on the HTTP
+  action thread, not in a signal handler.
+
+UNW_CACHE_GLOBAL matches obstack since .eh_frame is process-wide.
+
+Reference: <obstack>/src/main.cpp:354-363,413-423
+Reference: libunwind-common.h:191-211 (unw_accessors_t shape)
+Reference: libunwind-x86_64.h:58-74 (UNW_X86_64_* register enum)
+---
+ be/src/common/srunwind_remote_unwind.cpp | 308 +++++++++++++++++++++++
+ be/src/common/srunwind_remote_unwind.h   |  73 ++++++
+ 2 files changed, 381 insertions(+)
+ create mode 100644 be/src/common/srunwind_remote_unwind.cpp
+ create mode 100644 be/src/common/srunwind_remote_unwind.h
+
+diff --git a/be/src/common/srunwind_remote_unwind.cpp b/be/src/common/srunwind_remote_unwind.cpp
+new file mode 100644
+index 00000000000..5eda681e8e2
+--- /dev/null
++++ b/be/src/common/srunwind_remote_unwind.cpp
+@@ -0,0 +1,308 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/obstack/blob/master/src/main.cpp
++// (unw_create_addr_space + unw_init_remote loop) and the libunwind
++// remote-unwind API. Modified by Doris for the snapshot-remote-unwind
++// native stack collector.
++
++#include "common/srunwind_remote_unwind.h"
++
++#include <cstring>
++
++namespace doris::srunwind {
++
++namespace {
++
++// Reason: clamp the snapshot pointer arithmetic to a word-aligned read
++// that fully fits inside the captured stack slice.
++bool stack_word_in_snapshot(const RemoteUnwindCookie& cookie, uintptr_t addr) {
++    if (cookie.stack_buf == nullptr || cookie.stack_bytes < static_cast<int64_t>(sizeof(unw_word_t))) {
++        return false;
++    }
++    if (addr < cookie.stack_base) {
++        return false;
++    }
++    const uintptr_t offset = addr - cookie.stack_base;
++    return offset <= static_cast<uintptr_t>(cookie.stack_bytes) - sizeof(unw_word_t);
++}
++
++// Reason: map libunwind's x86_64 reg numbers onto glibc's gregs[] indices.
++// Switch is shorter to audit than a static table.
++// Reference: libunwind-x86_64.h:58-74 (UNW_X86_64_* enum)
++int read_x86_64_reg(const ucontext_t* uc, unw_regnum_t reg, unw_word_t* value) {
++    if (uc == nullptr || value == nullptr) {
++        return -UNW_EINVAL;
++    }
++#if defined(__x86_64__)
++    switch (reg) {
++    case UNW_X86_64_RAX:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RAX]);
++        return 0;
++    case UNW_X86_64_RDX:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RDX]);
++        return 0;
++    case UNW_X86_64_RCX:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RCX]);
++        return 0;
++    case UNW_X86_64_RBX:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RBX]);
++        return 0;
++    case UNW_X86_64_RSI:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RSI]);
++        return 0;
++    case UNW_X86_64_RDI:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RDI]);
++        return 0;
++    case UNW_X86_64_RBP:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RBP]);
++        return 0;
++    case UNW_X86_64_RSP:
++    case UNW_X86_64_CFA:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RSP]);
++        return 0;
++    case UNW_X86_64_R8:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R8]);
++        return 0;
++    case UNW_X86_64_R9:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R9]);
++        return 0;
++    case UNW_X86_64_R10:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R10]);
++        return 0;
++    case UNW_X86_64_R11:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R11]);
++        return 0;
++    case UNW_X86_64_R12:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R12]);
++        return 0;
++    case UNW_X86_64_R13:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R13]);
++        return 0;
++    case UNW_X86_64_R14:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R14]);
++        return 0;
++    case UNW_X86_64_R15:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_R15]);
++        return 0;
++    case UNW_X86_64_RIP:
++        *value = static_cast<unw_word_t>(uc->uc_mcontext.gregs[REG_RIP]);
++        return 0;
++    default:
++        return -UNW_EBADREG;
++    }
++#else
++    (void)reg;
++    return -UNW_EBADREG;
++#endif
++}
++
++// Reason: libunwind delegate — read DWARF unwind info out of the binary's
++// .eh_frame / .debug_frame on disk via the local address space's
++// find_proc_info implementation. The coordinator runs on the HTTP action
++// thread (not a signal handler), so it is safe to walk PHDRs here.
++// Reference: <obstack>/src/main.cpp:356 (unw_create_addr_space uses
++// _UPT_accessors which delegate to libunwind's default DWARF reader)
++int accessor_find_proc_info(unw_addr_space_t /*as*/, unw_word_t ip,
++                            unw_proc_info_t* proc_info, int need_unwind_info,
++                            void* /*arg*/) {
++    unw_accessors_t* local = unw_get_accessors(unw_local_addr_space);
++    if (local == nullptr || local->find_proc_info == nullptr) {
++        return -UNW_EINVAL;
++    }
++    return local->find_proc_info(unw_local_addr_space, ip, proc_info, need_unwind_info, nullptr);
++}
++
++// Reason: libunwind delegate — release the proc-info allocation via the
++// local address space's put_unwind_info.
++void accessor_put_unwind_info(unw_addr_space_t /*as*/, unw_proc_info_t* proc_info,
++                              void* /*arg*/) {
++    unw_accessors_t* local = unw_get_accessors(unw_local_addr_space);
++    if (local == nullptr || local->put_unwind_info == nullptr) {
++        return;
++    }
++    local->put_unwind_info(unw_local_addr_space, proc_info, nullptr);
++}
++
++// Reason: libunwind delegate — the dyn-info list is process-wide so the
++// local accessor's value is correct for our snapshot too.
++int accessor_get_dyn_info_list_addr(unw_addr_space_t /*as*/, unw_word_t* addr,
++                                    void* /*arg*/) {
++    unw_accessors_t* local = unw_get_accessors(unw_local_addr_space);
++    if (local == nullptr || local->get_dyn_info_list_addr == nullptr) {
++        return -UNW_EINVAL;
++    }
++    return local->get_dyn_info_list_addr(unw_local_addr_space, addr, nullptr);
++}
++
++// Reason: read one word of memory for libunwind. The unwind cursor walks
++// stack memory chasing return addresses + saved frame pointers, so any
++// address inside the snapshot's [stack_base, stack_base+stack_bytes)
++// answers from the in-memory copy. Any address inside a readable mapping
++// (DWARF tables in the binary, jump-tables) answers from live memory.
++// Any other address terminates the walk by returning -UNW_EINVAL.
++// Reference: <obstack>/src/main.cpp:356 + libunwind-common.h:191-192
++int accessor_access_mem(unw_addr_space_t /*as*/, unw_word_t addr, unw_word_t* value,
++                        int write, void* arg) {
++    if (write != 0 || value == nullptr || arg == nullptr) {
++        return -UNW_EINVAL;
++    }
++    const auto* cookie = static_cast<const RemoteUnwindCookie*>(arg);
++    const uintptr_t target = static_cast<uintptr_t>(addr);
++
++    // 1. Prefer the snapshot copy when the address is within the captured
++    //    stack slice — the live stack has moved by the time we unwind.
++    if (stack_word_in_snapshot(*cookie, target)) {
++        const uintptr_t offset = target - cookie->stack_base;
++        std::memcpy(value, cookie->stack_buf + offset, sizeof(*value));
++        return 0;
++    }
++
++    // 2. Otherwise the address points at process-wide constant memory
++    //    (binary text, DWARF tables, GOT). Confirm it lies inside a
++    //    readable mapping before dereferencing — the coordinator's
++    //    maps cache is the authority. Worker threads have not unmapped
++    //    these pages while we run, so a memcpy is safe.
++    if (cookie->maps != nullptr) {
++        for (const MemoryMap& map : *cookie->maps) {
++            if (!map.readable) {
++                continue;
++            }
++            if (target < map.start || target >= map.end) {
++                continue;
++            }
++            if (map.end - target < sizeof(*value)) {
++                continue;
++            }
++            std::memcpy(value, reinterpret_cast<const void*>(target), sizeof(*value));
++            return 0;
++        }
++    }
++    return -UNW_EINVAL;
++}
++
++// Reason: libunwind register-file accessor. Read-only on this design.
++int accessor_access_reg(unw_addr_space_t /*as*/, unw_regnum_t reg, unw_word_t* value,
++                        int write, void* arg) {
++    if (write != 0 || value == nullptr || arg == nullptr) {
++        return -UNW_EINVAL;
++    }
++    const auto* cookie = static_cast<const RemoteUnwindCookie*>(arg);
++    return read_x86_64_reg(cookie->ucontext, reg, value);
++}
++
++// Reason: floating-point register access is not needed for stack unwind.
++int accessor_access_fpreg(unw_addr_space_t /*as*/, unw_regnum_t /*reg*/,
++                          unw_fpreg_t* /*value*/, int /*write*/, void* /*arg*/) {
++    return -UNW_EBADREG;
++}
++
++// Reason: resume is meaningless on a snapshot — the worker resumed itself
++// after the prepare-ack.
++int accessor_resume(unw_addr_space_t /*as*/, unw_cursor_t* /*cursor*/, void* /*arg*/) {
++    return -UNW_EINVAL;
++}
++
++// Reason: the HTTP collector returns raw PCs + DSO offsets only per
++// docs/phase2-plan.md:111-118; we never symbolize, so report UNSPEC.
++int accessor_get_proc_name(unw_addr_space_t /*as*/, unw_word_t /*ip*/, char* /*buf*/,
++                           size_t /*buf_len*/, unw_word_t* /*offp*/, void* /*arg*/) {
++    return -UNW_EUNSPEC;
++}
++
++} // namespace
++
++// Reason: assemble the accessors table and create the address space.
++// UNW_CACHE_GLOBAL matches obstack's setting because the .eh_frame data
++// is process-wide; cached entries stay valid across snapshots.
++// Reference: <obstack>/src/main.cpp:356,363
++unw_addr_space_t create_snapshot_addr_space() {
++    static unw_accessors_t s_accessors {};
++    static bool s_initialized = false;
++    if (!s_initialized) {
++        s_accessors.find_proc_info = accessor_find_proc_info;
++        s_accessors.put_unwind_info = accessor_put_unwind_info;
++        s_accessors.get_dyn_info_list_addr = accessor_get_dyn_info_list_addr;
++        s_accessors.access_mem = accessor_access_mem;
++        s_accessors.access_reg = accessor_access_reg;
++        s_accessors.access_fpreg = accessor_access_fpreg;
++        s_accessors.resume = accessor_resume;
++        s_accessors.get_proc_name = accessor_get_proc_name;
++        s_initialized = true;
++    }
++    unw_addr_space_t as = unw_create_addr_space(&s_accessors, 0);
++    if (as != nullptr) {
++        unw_set_caching_policy(as, UNW_CACHE_GLOBAL);
++    }
++    return as;
++}
++
++void destroy_snapshot_addr_space(unw_addr_space_t as) {
++    if (as != nullptr) {
++        unw_destroy_addr_space(as);
++    }
++}
++
++// Reason: walk one snapshot's frames using the unwind cursor. Mirrors
++// obstack's inner loop. Returns the number of frames written.
++// Reference: <obstack>/src/main.cpp:413-423
++int unwind_snapshot(unw_addr_space_t as, RemoteUnwindCookie* cookie, uintptr_t* frames,
++                    int max_frames, bool* truncated) {
++    if (as == nullptr || cookie == nullptr || frames == nullptr || max_frames <= 0) {
++        if (truncated != nullptr) {
++            *truncated = false;
++        }
++        return 0;
++    }
++
++    unw_cursor_t cursor;
++    if (unw_init_remote(&cursor, as, cookie) < 0) {
++        if (truncated != nullptr) {
++            *truncated = false;
++        }
++        return 0;
++    }
++
++    int n = 0;
++    uintptr_t prev_ip = 0;
++    while (n < max_frames) {
++        unw_word_t ip = 0;
++        if (unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0 || ip == 0) {
++            break;
++        }
++        // Reason: defensive stop when the cursor loops on the same PC —
++        // libunwind has been observed to repeat the last frame when
++        // .eh_frame is missing for the next return address.
++        if (n > 0 && static_cast<uintptr_t>(ip) == prev_ip) {
++            break;
++        }
++        frames[n++] = static_cast<uintptr_t>(ip);
++        prev_ip = static_cast<uintptr_t>(ip);
++
++        int rc = unw_step(&cursor);
++        if (rc <= 0) {
++            break;
++        }
++    }
++
++    if (truncated != nullptr) {
++        *truncated = (n >= max_frames);
++    }
++    return n;
++}
++
++} // namespace doris::srunwind
+diff --git a/be/src/common/srunwind_remote_unwind.h b/be/src/common/srunwind_remote_unwind.h
+new file mode 100644
+index 00000000000..f71a65cd248
+--- /dev/null
++++ b/be/src/common/srunwind_remote_unwind.h
+@@ -0,0 +1,73 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/obstack/blob/master/src/main.cpp
++// (the _UPT_accessors-based remote unwind path) and the libunwind
++// remote-unwind API. Modified by Doris for the snapshot-remote-unwind
++// native stack collector — the accessors read from an in-memory snapshot
++// (ucontext_t + stack bytes) instead of /proc/<tid> via ptrace.
++
++#pragma once
++
++#ifndef UNW_LOCAL_ONLY
++#define UNW_LOCAL_ONLY 1
++#endif
++#include <libunwind.h>
++
++#include <cstdint>
++
++#include "common/srunwind_proc_maps.h"
++#include "common/srunwind_signal_handler.h"
++
++namespace doris::srunwind {
++
++// Reason: per-thread input the coordinator hands the accessors. The
++// snapshot pointer addresses ctx storage that the coordinator already
++// copied out from g_sig_handler_ctx_ so subsequent worker captures can
++// reuse the shared ctx buffer. maps is the coordinator's snapshot of
++// /proc/self/maps, used by access_mem to validate non-stack reads.
++struct RemoteUnwindCookie {
++    const ucontext_t* ucontext = nullptr;
++    const unsigned char* stack_buf = nullptr;
++    uintptr_t stack_base = 0;
++    int64_t stack_bytes = 0;
++    const std::vector<MemoryMap>* maps = nullptr;
++};
++
++// Reason: build an address space whose accessors read from the snapshot.
++// Coordinator creates one address space per request and tears it down at
++// the end. The accessors delegate find_proc_info / put_unwind_info /
++// get_dyn_info_list_addr to libunwind's local address space accessors so
++// the snapshot's DWARF unwind info is read out of the binary's .eh_frame
++// without re-implementing the ELF reader. access_mem / access_reg read
++// from the snapshot.
++// Reference: <obstack>/src/main.cpp:354-363 (unw_create_addr_space shape)
++unw_addr_space_t create_snapshot_addr_space();
++
++// Reason: destroy the addr space at the end of the request — mirrors
++// obstack's DEFER(unw_destroy_addr_space).
++// Reference: <obstack>/src/main.cpp:362
++void destroy_snapshot_addr_space(unw_addr_space_t as);
++
++// Reason: walk one snapshot's frames into `frames`. Returns the number of
++// frames written. `truncated` is set to true when the walk hit max_frames
++// before unw_step returned 0/error.
++// Reference: <obstack>/src/main.cpp:413-423 (unw_init_remote + unw_step loop)
++int unwind_snapshot(unw_addr_space_t as, RemoteUnwindCookie* cookie, uintptr_t* frames,
++                    int max_frames, bool* truncated);
++
++} // namespace doris::srunwind
+-- 
+2.53.0
+
