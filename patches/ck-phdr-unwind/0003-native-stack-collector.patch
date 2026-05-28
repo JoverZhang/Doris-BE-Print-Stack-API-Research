@@ -1,4 +1,4 @@
-From 8ddaf07e65859fae118544bdf0c41421bfbc441c Mon Sep 17 00:00:00 2001
+From a84492b2e332b0154bce1dc111ea2d652331bd2b Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Thu, 28 May 2026 22:41:58 +0800
 Subject: [PATCH 3/4] [feature](be) Refactor native stack collector to ck-style
@@ -35,11 +35,11 @@ Every refactored function carries a // Reference:
 
 Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:71-758
 ---
- .../http/action/native_stack_action.cpp       | 711 +++++++++++++++++-
- 1 file changed, 681 insertions(+), 30 deletions(-)
+ .../http/action/native_stack_action.cpp       | 692 +++++++++++++++++-
+ 1 file changed, 662 insertions(+), 30 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_action.cpp b/be/src/service/http/action/native_stack_action.cpp
-index cb9b6e336cb..f3e13811961 100644
+index cb9b6e336cb..ce2de8cb40a 100644
 --- a/be/src/service/http/action/native_stack_action.cpp
 +++ b/be/src/service/http/action/native_stack_action.cpp
 @@ -14,20 +14,45 @@
@@ -250,7 +250,7 @@ index cb9b6e336cb..f3e13811961 100644
                              error_reason)) {
          return false;
      }
-@@ -163,11 +279,315 @@ std::vector<int64_t> list_thread_ids() {
+@@ -163,11 +279,318 @@ std::vector<int64_t> list_thread_ids() {
      return tids;
  }
  
@@ -353,6 +353,15 @@ index cb9b6e336cb..f3e13811961 100644
 +
 +// Reason: thin syscall wrapper. Mirrors ck so the sender can pass a sequence
 +// number through `siginfo_t.si_value.sival_int`.
++// Reason: no `tgkill` fallback. `rt_tgsigqueueinfo` has shipped in every
++// mainline Linux since 2.6.31 (2009); Doris's supported kernel floor is well
++// above that. More importantly, `tgkill` cannot carry the sequence number
++// that `signal_handler` checks against `s_sequence_num` -- a tgkill-delivered
++// signal would arrive with `info->si_value.sival_int == 0` and the handler
++// would (correctly) drop it. So `tgkill` would be effectively dead code:
++// every "fallback" attempt would silently turn into a timeout. We mirror ck,
++// which has no fallback either, and treat `rt_tgsigqueueinfo` failure as a
++// hard per-thread `signal_failed` outcome.
 +// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:114-118
 +int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t* info) {
 +#ifdef SYS_rt_tgsigqueueinfo
@@ -361,12 +370,6 @@ index cb9b6e336cb..f3e13811961 100644
 +    errno = ENOSYS;
 +    return -1;
 +#endif
-+}
-+
-+// Reason: fallback when `rt_tgsigqueueinfo` is unavailable. ck does not need
-+// this fallback; Phase 2 keeps it because Doris targets older kernels too.
-+int tgkill(pid_t tgid, pid_t tid, int sig) {
-+    return static_cast<int>(syscall(SYS_tgkill, tgid, tid, sig));
 +}
 +
 +// Reason: walks the stack in the signal context with libunwind and writes
@@ -567,7 +570,7 @@ index cb9b6e336cb..f3e13811961 100644
      (*root)["timeout_ms"] = options.timeout_ms;
      (*root)["max_frames_per_thread"] = options.max_frames;
      (*root)["max_copied_stack_bytes"] = options.max_stack_bytes;
-@@ -178,9 +598,23 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
+@@ -178,9 +601,23 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
      root->Set("threads", EasyJson::kArray);
  }
  
@@ -594,7 +597,7 @@ index cb9b6e336cb..f3e13811961 100644
      EasyJson thread = threads->PushBack(EasyJson::kObject);
      thread["tid"] = tid;
      thread["status"] = status;
-@@ -191,7 +625,6 @@ void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& statu
+@@ -191,7 +628,6 @@ void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& statu
      thread.Set("frames", EasyJson::kArray);
  }
  
@@ -602,7 +605,7 @@ index cb9b6e336cb..f3e13811961 100644
  EasyJson make_error_response(const std::string& status, const RequestOptions& options,
                               int64_t elapsed, const std::string& error_reason) {
      EasyJson root;
-@@ -200,28 +633,235 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
+@@ -200,28 +636,213 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
      return root;
  }
  
@@ -626,8 +629,6 @@ index cb9b6e336cb..f3e13811961 100644
 +    int unwind_init_result = 0;
 +    int unwind_step_result = 0;
 +    int signal_errno = 0;
-+    int rt_signal_errno = 0;
-+    bool used_tgkill_fallback = false;
 +    std::array<uintptr_t, kMaxSignalFrames> frames {};
 +};
 +
@@ -656,12 +657,8 @@ index cb9b6e336cb..f3e13811961 100644
 +    case ThreadOutcome::kOk:
 +        return "";
 +    case ThreadOutcome::kSignalFailed:
-+        if (res.rt_signal_errno != 0 && res.used_tgkill_fallback) {
-+            return std::string("rt_tgsigqueueinfo failed: ") +
-+                   std::strerror(res.rt_signal_errno) +
-+                   "; tgkill failed: " + std::strerror(res.signal_errno);
-+        }
-+        return std::string("signal send failed: ") + std::strerror(res.signal_errno);
++        return std::string("rt_tgsigqueueinfo failed: ") +
++               std::strerror(res.signal_errno);
 +    case ThreadOutcome::kExitedThread:
 +        return "thread exited before signal could be delivered";
 +    case ThreadOutcome::kTimeout:
@@ -715,27 +712,19 @@ index cb9b6e336cb..f3e13811961 100644
 +    int send_result = rt_tgsigqueueinfo(server_pid, static_cast<pid_t>(tid),
 +                                        kStackTraceServiceSignal, &sig_info);
 +    if (send_result != 0) {
-+        res.rt_signal_errno = errno;
++        res.signal_errno = errno;
 +        if (errno == ESRCH) {
-+            res.signal_errno = ESRCH;
 +            res.outcome = ThreadOutcome::kExitedThread;
-+            return res;
++        } else {
++            // Reason: mirror ck (no fallback). On modern Linux
++            // `rt_tgsigqueueinfo` is the only path that can carry the
++            // anti-spoof sequence number; without it the handler would
++            // reject the signal anyway. Treat any non-ESRCH failure as a
++            // hard per-thread error.
++            // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:508-515
++            res.outcome = ThreadOutcome::kSignalFailed;
 +        }
-+
-+        // Reason: ck does not fall back; Phase 2 keeps a tgkill fallback for
-+        // older kernels but loses the sequence-num check (siginfo is not
-+        // passed). The fallback uses sival_int = 0 implicitly; the handler
-+        // will reject it. Treat it as a best-effort attempt.
-+        res.used_tgkill_fallback = true;
-+        if (tgkill(server_pid, static_cast<pid_t>(tid), kStackTraceServiceSignal) != 0) {
-+            res.signal_errno = errno;
-+            if (errno == ESRCH) {
-+                res.outcome = ThreadOutcome::kExitedThread;
-+            } else {
-+                res.outcome = ThreadOutcome::kSignalFailed;
-+            }
-+            return res;
-+        }
++        return res;
 +    }
 +
 +    if (!wait_for_notification(timeout_ms)) {
@@ -820,14 +809,6 @@ index cb9b6e336cb..f3e13811961 100644
 +        thread["truncated"] = res.truncated;
 +        thread["unwind_init_result"] = res.unwind_init_result;
 +        thread["unwind_step_result"] = res.unwind_step_result;
-+        if (res.used_tgkill_fallback) {
-+            thread["signal_method"] = "tgkill_fallback";
-+        } else {
-+            thread["signal_method"] = "rt_tgsigqueueinfo";
-+        }
-+        if (res.rt_signal_errno != 0) {
-+            thread["rt_signal_errno"] = res.rt_signal_errno;
-+        }
 +        if (res.signal_errno != 0) {
 +            thread["signal_errno"] = res.signal_errno;
 +        }
@@ -848,7 +829,7 @@ index cb9b6e336cb..f3e13811961 100644
      }
      return root;
  }
-@@ -270,8 +910,19 @@ void NativeStackAction::handle(HttpRequest* req) {
+@@ -270,8 +891,19 @@ void NativeStackAction::handle(HttpRequest* req) {
          }
      }
  

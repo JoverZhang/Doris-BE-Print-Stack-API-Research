@@ -1,4 +1,4 @@
-From 48dee5666872a73d8692f22a1740f7fe770fbad2 Mon Sep 17 00:00:00 2001
+From 5044a3379c8903219eeef071c18e292a9631f8e4 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Thu, 28 May 2026 22:43:15 +0800
 Subject: [PATCH 4/4] [feature](build) Wire jemalloc --enable-prof-libunwind
@@ -29,14 +29,14 @@ jemalloc falls back to libgcc and the dl_iterate_phdr override has to
 stay disabled. The build output should be checked for the
 'backtrace_method libunwind' line to confirm detection succeeded.
 ---
- thirdparty/build-thirdparty.sh | 15 ++++++++++++---
- 1 file changed, 12 insertions(+), 3 deletions(-)
+ thirdparty/build-thirdparty.sh | 28 +++++++++++++++++++++++++---
+ 1 file changed, 25 insertions(+), 3 deletions(-)
 
 diff --git a/thirdparty/build-thirdparty.sh b/thirdparty/build-thirdparty.sh
-index 71a3b38afb8..0c9e702feb4 100755
+index 71a3b38afb8..06db5ea21ff 100755
 --- a/thirdparty/build-thirdparty.sh
 +++ b/thirdparty/build-thirdparty.sh
-@@ -1613,8 +1613,17 @@ build_jemalloc_doris() {
+@@ -1613,8 +1613,30 @@ build_jemalloc_doris() {
      # It is not easy to remove `with-jemalloc-prefix`, which may affect the compatibility between third-party and old version codes.
      # Also, will building failed on Mac, it said can't find mallctl symbol. because jemalloc's default prefix on macOS is "je_", not "".
      # Maybe can use alias instead of overwrite.
@@ -49,6 +49,19 @@ index 71a3b38afb8..0c9e702feb4 100755
 +    # CPPFLAGS/LDFLAGS point jemalloc's configure at the thirdparty libunwind
 +    # installed by build_libunwind (the build order is rearranged below so
 +    # libunwind builds before jemalloc_doris).
++    #
++    # Verification recipe (jemalloc's configure silently sets
++    # `enable_prof_libunwind=0` and falls back to libgcc if either
++    # `AC_CHECK_HEADERS([libunwind.h])` or `AC_CHECK_LIB([unwind])` fails, so
++    # the flag alone does not prove the wiring took effect):
++    #
++    #     grep '^backtrace_method' \
++    #         "${TP_SOURCE_DIR}/${JEMALLOC_DORIS_SOURCE}/${BUILD_DIR}/config.log"
++    #     # Expected:  backtrace_method = 'libunwind'
++    #
++    # If the line reads `backtrace_method = 'libgcc'` instead, libunwind
++    # detection failed: re-check that build_libunwind ran first (look for
++    # `${TP_INCLUDE_DIR}/libunwind.h` and `${TP_LIB_DIR}/libunwind.a`).
 +    CFLAGS="${cflags}" CPPFLAGS="-I${TP_INCLUDE_DIR}" LDFLAGS="-L${TP_LIB_DIR}" \
 +        ../configure --prefix="${TP_INSTALL_DIR}" --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
 +        --with-jemalloc-prefix=je --enable-prof --enable-prof-libunwind --disable-cxx \
@@ -56,7 +69,7 @@ index 71a3b38afb8..0c9e702feb4 100755
  
      make -j "${PARALLEL}"
      make install
-@@ -2116,6 +2125,7 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
+@@ -2116,6 +2138,7 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
          thrift
          leveldb
          brpc
@@ -64,7 +77,7 @@ index 71a3b38afb8..0c9e702feb4 100755
          jemalloc_doris
          rocksdb
          krb5 # before cyrus_sasl
-@@ -2152,7 +2162,6 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
+@@ -2152,7 +2175,6 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
          xxhash
          concurrentqueue
          fast_float
