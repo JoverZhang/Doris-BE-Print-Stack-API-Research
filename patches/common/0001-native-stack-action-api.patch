@@ -1,25 +1,21 @@
-From 055bb465015fa6bcd61f9e33f352de78475fcc2e Mon Sep 17 00:00:00 2001
+From 6111fed4fe4914d43bd5dabf7c9ec9345fda9c30 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
-Date: Thu, 28 May 2026 14:49:16 +0800
-Subject: [PATCH] [feature](be) Add native stack debug API stub
+Date: Thu, 28 May 2026 21:43:31 +0800
+Subject: [PATCH 1/2] [feature](be) Add native stack action API
 
-Add an ADMIN-only BE HTTP endpoint for the shared Phase 2 native stack API contract.
-
-The common implementation is intentionally a stub collector: it enumerates BE threads, validates request bounds, returns stable JSON status values, and provides test-only timeout/busy hooks without collecting PCs or symbols.
 ---
- .../http/action/native_stack_action.cpp       | 264 ++++++++++++++++++
- .../service/http/action/native_stack_action.h |  34 +++
- be/src/service/http_service.cpp               |   6 +
- 3 files changed, 304 insertions(+)
+ .../http/action/native_stack_action.cpp       | 278 ++++++++++++++++++
+ .../service/http/action/native_stack_action.h |  35 +++
+ 2 files changed, 313 insertions(+)
  create mode 100644 be/src/service/http/action/native_stack_action.cpp
  create mode 100644 be/src/service/http/action/native_stack_action.h
 
 diff --git a/be/src/service/http/action/native_stack_action.cpp b/be/src/service/http/action/native_stack_action.cpp
 new file mode 100644
-index 00000000000..1a7cd4a2ce1
+index 00000000000..cb9b6e336cb
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack_action.cpp
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,278 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -68,6 +64,7 @@ index 00000000000..1a7cd4a2ce1
 +
 +std::atomic<bool> s_dump_running {false};
 +
++// Reason: tracks one in-flight dump so concurrent HTTP requests return busy.
 +class ScopedDumpSlot {
 +public:
 +    ScopedDumpSlot() {
@@ -87,6 +84,7 @@ index 00000000000..1a7cd4a2ce1
 +    bool _owns = false;
 +};
 +
++// Reason: groups validated request parameters in one bag for the handler.
 +struct RequestOptions {
 +    int64_t timeout_ms = kDefaultTimeoutMs;
 +    int64_t max_frames = kDefaultMaxFrames;
@@ -101,6 +99,7 @@ index 00000000000..1a7cd4a2ce1
 +                                        .count());
 +}
 +
++// Reason: parses one signed integer and rejects trailing garbage.
 +bool parse_i64(const std::string& value, int64_t* parsed) {
 +    try {
 +        size_t consumed = 0;
@@ -115,6 +114,7 @@ index 00000000000..1a7cd4a2ce1
 +    }
 +}
 +
++// Reason: applies the default when the query param is absent and bounds-checks otherwise.
 +bool parse_optional_i64(const HttpRequest* req, const std::string& key, int64_t default_value,
 +                        int64_t min_value, int64_t max_value, int64_t* parsed,
 +                        std::string* error_reason) {
@@ -133,6 +133,7 @@ index 00000000000..1a7cd4a2ce1
 +    return true;
 +}
 +
++// Reason: validates every query param up front so the handler can fail fast on bad input.
 +bool parse_options(const HttpRequest* req, RequestOptions* options, std::string* error_reason) {
 +    if (!parse_optional_i64(req, "timeout_ms", kDefaultTimeoutMs, 1, 60000, &options->timeout_ms,
 +                            error_reason)) {
@@ -163,6 +164,7 @@ index 00000000000..1a7cd4a2ce1
 +    return true;
 +}
 +
++// Reason: enumerates BE threads from /proc/self/task as the canonical tid set.
 +std::vector<int64_t> list_thread_ids() {
 +    std::vector<int64_t> tids;
 +    std::error_code ec;
@@ -179,6 +181,7 @@ index 00000000000..1a7cd4a2ce1
 +    return tids;
 +}
 +
++// Reason: writes the response envelope fields shared by every status path.
 +void fill_common_fields(EasyJson* root, const std::string& status, const RequestOptions& options,
 +                        int64_t elapsed) {
 +    (*root)["status"] = status;
@@ -193,6 +196,7 @@ index 00000000000..1a7cd4a2ce1
 +    root->Set("threads", EasyJson::kArray);
 +}
 +
++// Reason: appends one thread entry with the stable schema variants will fill in.
 +void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
 +                        const std::string& error_reason) {
 +    EasyJson thread = threads->PushBack(EasyJson::kObject);
@@ -205,6 +209,7 @@ index 00000000000..1a7cd4a2ce1
 +    thread.Set("frames", EasyJson::kArray);
 +}
 +
++// Reason: builds a response that carries an error_reason alongside the common fields.
 +EasyJson make_error_response(const std::string& status, const RequestOptions& options,
 +                             int64_t elapsed, const std::string& error_reason) {
 +    EasyJson root;
@@ -213,6 +218,7 @@ index 00000000000..1a7cd4a2ce1
 +    return root;
 +}
 +
++// Reason: returns stable JSON without collecting PCs so reviewers see the response shape.
 +EasyJson collect_stub_stacks(const RequestOptions& options, int64_t elapsed) {
 +    std::vector<int64_t> tids = list_thread_ids();
 +    EasyJson root;
@@ -248,6 +254,7 @@ index 00000000000..1a7cd4a2ce1
 +    req->add_output_header(HttpHeaders::CONTENT_TYPE, kJsonContentType);
 +
 +    const auto start = std::chrono::steady_clock::now();
++    // 1. Parse and validate request options.
 +    RequestOptions options;
 +    std::string error_reason;
 +    if (!parse_options(req, &options, &error_reason)) {
@@ -258,6 +265,7 @@ index 00000000000..1a7cd4a2ce1
 +        return;
 +    }
 +
++    // 2. Acquire the single-active-dump slot.
 +    ScopedDumpSlot slot;
 +    if (!slot.owns()) {
 +        HttpChannel::send_reply(req, HttpStatus::OK,
@@ -267,6 +275,7 @@ index 00000000000..1a7cd4a2ce1
 +        return;
 +    }
 +
++    // 3. Honor the test-only sleep hook and report timeout when it exceeds the budget.
 +    if (options.test_sleep_ms > 0) {
 +        std::this_thread::sleep_for(
 +                std::chrono::milliseconds(std::min(options.test_sleep_ms, options.timeout_ms)));
@@ -279,6 +288,7 @@ index 00000000000..1a7cd4a2ce1
 +        }
 +    }
 +
++    // 4. Collect stub stacks and write the response.
 +    EasyJson response = collect_stub_stacks(options, elapsed_ms(start));
 +    HttpChannel::send_reply(req, HttpStatus::OK, response.ToString());
 +}
@@ -286,10 +296,10 @@ index 00000000000..1a7cd4a2ce1
 +} // namespace doris
 diff --git a/be/src/service/http/action/native_stack_action.h b/be/src/service/http/action/native_stack_action.h
 new file mode 100644
-index 00000000000..362510cd654
+index 00000000000..2bf737d02d8
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack_action.h
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,35 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -315,6 +325,7 @@ index 00000000000..362510cd654
 +
 +class HttpRequest;
 +
++// Reason: serves the shared Phase 2 native stack debug HTTP contract.
 +class NativeStackAction : public HttpHandlerWithAuth {
 +public:
 +    NativeStackAction(ExecEnv* exec_env, TPrivilegeHier::type hier, TPrivilegeType::type type);
@@ -324,30 +335,6 @@ index 00000000000..362510cd654
 +};
 +
 +} // namespace doris
-diff --git a/be/src/service/http_service.cpp b/be/src/service/http_service.cpp
-index 93a50a81cc1..d005f701ac1 100644
---- a/be/src/service/http_service.cpp
-+++ b/be/src/service/http_service.cpp
-@@ -58,6 +58,7 @@
- #include "service/http/action/load_stream_action.h"
- #include "service/http/action/meta_action.h"
- #include "service/http/action/metrics_action.h"
-+#include "service/http/action/native_stack_action.h"
- #include "service/http/action/pad_rowset_action.h"
- #include "service/http/action/pipeline_task_action.h"
- #include "service/http/action/pprof_actions.h"
-@@ -190,6 +191,11 @@ Status HttpService::start() {
-     _ev_http_server->register_handler(HttpMethod::GET, "/api/be_process_thread_num",
-                                       be_proc_thread_action);
- 
-+    NativeStackAction* native_stack_action =
-+            _pool.add(new NativeStackAction(_env, TPrivilegeHier::GLOBAL, TPrivilegeType::ADMIN));
-+    _ev_http_server->register_handler(HttpMethod::GET, "/api/debug/native_stack",
-+                                      native_stack_action);
-+
-     // Register BE LoadStream action
-     LoadStreamAction* load_stream_action = _pool.add(new LoadStreamAction(_env));
-     _ev_http_server->register_handler(HttpMethod::GET, "/api/load_streams", load_stream_action);
 -- 
 2.53.0
 
