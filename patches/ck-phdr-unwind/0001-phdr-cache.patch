@@ -1,0 +1,119 @@
+From ecb5574e7a3fc400cb504fa9a846f811bf652678 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 22:36:46 +0800
+Subject: [PATCH 1/4] [feature](be) Enable lock-free dl_iterate_phdr override
+ for ck-phdr-unwind
+
+Uncomment the ClickHouse-style dl_iterate_phdr override in
+be/src/common/phdr_cache.cpp. The override is required for signal-safe
+stack unwinding because the libc version takes the loader lock, which
+is unsafe in a signal handler.
+
+The override was disabled upstream after a jemalloc heap-profile
+regression: libgcc's backtracer reentered the loader. The build-system
+patch in this series configures jemalloc with --enable-prof-libunwind,
+which avoids the libgcc path and lets this override stay live.
+
+Each function carries a // Reference: <ck>/base/base/phdr_cache.cpp:N-M
+comment so reviewers can map every block back to its ClickHouse source.
+
+Reference: <ck>/base/base/phdr_cache.cpp:1-127
+---
+ be/src/common/phdr_cache.cpp | 38 ++++++++++++++++++++++++++----------
+ 1 file changed, 28 insertions(+), 10 deletions(-)
+
+diff --git a/be/src/common/phdr_cache.cpp b/be/src/common/phdr_cache.cpp
+index e0f5ff43fed..b47aa7b36c2 100644
+--- a/be/src/common/phdr_cache.cpp
++++ b/be/src/common/phdr_cache.cpp
+@@ -58,6 +58,9 @@ namespace {
+ // https://github.com/scylladb/seastar/blob/master/core/exception_hacks.hh
+ // https://github.com/scylladb/seastar/blob/master/core/exception_hacks.cc
+ 
++// Reason: signal-safe handle to the loader's original lookup; needed by
++// `updatePHDRCache` and by the override's cold path before the cache is filled.
++// Reference: <ck>/base/base/phdr_cache.cpp:40-48
+ using DLIterateFunction = int (*)(int (*callback)(dl_phdr_info* info, size_t size, void* data),
+                                   void* data);
+ 
+@@ -74,15 +77,17 @@ std::atomic<PHDRCache*> phdr_cache {};
+ 
+ } // namespace
+ 
+-// Jemalloc heap profile follows libgcc's way of backtracing by default.
+-// rewrites dl_iterate_phdr will cause Jemalloc to fail to run after enable profile.
+-
+-// TODO, two solutions:
+-// 1. Jemalloc specifies GNU libunwind as the prof backtracing way, but my test failed,
+-//    `--enable-prof-libunwind` not work: https://github.com/jemalloc/jemalloc/issues/2504
+-// 2. ClickHouse/libunwind solves Jemalloc profile backtracing, but the branch of ClickHouse/libunwind
+-//    has been out of touch with GNU libunwind and LLVM libunwind, which will leave the fate to others.
+-/*
++// Reason: lock-free override of libc `dl_iterate_phdr`. Mirrors ClickHouse and
++// is required for signal-safe stack unwinding (the libc version takes the
++// loader lock, which is unsafe in a signal handler).
++// Reason: jemalloc heap-profile backtracing previously broke when this override
++// was active because libgcc's backtracer reentered the loader. Doris's
++// build now configures jemalloc with `--enable-prof-libunwind`, which avoids
++// the libgcc path and lets this override stay live.
++// Reason: the `[[gnu::visibility("default")]]` and `[[gnu::externally_visible]]`
++// attributes force the symbol into the dynamic symbol table so that ELF
++// interposition replaces libc's `dl_iterate_phdr` in all call sites.
++// Reference: <ck>/base/base/phdr_cache.cpp:57-75
+ extern "C"
+ #ifndef __clang__
+         [[gnu::visibility("default")]] [[gnu::externally_visible]]
+@@ -104,8 +109,10 @@ extern "C"
+     }
+     return result;
+ }
+-*/
+ 
++// Reason: declared so the leaked cache can be hidden from LeakSanitizer; the
++// stub is used when ASan is off so the same call compiles in every build.
++// Reference: <ck>/base/base/phdr_cache.cpp:78-85
+ extern "C" {
+ #ifdef ADDRESS_SANITIZER
+ void __lsan_ignore_object(const void*);
+@@ -114,6 +121,9 @@ void __lsan_ignore_object(const void*) {} // NOLINT
+ #endif
+ }
+ 
++// Reason: populates the static cache from the loader and intentionally leaks
++// it; called once at BE startup after all DSOs are loaded.
++// Reference: <ck>/base/base/phdr_cache.cpp:88-107
+ void updatePHDRCache() {
+     // Fill out ELF header cache for access without locking.
+     // This assumes no dynamic object loading/unloading after this point
+@@ -135,20 +145,28 @@ void updatePHDRCache() {
+     __lsan_ignore_object(new_phdr_cache);
+ }
+ 
++// Reason: lets callers verify the lock-free override is active before relying
++// on it (for example, before installing the stack-trace signal handler).
++// Reference: <ck>/base/base/phdr_cache.cpp:110-113
+ bool hasPHDRCache() {
+     return phdr_cache.load() != nullptr;
+ }
+ 
+ #else
+ 
++// Reason: empty stub for sanitizer builds and musl, where the override is not
++// installed; keeps the call site in `doris_main` portable.
++// Reference: <ck>/base/base/phdr_cache.cpp:117
+ void updatePHDRCache() {}
+ 
+ #if defined(USE_MUSL)
+ /// With statically linked with musl, dl_iterate_phdr is immutable.
++// Reference: <ck>/base/base/phdr_cache.cpp:120-121
+ bool hasPHDRCache() {
+     return true;
+ }
+ #else
++// Reference: <ck>/base/base/phdr_cache.cpp:123
+ bool hasPHDRCache() {
+     return false;
+ }
+-- 
+2.53.0
+

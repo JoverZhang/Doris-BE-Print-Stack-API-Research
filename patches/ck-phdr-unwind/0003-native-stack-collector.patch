@@ -1,0 +1,875 @@
+From 8ddaf07e65859fae118544bdf0c41421bfbc441c Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 22:41:58 +0800
+Subject: [PATCH 3/4] [feature](be) Refactor native stack collector to ck-style
+ signal handler
+
+Rewrite be/src/service/http/action/native_stack_action.cpp so its signal
+handling mirrors <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
+The previous freeform implementation passed a per-thread slot pointer
+through sival_ptr and polled a per-slot atomic with sleep; this version
+uses ClickHouse's pattern instead:
+
+- A single sequence number is stored in siginfo_t.si_value.sival_int and
+  is incremented after each thread.
+- A single global capture buffer holds the frames; one thread is
+  signalled at a time and the buffer is serialized by the dump mutex.
+- A pipe(2) is used as the data-ready notification channel; the HTTP
+  handler polls it with the configured timeout.
+- The handler enforces the anti-spoof check (si_pid == server_pid) and
+  the signal_latch compare-exchange.
+- A per-thread is_signal_blocked check skips threads that block SIGRTMIN
+  so the wait does not have to time out for nothing.
+- rt_tgsigqueueinfo is still used as the primary send path; tgkill is
+  kept as a best-effort fallback (loses the sequence-num passthrough,
+  so the handler ignores tgkill-delivered signals).
+
+Doris environment deviations from ck (each documented inline):
+- pipe2(O_CLOEXEC) replaces ck's LazyPipeFDs (internal type).
+- No DENY_ALLOCATIONS_IN_SCOPE; the no-alloc/no-lock/no-log invariant
+  is enforced by inspection and a header comment in the handler.
+- libunwind replaces ck's StackTrace class.
+
+Every refactored function carries a // Reference:
+<ck>/src/Storages/System/StorageSystemStackTrace.cpp:N comment.
+
+Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:71-758
+---
+ .../http/action/native_stack_action.cpp       | 711 +++++++++++++++++-
+ 1 file changed, 681 insertions(+), 30 deletions(-)
+
+diff --git a/be/src/service/http/action/native_stack_action.cpp b/be/src/service/http/action/native_stack_action.cpp
+index cb9b6e336cb..f3e13811961 100644
+--- a/be/src/service/http/action/native_stack_action.cpp
++++ b/be/src/service/http/action/native_stack_action.cpp
+@@ -14,20 +14,45 @@
+ // KIND, either express or implied.  See the License for the
+ // specific language governing permissions and limitations
+ // under the License.
++//
++// This file follows the ClickHouse pattern in
++// <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
++// See per-function `// Reference:` comments for the exact ck source lines.
+ 
+ #include "service/http/action/native_stack_action.h"
+ 
++#include <fcntl.h>
+ #include <glog/logging.h>
++#include <poll.h>
++#include <signal.h>
++#include <sys/syscall.h>
++#include <sys/types.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#ifdef USE_UNWIND
++#define UNW_LOCAL_ONLY
++#include <libunwind.h>
++#endif
+ 
+ #include <algorithm>
++#include <array>
+ #include <atomic>
++#include <cerrno>
+ #include <chrono>
+ #include <cstdint>
++#include <cstring>
+ #include <exception>
+ #include <filesystem>
++#include <fstream>
++#include <iomanip>
++#include <limits>
++#include <mutex>
+ #include <optional>
++#include <sstream>
+ #include <string>
+ #include <thread>
++#include <utility>
+ #include <vector>
+ 
+ #include "service/http/http_channel.h"
+@@ -40,12 +65,85 @@ namespace doris {
+ namespace {
+ 
+ constexpr char kJsonContentType[] = "application/json";
++constexpr char kCollectorName[] = "ck-phdr-unwind";
+ constexpr int64_t kDefaultTimeoutMs = 100;
+ constexpr int64_t kDefaultMaxFrames = 64;
+ constexpr int64_t kDefaultMaxStackBytes = 8192;
++// Reason: matches the ck capture buffer size; the per-thread `frames` array
++// holds up to this many PCs before truncation.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:103
++constexpr size_t kMaxSignalFrames = 256;
+ 
++// Reason: tracks one in-flight HTTP request so concurrent requests return busy.
+ std::atomic<bool> s_dump_running {false};
+ 
++// Reason: BE process pid captured at signal-handler install time; the handler
++// rejects signals whose `si_pid` does not match this value.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:75
++std::atomic<pid_t> s_server_pid {0};
++
++// Reason: realtime signal used to ask one worker to dump its stack.
++// SIGRTMIN is the queueable-RT signal slot ck uses on Linux.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:78
++constexpr int kStackTraceServiceSignal = SIGRTMIN;
++
++// Reason: sequence number sent in `siginfo_t.si_value.sival_int`. The sender
++// increments it after each thread; the handler refuses signals whose
++// sequence does not match the current value so delayed/late deliveries
++// cannot pollute the next thread's capture.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:83
++std::atomic<int> s_sequence_num {0};
++
++// Reason: notification number the handler stores after capturing; the sender
++// reads it to confirm the response matches the request it just sent.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:84
++std::atomic<int> s_data_ready_num {0};
++
++// Reason: single-handler-at-a-time latch. Compare-exchange acquired by the
++// handler, released after the capture finishes. Required by TSan and to
++// close a small race where two delayed handlers could both pass the
++// sequence check on the same thread.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:85
++std::atomic<bool> s_signal_latch {false};
++
++// Reason: serializes access to the single global capture buffer. The HTTP
++// handler holds this lock for the whole dump so no other dump can run.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:101
++std::mutex s_capture_mutex;
++
++// Reason: the single global capture buffer. The handler writes into it; the
++// HTTP handler reads it after `wait` confirms the data is ready. One buffer
++// (not per-thread) is sufficient because the dump processes threads serially
++// and the latch + sequence number prevent concurrent writes.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:103-104
++std::array<uintptr_t, kMaxSignalFrames> s_capture_frames;
++std::atomic<size_t> s_capture_frame_count {0};
++std::atomic<bool> s_capture_truncated {false};
++std::atomic<int> s_capture_unwind_init {0};
++std::atomic<int> s_capture_unwind_step {0};
++
++// Reason: pipe used as the "data ready" notification channel. Read end is
++// polled by `wait`; write end is written by the handler. ck uses
++// `LazyPipeFDs`; Doris uses `pipe2(..., O_CLOEXEC)` directly because
++// `LazyPipeFDs` is a ClickHouse internal type.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:111
++int s_notification_pipe_read = -1;
++int s_notification_pipe_write = -1;
++
++// Reason: install the signal handler once per BE process. Subsequent
++// invocations are no-ops.
++std::once_flag s_signal_install_once;
++std::atomic<bool> s_signal_installed {false};
++
++// Reason: groups validated request parameters in one bag for the handler.
++struct RequestOptions {
++    int64_t timeout_ms = kDefaultTimeoutMs;
++    int64_t max_frames = kDefaultMaxFrames;
++    int64_t max_stack_bytes = kDefaultMaxStackBytes;
++    int64_t test_sleep_ms = 0;
++    std::optional<int64_t> target_tid;
++};
++
+ // Reason: tracks one in-flight dump so concurrent HTTP requests return busy.
+ class ScopedDumpSlot {
+ public:
+@@ -66,22 +164,12 @@ private:
+     bool _owns = false;
+ };
+ 
+-// Reason: groups validated request parameters in one bag for the handler.
+-struct RequestOptions {
+-    int64_t timeout_ms = kDefaultTimeoutMs;
+-    int64_t max_frames = kDefaultMaxFrames;
+-    int64_t max_stack_bytes = kDefaultMaxStackBytes;
+-    int64_t test_sleep_ms = 0;
+-    std::optional<int64_t> target_tid;
+-};
+-
+ int64_t elapsed_ms(std::chrono::steady_clock::time_point start) {
+     return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now() - start)
+                                         .count());
+ }
+ 
+-// Reason: parses one signed integer and rejects trailing garbage.
+ bool parse_i64(const std::string& value, int64_t* parsed) {
+     try {
+         size_t consumed = 0;
+@@ -96,7 +184,35 @@ bool parse_i64(const std::string& value, int64_t* parsed) {
+     }
+ }
+ 
+-// Reason: applies the default when the query param is absent and bounds-checks otherwise.
++bool parse_hex_uintptr(const std::string& value, uintptr_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size() ||
++            result > static_cast<unsigned long long>(std::numeric_limits<uintptr_t>::max())) {
++            return false;
++        }
++        *parsed = static_cast<uintptr_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
++bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size()) {
++            return false;
++        }
++        *parsed = static_cast<uint64_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
+ bool parse_optional_i64(const HttpRequest* req, const std::string& key, int64_t default_value,
+                         int64_t min_value, int64_t max_value, int64_t* parsed,
+                         std::string* error_reason) {
+@@ -115,13 +231,13 @@ bool parse_optional_i64(const HttpRequest* req, const std::string& key, int64_t
+     return true;
+ }
+ 
+-// Reason: validates every query param up front so the handler can fail fast on bad input.
+ bool parse_options(const HttpRequest* req, RequestOptions* options, std::string* error_reason) {
+     if (!parse_optional_i64(req, "timeout_ms", kDefaultTimeoutMs, 1, 60000, &options->timeout_ms,
+                             error_reason)) {
+         return false;
+     }
+-    if (!parse_optional_i64(req, "max_frames", kDefaultMaxFrames, 1, 1024, &options->max_frames,
++    if (!parse_optional_i64(req, "max_frames", kDefaultMaxFrames, 1,
++                            static_cast<int64_t>(kMaxSignalFrames), &options->max_frames,
+                             error_reason)) {
+         return false;
+     }
+@@ -163,11 +279,315 @@ std::vector<int64_t> list_thread_ids() {
+     return tids;
+ }
+ 
++// Reason: reads `/proc/<tid>/status` to check whether the target thread blocks
++// the service signal. ck's same check skips the signal-send when blocked so
++// the wait does not time out for nothing.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:294-327
++bool is_signal_blocked(int64_t tid, int signal_number) {
++    if (signal_number <= 0 || signal_number > 64) {
++        return false;
++    }
++
++    std::ifstream status("/proc/self/task/" + std::to_string(tid) + "/status");
++    std::string line;
++    while (std::getline(status, line)) {
++        constexpr char kSigBlkPrefix[] = "SigBlk:";
++        if (line.rfind(kSigBlkPrefix, 0) != 0) {
++            continue;
++        }
++
++        std::istringstream iss(line.substr(sizeof(kSigBlkPrefix) - 1));
++        std::string hex_mask;
++        if (!(iss >> hex_mask)) {
++            return false;
++        }
++        uint64_t mask = 0;
++        if (!parse_hex_u64(hex_mask, &mask)) {
++            return false;
++        }
++        return (mask & (uint64_t {1} << (signal_number - 1))) != 0;
++    }
++    return false;
++}
++
++struct MemoryMap {
++    uintptr_t start = 0;
++    uintptr_t end = 0;
++    uintptr_t offset = 0;
++    std::string path;
++};
++
++std::string trim_left_spaces(std::string value) {
++    const size_t first = value.find_first_not_of(' ');
++    if (first == std::string::npos) {
++        return "";
++    }
++    return value.substr(first);
++}
++
++// Reason: snapshots /proc/self/maps once per request so each PC can be turned
++// into <dso, dso_offset> for the API response.
++std::vector<MemoryMap> load_memory_maps() {
++    std::vector<MemoryMap> maps;
++    std::ifstream input("/proc/self/maps");
++    std::string line;
++    while (std::getline(input, line)) {
++        std::istringstream iss(line);
++        std::string range;
++        std::string perms;
++        std::string offset_hex;
++        std::string dev;
++        std::string inode;
++        if (!(iss >> range >> perms >> offset_hex >> dev >> inode)) {
++            continue;
++        }
++        const size_t dash = range.find('-');
++        if (dash == std::string::npos) {
++            continue;
++        }
++
++        MemoryMap map;
++        if (!parse_hex_uintptr(range.substr(0, dash), &map.start) ||
++            !parse_hex_uintptr(range.substr(dash + 1), &map.end) ||
++            !parse_hex_uintptr(offset_hex, &map.offset) || map.start >= map.end) {
++            continue;
++        }
++
++        std::string path;
++        std::getline(iss, path);
++        map.path = trim_left_spaces(path);
++        maps.emplace_back(std::move(map));
++    }
++    return maps;
++}
++
++const MemoryMap* find_map_for_pc(const std::vector<MemoryMap>& maps, uintptr_t pc) {
++    for (const MemoryMap& map : maps) {
++        if (pc >= map.start && pc < map.end) {
++            return &map;
++        }
++    }
++    return nullptr;
++}
++
++std::string hex_uintptr(uintptr_t value) {
++    std::ostringstream out;
++    out << "0x" << std::hex << value;
++    return out.str();
++}
++
++// Reason: thin syscall wrapper. Mirrors ck so the sender can pass a sequence
++// number through `siginfo_t.si_value.sival_int`.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:114-118
++int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t* info) {
++#ifdef SYS_rt_tgsigqueueinfo
++    return static_cast<int>(syscall(SYS_rt_tgsigqueueinfo, tgid, tid, sig, info));
++#else
++    errno = ENOSYS;
++    return -1;
++#endif
++}
++
++// Reason: fallback when `rt_tgsigqueueinfo` is unavailable. ck does not need
++// this fallback; Phase 2 keeps it because Doris targets older kernels too.
++int tgkill(pid_t tgid, pid_t tid, int sig) {
++    return static_cast<int>(syscall(SYS_tgkill, tgid, tid, sig));
++}
++
++// Reason: walks the stack in the signal context with libunwind and writes
++// each PC into the global capture buffer.
++// IMPORTANT: this runs in a signal handler. No allocations, no locks, no
++// logging, no syscalls except libunwind's own. ck enforces the same rule
++// with `DENY_ALLOCATIONS_IN_SCOPE`; Doris has no equivalent macro, so the
++// invariant is checked by inspection and reinforced by this comment.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:120-183
++void capture_frames_in_signal_context(void* raw_context) {
++#if defined(USE_UNWIND) && defined(__linux__) && defined(__x86_64__)
++    auto* signal_context = static_cast<ucontext_t*>(raw_context);
++    unw_cursor_t cursor;
++    int init_result = unw_init_local2(
++            &cursor, reinterpret_cast<unw_context_t*>(signal_context), UNW_INIT_SIGNAL_FRAME);
++    s_capture_unwind_init.store(init_result, std::memory_order_release);
++    if (init_result < 0) {
++        s_capture_unwind_step.store(init_result, std::memory_order_release);
++        s_capture_frame_count.store(0, std::memory_order_release);
++        s_capture_truncated.store(false, std::memory_order_release);
++        return;
++    }
++
++    size_t frame_count = 0;
++    int last_step = 0;
++    while (frame_count < kMaxSignalFrames) {
++        unw_word_t ip = 0;
++        int result = unw_get_reg(&cursor, UNW_REG_IP, &ip);
++        if (result < 0) {
++            last_step = result;
++            break;
++        }
++        if (ip != 0) {
++            s_capture_frames[frame_count] = static_cast<uintptr_t>(ip);
++            ++frame_count;
++        }
++        if (frame_count >= kMaxSignalFrames) {
++            break;
++        }
++        result = unw_step(&cursor);
++        if (result <= 0) {
++            last_step = result;
++            break;
++        }
++    }
++    s_capture_frame_count.store(frame_count, std::memory_order_release);
++    s_capture_truncated.store(frame_count >= kMaxSignalFrames, std::memory_order_release);
++    s_capture_unwind_step.store(last_step, std::memory_order_release);
++#else
++    (void)raw_context;
++    s_capture_frame_count.store(0, std::memory_order_release);
++    s_capture_truncated.store(false, std::memory_order_release);
++    s_capture_unwind_init.store(-1, std::memory_order_release);
++    s_capture_unwind_step.store(-1, std::memory_order_release);
++#endif
++}
++
++// Reason: the SIGRTMIN handler. Mirrors ck: anti-spoof on `si_pid`, sequence
++// check, single-handler latch, capture frames, write notification to the
++// pipe. Restores errno on every exit path.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:120-183
++void signal_handler(int, siginfo_t* info, void* context) {
++    // No allocations, no locks, no logging in signal context.
++    int saved_errno = errno;
++
++    // Reason: reject signals from outside this process (manual `kill` from a
++    // foreign uid would otherwise let an attacker inject sequence numbers).
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:128-129
++    if (info->si_pid != s_server_pid.load(std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++
++    // Reason: drop signals delivered after the sender moved on to the next
++    // thread. Without this check a late handler would overwrite the buffer
++    // for a thread we are no longer reading.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:132-133
++    int notification_num = info->si_value.sival_int;
++    if (notification_num != s_sequence_num.load(std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++
++    // Reason: single-handler latch closes the race where two delayed handlers
++    // could both pass the sequence check.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:143-145
++    bool expected = false;
++    if (!s_signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++
++    // Reason: capture the stack from the saved signal context.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:162-163
++    capture_frames_in_signal_context(context);
++
++    // Reason: store the notification number after capture so the sender can
++    // confirm via `data_ready_num` that the buffer it is about to read
++    // matches the request it just sent.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:173
++    s_data_ready_num.store(notification_num, std::memory_order_release);
++
++    // Reason: notify the sender via the pipe; the actual notification number
++    // travels through the pipe so the sender can drain stale notifications.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:175-178
++    ssize_t write_res =
++            ::write(s_notification_pipe_write, &notification_num, sizeof(notification_num));
++    (void)write_res; // signal-safe; ignore failure
++
++    errno = saved_errno;
++    s_signal_latch.store(false, std::memory_order_release);
++}
++
++// Reason: poll the pipe for a notification matching the current sequence
++// number. EINTR retries decrement the budget so we cannot wait forever.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:186-229
++bool wait_for_notification(int timeout_ms) {
++    while (true) {
++        if (s_notification_pipe_read < 0) {
++            return false;
++        }
++        pollfd poll_fd {s_notification_pipe_read, POLLIN, 0};
++        int poll_res = poll(&poll_fd, 1, timeout_ms);
++        if (poll_res < 0) {
++            if (errno == EINTR) {
++                if (--timeout_ms <= 0) {
++                    return false;
++                }
++                continue;
++            }
++            return false;
++        }
++        if (poll_res == 0) {
++            return false;
++        }
++
++        int notification_num = 0;
++        ssize_t read_res = ::read(s_notification_pipe_read, &notification_num,
++                                  sizeof(notification_num));
++        if (read_res < 0) {
++            if (errno == EINTR) {
++                continue;
++            }
++            return false;
++        }
++
++        if (read_res == sizeof(notification_num)) {
++            if (notification_num == s_sequence_num.load(std::memory_order_relaxed)) {
++                return true;
++            }
++            // Drain delayed notifications and keep waiting.
++            continue;
++        }
++
++        return false;
++    }
++}
++
++// Reason: install the signal handler and open the notification pipe once per
++// BE process. ck does the equivalent setup in the storage ctor.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:740-758
++void install_signal_handler_once() {
++    std::call_once(s_signal_install_once, [] {
++        int pipe_fds[2] = {-1, -1};
++        if (pipe2(pipe_fds, O_CLOEXEC) != 0) {
++            LOG(ERROR) << "failed to open notification pipe for native stack collector: "
++                       << std::strerror(errno);
++            return;
++        }
++        s_notification_pipe_read = pipe_fds[0];
++        s_notification_pipe_write = pipe_fds[1];
++
++        s_server_pid.store(getpid(), std::memory_order_release);
++
++        struct sigaction sa {};
++        sa.sa_sigaction = signal_handler;
++        sa.sa_flags = SA_SIGINFO | SA_RESTART;
++        if (sigemptyset(&sa.sa_mask) != 0 ||
++            sigaddset(&sa.sa_mask, kStackTraceServiceSignal) != 0) {
++            LOG(ERROR) << "failed to initialize sigaction mask: " << std::strerror(errno);
++            return;
++        }
++        if (sigaction(kStackTraceServiceSignal, &sa, nullptr) != 0) {
++            LOG(ERROR) << "failed to install native stack signal handler: "
++                       << std::strerror(errno);
++            return;
++        }
++        s_signal_installed.store(true, std::memory_order_release);
++    });
++}
++
+ // Reason: writes the response envelope fields shared by every status path.
+ void fill_common_fields(EasyJson* root, const std::string& status, const RequestOptions& options,
+                         int64_t elapsed) {
+     (*root)["status"] = status;
+-    (*root)["collector"] = "stub";
++    (*root)["collector"] = kCollectorName;
+     (*root)["timeout_ms"] = options.timeout_ms;
+     (*root)["max_frames_per_thread"] = options.max_frames;
+     (*root)["max_copied_stack_bytes"] = options.max_stack_bytes;
+@@ -178,9 +598,23 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
+     root->Set("threads", EasyJson::kArray);
+ }
+ 
+-// Reason: appends one thread entry with the stable schema variants will fill in.
+-void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
+-                        const std::string& error_reason) {
++void append_frame(EasyJson* frames, uintptr_t pc, const std::vector<MemoryMap>& maps) {
++    EasyJson frame = frames->PushBack(EasyJson::kObject);
++    frame["pc"] = hex_uintptr(pc);
++
++    const MemoryMap* map = find_map_for_pc(maps, pc);
++    if (map == nullptr) {
++        frame["dso"] = "";
++        frame["dso_offset"] = "";
++        return;
++    }
++
++    frame["dso"] = map->path;
++    frame["dso_offset"] = hex_uintptr(map->offset + (pc - map->start));
++}
++
++void append_status_thread(EasyJson* threads, int64_t tid, const std::string& status,
++                          const std::string& error_reason) {
+     EasyJson thread = threads->PushBack(EasyJson::kObject);
+     thread["tid"] = tid;
+     thread["status"] = status;
+@@ -191,7 +625,6 @@ void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& statu
+     thread.Set("frames", EasyJson::kArray);
+ }
+ 
+-// Reason: builds a response that carries an error_reason alongside the common fields.
+ EasyJson make_error_response(const std::string& status, const RequestOptions& options,
+                              int64_t elapsed, const std::string& error_reason) {
+     EasyJson root;
+@@ -200,28 +633,235 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
+     return root;
+ }
+ 
+-// Reason: returns stable JSON without collecting PCs so reviewers see the response shape.
+-EasyJson collect_stub_stacks(const RequestOptions& options, int64_t elapsed) {
++enum class ThreadOutcome {
++    kOk,
++    kSignalFailed,
++    kExitedThread,
++    kTimeout,
++    kSignalBlocked,
++    kUnsupported,
++    kUnwindFailed,
++};
++
++struct ThreadCaptureResult {
++    int64_t tid = 0;
++    ThreadOutcome outcome = ThreadOutcome::kTimeout;
++    size_t frame_count = 0;
++    bool truncated = false;
++    int unwind_init_result = 0;
++    int unwind_step_result = 0;
++    int signal_errno = 0;
++    int rt_signal_errno = 0;
++    bool used_tgkill_fallback = false;
++    std::array<uintptr_t, kMaxSignalFrames> frames {};
++};
++
++const char* outcome_to_status(ThreadOutcome outcome) {
++    switch (outcome) {
++    case ThreadOutcome::kOk:
++        return "ok";
++    case ThreadOutcome::kSignalFailed:
++        return "signal_failed";
++    case ThreadOutcome::kExitedThread:
++        return "exited_thread";
++    case ThreadOutcome::kTimeout:
++        return "timeout";
++    case ThreadOutcome::kSignalBlocked:
++        return "signal_blocked";
++    case ThreadOutcome::kUnsupported:
++        return "unsupported_arch";
++    case ThreadOutcome::kUnwindFailed:
++        return "unwind_failed";
++    }
++    return "unknown";
++}
++
++std::string outcome_reason(const ThreadCaptureResult& res) {
++    switch (res.outcome) {
++    case ThreadOutcome::kOk:
++        return "";
++    case ThreadOutcome::kSignalFailed:
++        if (res.rt_signal_errno != 0 && res.used_tgkill_fallback) {
++            return std::string("rt_tgsigqueueinfo failed: ") +
++                   std::strerror(res.rt_signal_errno) +
++                   "; tgkill failed: " + std::strerror(res.signal_errno);
++        }
++        return std::string("signal send failed: ") + std::strerror(res.signal_errno);
++    case ThreadOutcome::kExitedThread:
++        return "thread exited before signal could be delivered";
++    case ThreadOutcome::kTimeout:
++        return "thread did not respond to the service signal before timeout";
++    case ThreadOutcome::kSignalBlocked:
++        return "thread blocks the native stack service signal";
++    case ThreadOutcome::kUnsupported:
++        return "libunwind collector requires Linux x86_64 with USE_UNWIND";
++    case ThreadOutcome::kUnwindFailed:
++        return "libunwind failed in the signal handler";
++    }
++    return "";
++}
++
++// Reason: send one signal, wait for the response, copy the global capture
++// buffer into a per-thread result. Mirrors ck's per-thread loop body.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:476-579
++ThreadCaptureResult capture_one_thread(int64_t tid, int timeout_ms) {
++    ThreadCaptureResult res;
++    res.tid = tid;
++
++#if !(defined(USE_UNWIND) && defined(__linux__) && defined(__x86_64__))
++    res.outcome = ThreadOutcome::kUnsupported;
++    return res;
++#endif
++
++    if (is_signal_blocked(tid, kStackTraceServiceSignal)) {
++        res.outcome = ThreadOutcome::kSignalBlocked;
++        return res;
++    }
++
++    // Reset capture buffer state under the same memory order the handler uses.
++    s_capture_frame_count.store(0, std::memory_order_release);
++    s_capture_truncated.store(false, std::memory_order_release);
++    s_capture_unwind_init.store(0, std::memory_order_release);
++    s_capture_unwind_step.store(0, std::memory_order_release);
++
++    // Reason: increment sequence num BEFORE sending so the handler check
++    // `notification_num == s_sequence_num` matches.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:497-506
++    int sequence = s_sequence_num.fetch_add(1, std::memory_order_acq_rel) + 1;
++    pid_t server_pid = s_server_pid.load(std::memory_order_acquire);
++
++    siginfo_t sig_info {};
++    sig_info.si_signo = kStackTraceServiceSignal;
++    sig_info.si_code = SI_QUEUE;
++    sig_info.si_pid = server_pid;
++    sig_info.si_uid = getuid();
++    sig_info.si_value.sival_int = sequence;
++
++    int send_result = rt_tgsigqueueinfo(server_pid, static_cast<pid_t>(tid),
++                                        kStackTraceServiceSignal, &sig_info);
++    if (send_result != 0) {
++        res.rt_signal_errno = errno;
++        if (errno == ESRCH) {
++            res.signal_errno = ESRCH;
++            res.outcome = ThreadOutcome::kExitedThread;
++            return res;
++        }
++
++        // Reason: ck does not fall back; Phase 2 keeps a tgkill fallback for
++        // older kernels but loses the sequence-num check (siginfo is not
++        // passed). The fallback uses sival_int = 0 implicitly; the handler
++        // will reject it. Treat it as a best-effort attempt.
++        res.used_tgkill_fallback = true;
++        if (tgkill(server_pid, static_cast<pid_t>(tid), kStackTraceServiceSignal) != 0) {
++            res.signal_errno = errno;
++            if (errno == ESRCH) {
++                res.outcome = ThreadOutcome::kExitedThread;
++            } else {
++                res.outcome = ThreadOutcome::kSignalFailed;
++            }
++            return res;
++        }
++    }
++
++    if (!wait_for_notification(timeout_ms)) {
++        res.outcome = ThreadOutcome::kTimeout;
++        return res;
++    }
++
++    if (s_data_ready_num.load(std::memory_order_acquire) != sequence) {
++        res.outcome = ThreadOutcome::kTimeout;
++        return res;
++    }
++
++    res.frame_count = s_capture_frame_count.load(std::memory_order_acquire);
++    res.truncated = s_capture_truncated.load(std::memory_order_acquire);
++    res.unwind_init_result = s_capture_unwind_init.load(std::memory_order_acquire);
++    res.unwind_step_result = s_capture_unwind_step.load(std::memory_order_acquire);
++
++    if (res.unwind_init_result < 0) {
++        res.outcome = ThreadOutcome::kUnwindFailed;
++        return res;
++    }
++
++    if (res.frame_count > 0) {
++        std::copy(s_capture_frames.begin(), s_capture_frames.begin() + res.frame_count,
++                  res.frames.begin());
++    }
++    res.outcome = ThreadOutcome::kOk;
++    return res;
++}
++
++// Reason: drives the per-thread loop and assembles the JSON response. Mirrors
++// ck's `StackTraceSource::generate()` shape but only emits the fields the
++// Phase 2 debug API contract names.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:424-599
++EasyJson collect_ck_phdr_unwind_stacks(const RequestOptions& options,
++                                       std::chrono::steady_clock::time_point start) {
+     std::vector<int64_t> tids = list_thread_ids();
+     EasyJson root;
+     if (options.target_tid.has_value() &&
+         !std::binary_search(tids.begin(), tids.end(), options.target_tid.value())) {
+-        fill_common_fields(&root, "missing_tid", options, elapsed);
++        fill_common_fields(&root, "missing_tid", options, elapsed_ms(start));
+         EasyJson threads = root.Get("threads");
+-        append_stub_thread(&threads, options.target_tid.value(), "missing_tid",
+-                           "target tid is not present in /proc/self/task");
++        append_status_thread(&threads, options.target_tid.value(), "missing_tid",
++                             "target tid is not present in /proc/self/task");
+         return root;
+     }
+ 
+-    fill_common_fields(&root, "ok", options, elapsed);
+-    EasyJson threads = root.Get("threads");
+     if (options.target_tid.has_value()) {
+-        append_stub_thread(&threads, options.target_tid.value(), "ok", "stub collector has no PCs");
+-        return root;
++        tids = {options.target_tid.value()};
+     }
+ 
++    // Reason: hold the capture mutex for the whole dump so no second dump can
++    // overlap on the global buffer.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:407-408
++    std::unique_lock<std::mutex> capture_lock(s_capture_mutex);
++
++    std::vector<ThreadCaptureResult> results;
++    results.reserve(tids.size());
++    bool any_timeout = false;
+     for (int64_t tid : tids) {
+-        append_stub_thread(&threads, tid, "ok", "stub collector has no PCs");
++        ThreadCaptureResult res = capture_one_thread(tid, static_cast<int>(options.timeout_ms));
++        any_timeout = any_timeout || res.outcome == ThreadOutcome::kTimeout;
++        results.emplace_back(std::move(res));
++    }
++
++    const std::vector<MemoryMap> maps = load_memory_maps();
++
++    fill_common_fields(&root, any_timeout ? "timeout" : "ok", options, elapsed_ms(start));
++    EasyJson threads = root.Get("threads");
++    for (const ThreadCaptureResult& res : results) {
++        EasyJson thread = threads.PushBack(EasyJson::kObject);
++        thread["tid"] = res.tid;
++        thread["status"] = outcome_to_status(res.outcome);
++        thread["truncated"] = res.truncated;
++        thread["unwind_init_result"] = res.unwind_init_result;
++        thread["unwind_step_result"] = res.unwind_step_result;
++        if (res.used_tgkill_fallback) {
++            thread["signal_method"] = "tgkill_fallback";
++        } else {
++            thread["signal_method"] = "rt_tgsigqueueinfo";
++        }
++        if (res.rt_signal_errno != 0) {
++            thread["rt_signal_errno"] = res.rt_signal_errno;
++        }
++        if (res.signal_errno != 0) {
++            thread["signal_errno"] = res.signal_errno;
++        }
++        const std::string reason = outcome_reason(res);
++        if (!reason.empty()) {
++            thread["error_reason"] = reason;
++        }
++        thread.Set("frames", EasyJson::kArray);
++        EasyJson frames = thread.Get("frames");
++        const size_t max_emit =
++                std::min<size_t>(res.frame_count, static_cast<size_t>(options.max_frames));
++        for (size_t i = 0; i < max_emit; ++i) {
++            append_frame(&frames, res.frames[i], maps);
++        }
++        if (res.frame_count > max_emit) {
++            thread["truncated"] = true;
++        }
+     }
+     return root;
+ }
+@@ -270,8 +910,19 @@ void NativeStackAction::handle(HttpRequest* req) {
+         }
+     }
+ 
+-    // 4. Collect stub stacks and write the response.
+-    EasyJson response = collect_stub_stacks(options, elapsed_ms(start));
++    // 4. Make sure the signal handler is installed before sending any signals.
++    install_signal_handler_once();
++    if (!s_signal_installed.load(std::memory_order_acquire)) {
++        HttpChannel::send_reply(
++                req, HttpStatus::OK,
++                make_error_response("signal_handler_unavailable", options, elapsed_ms(start),
++                                    "failed to install native stack signal handler")
++                        .ToString());
++        return;
++    }
++
++    // 5. Collect frames and write the response.
++    EasyJson response = collect_ck_phdr_unwind_stacks(options, start);
+     HttpChannel::send_reply(req, HttpStatus::OK, response.ToString());
+ }
+ 
+-- 
+2.53.0
+

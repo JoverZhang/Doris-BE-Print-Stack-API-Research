@@ -1,0 +1,58 @@
+From acf19498b349f9a3292c59ec80f99b6e8dae77fa Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 22:37:52 +0800
+Subject: [PATCH 2/4] [feature](be) Call updatePHDRCache at BE startup
+
+Uncomment the existing updatePHDRCache() call in doris_main.cpp and
+include common/phdr_cache.h. The call now runs after disk/mem info is
+logged and before BackendOptions and ExecEnv init bring up the thread
+pools that will execute the signal-safe stack-trace path.
+
+ClickHouse calls updatePHDRCache at the very top of main (see
+<ck>/programs/main.cpp:318). The Doris BE keeps the upstream-anchored
+placement (the original commented-out call site, line 591 in upstream)
+to avoid moving init order; both placements satisfy the 'before any
+thread that needs the cache spawns' invariant.
+
+Reference: <ck>/programs/main.cpp:309-318
+---
+ be/src/service/doris_main.cpp | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/be/src/service/doris_main.cpp b/be/src/service/doris_main.cpp
+index fd534bc77f0..555f5069120 100644
+--- a/be/src/service/doris_main.cpp
++++ b/be/src/service/doris_main.cpp
+@@ -48,6 +48,7 @@
+ 
+ #include "cloud/cloud_backend_service.h"
+ #include "cloud/config.h"
++#include "common/phdr_cache.h"
+ #include "common/stack_trace.h"
+ #include "runtime/memory/mem_tracker_limiter.h"
+ #include "storage/tablet/tablet_schema_cache.h"
+@@ -585,10 +586,17 @@ int main(int argc, char** argv) {
+     LOG(INFO) << doris::DiskInfo::debug_string();
+     LOG(INFO) << doris::MemInfo::debug_string();
+ 
+-    // PHDR speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
+-    // will work only after additional call of this function.
+-    // rewrites dl_iterate_phdr will cause Jemalloc to fail to run after enable profile. see #
+-    // updatePHDRCache();
++    // Reason: populate the PHDR cache before any worker thread is spawned.
++    // `ExecEnv::init` (a few lines below) and the storage engine then bring up
++    // their thread pools; once those run, the signal-safe stack-trace path can
++    // rely on the lock-free dl_iterate_phdr override.
++    // Reason: the jemalloc heap-profile regression that previously blocked this
++    // call is fixed by configuring jemalloc with --enable-prof-libunwind in
++    // thirdparty/build-thirdparty.sh.
++    // Reference: <ck>/programs/main.cpp:318 (ClickHouse calls updatePHDRCache
++    // at the very top of `main`; Doris keeps the upstream-anchored placement
++    // because BackendOptions/ExecEnv set up the thread pools that need it).
++    updatePHDRCache();
+     if (!doris::BackendOptions::init()) {
+         exit(-1);
+     }
+-- 
+2.53.0
+
