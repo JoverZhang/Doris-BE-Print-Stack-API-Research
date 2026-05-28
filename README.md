@@ -4,17 +4,25 @@
 
 This repository studies ways to dump live native stacks from `doris_be`.
 
-Phase 1 is archived in [`archive/phase1/`](archive/phase1/README.md).
-It contains the ClickHouse, OceanBase, eBPF, minidump, and standalone Doris POC evidence.
+## Current State
 
-Phase 2 will test four stack collection designs inside Doris:
+Phase 1 is archived in [`archive/phase1/`](archive/phase1/README.md).
+
+Phase 2 compares four stack collection designs inside Doris:
 
 - ClickHouse-style PHDR-cache unwind in a signal handler.
 - OceanBase-style two-phase `kill -60` collection.
 - Snapshot plus remote unwind from copied stack bytes.
 - Frame-pointer walking with Doris Release build flags.
 
-See [`PLAN.md`](PLAN.md) for the Phase 2 plan.
+The current Phase 2 decision is exploratory. `fp-walk` is the lead candidate,
+but the full production matrix is not complete.
 
-Use `just phase1 --list` to list archived Phase 1 commands.
-Use `just validate` to check repositories and archived lightweight builds.
+## Key Files
+
+- [`AGENTS.md`](AGENTS.md): project instructions
+- [`docs/phase2-plan.md`](docs/phase2-plan.md): original Phase 2 plan
+- [`docs/writing-guidelines.md`](docs/writing-guidelines.md): project writing style
+- [`docs/patch-guidelines.md`](docs/patch-guidelines.md): patch layout rules
+- [`evidence/phase2/evaluation-protocol.md`](evidence/phase2/evaluation-protocol.md): next-run gates
+- [`evidence/phase2/decision.md`](evidence/phase2/decision.md): attempt-1 decision
