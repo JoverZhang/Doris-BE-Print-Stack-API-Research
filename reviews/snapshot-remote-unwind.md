@@ -1,6 +1,6 @@
-# snapshot-remote-unwind Review
+# snapshot-remote-unwind Review - Attempt 1
 
-status: fail-for-frame-usefulness
+status: current-implementation-blocked
 
 Patch reviewed:
 
@@ -31,6 +31,8 @@ Blocking concern:
 
 Review result:
 
-- Reject for the current Doris thirdparty build because frame usefulness is too
-  low. The handler safety model remains attractive if Doris can link a real
-  remote unwinder or implement DWARF/EH-frame unwinding over snapshots.
+- Mark the current implementation blocked, not the whole direction rejected.
+- The next protocol run must first prove remote-unwinder availability, then run
+  a stack-byte sweep at 8KiB, 16KiB, 32KiB, 64KiB, and 128KiB against a parked
+  known-stack thread. If all depths still return only interrupted PCs, reject
+  the current implementation for frame usefulness.

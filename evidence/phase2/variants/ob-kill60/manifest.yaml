@@ -10,12 +10,10 @@ source:
   head_commit: dc29ca4bc404f6b9267c60dfa9a058c0905dfebd
   patch:
     repo_path: patches/ob-kill60/0001-feature-be-Add-ob-kill60-native-stack-collector.patch
-    evidence_copy: evidence/phase2/variants/ob-kill60/patches/0001-feature-be-Add-ob-kill60-native-stack-collector.patch
 
 build:
   image: docker.io/apache/doris:build-env-ldb-toolchain-latest
-  build_sh_log: build-output/build-sh.txt
-  doris_be_target_log: build-output/ninja-doris_be.txt
+  build_logs: raw artifacts omitted from tracked review package
   cxx_build: pass
   packaging: cp_preserve_permissions_warning_at_root_output_copy
   notes:
@@ -45,7 +43,7 @@ api_smoke:
   endpoint: GET /api/debug/native_stack
   port: 18042
   all_threads:
-    file: api/all-threads.json
+    file: raw artifact omitted from tracked review package
     status: ok
     elapsed_ms: 696
     threads: 1869
@@ -70,7 +68,7 @@ api_smoke:
     status: pass
 
 correctness:
-  maps: correctness/maps.txt
+  maps: raw artifact omitted from tracked review package
   build_ids: correctness/build-ids.txt
   offline_symbolization: correctness/offline-symbolization.txt
   offset_symbolization: pass
@@ -96,7 +94,7 @@ verdict:
   build: pass
   api_contract: pass
   coverage: partial
-  production_safety: fail
+  production_safety: policy-fail-if-handler-libunwind-forbidden
   reasons:
     - The signal handler calls libunwind to collect raw PCs. It does not symbolize, allocate intentionally, or log, but libunwind is not async-signal-safe.
     - 1000 ms all-thread repeat runs sometimes timed out on a small tail of threads; a 5000 ms all-thread smoke completed.

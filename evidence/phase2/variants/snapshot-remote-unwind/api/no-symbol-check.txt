@@ -1,14 +1,13 @@
 # no symbol/file/line check
 
 Checked files:
-evidence/phase2/variants/snapshot-remote-unwind/api/all-threads-64k.json
-evidence/phase2/variants/snapshot-remote-unwind/api/all-threads-8k.json
-evidence/phase2/variants/snapshot-remote-unwind/api/all-threads.json
-evidence/phase2/variants/snapshot-remote-unwind/api/busy-holder.json
 evidence/phase2/variants/snapshot-remote-unwind/api/busy.json
 evidence/phase2/variants/snapshot-remote-unwind/api/missing-tid.json
 evidence/phase2/variants/snapshot-remote-unwind/api/one-tid.json
 evidence/phase2/variants/snapshot-remote-unwind/api/timeout.json
+
+Full all-thread and busy-holder JSON were checked in attempt 1 but are omitted
+from the tracked review package.
 
 PASS: no function/symbol/file/line JSON keys present.
 PASS: no obvious function names or source locations in JSON text.

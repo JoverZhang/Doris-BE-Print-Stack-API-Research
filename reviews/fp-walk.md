@@ -1,6 +1,6 @@
-# fp-walk Review
+# fp-walk Review - Attempt 1
 
-status: pilot-pass
+status: lead-candidate-not-production-pass
 
 Patch reviewed:
 
@@ -34,3 +34,5 @@ Review result:
 - Do not treat as final `pass` for decision until query workload, allocation
   pressure, permission, and churn rows are completed or explicitly accepted as
   gaps.
+- Under `evaluation-protocol.md`, this is the first candidate to rerun through
+  the full matrix after the shared harness is calibrated.

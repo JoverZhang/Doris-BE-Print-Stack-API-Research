@@ -1,6 +1,6 @@
-# Verdict
+# snapshot-remote-unwind Verdict - Attempt 1
 
-Status: hold for production, useful as exploration evidence.
+Status: current implementation blocked; direction still open.
 
 What passed:
 
@@ -16,6 +16,7 @@ What failed or held:
 - Because remote libunwind address spaces cannot be created, the implementation falls back to coordinator-side frame-pointer walking over the copied stack snapshot.
 - In the idle standalone BE run, the FP fallback did not recover beyond the interrupted PC. 8KiB and 64KiB both produced max 1 frame/thread.
 - Full-thread dumps consistently returned root `status=timeout` at 1000ms because a small number of threads did not run the handler before the deadline; most threads still produced raw PC snapshots.
+- The stack-byte evidence is not broad enough to prove that larger snapshots can never help. The next run must sweep 8KiB, 16KiB, 32KiB, 64KiB, and 128KiB against a parked known-stack thread and record frame-depth distribution.
 
 Stack byte comparison:
 
@@ -25,4 +26,4 @@ Stack byte comparison:
 
 Recommendation:
 
-Do not ship this variant as the production native stack implementation without either linking a non-stubbed architecture remote libunwind (`libunwind-x86_64` plus generic support) or implementing a real DWARF/EH-frame unwinder over the copied stack snapshot. The snapshot transport and API shape are viable; frame coverage is not.
+Do not ship this implementation without either linking a non-stubbed architecture remote libunwind (`libunwind-x86_64` plus generic support) or implementing a real DWARF/EH-frame unwinder over the copied stack snapshot. The snapshot transport and API shape remain viable; frame coverage is not proven.

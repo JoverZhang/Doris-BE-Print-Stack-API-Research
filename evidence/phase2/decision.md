@@ -1,8 +1,8 @@
-# Phase 2 Decision
+# Phase 2 Attempt 1 Decision
 
-Selected result: `fp-walk` as the next design to harden.
+Status: exploratory decision, not production recommendation.
 
-Final production approval: no.
+Selected next hardening candidate: `fp-walk`.
 
 Reason for selection:
 
@@ -14,23 +14,37 @@ Reason for selection:
 - It completed 50 repeated all-thread dumps with no timeout, crash, or deadlock
   in this standalone BE run.
 
+Why this is not enough:
+
+- The first evidence package mixed raw logs, raw all-thread JSON, build noise,
+  and summaries, so it was not reviewable.
+- The variants did not run through a uniform full matrix.
+- The rejected-variant language overreached in places. Timeout tails and
+  snapshot frame depth need root-cause gates, not loose narrative judgment.
+- A skipped required row still blocks a production recommendation.
+
 Evidence:
 
 - Patch: `patches/fp-walk/0001-feature-be-Add-fp-walk-native-stack-collector.patch`
 - Evidence: `evidence/phase2/variants/fp-walk/`
 - Review: `reviews/fp-walk.md`
 
-Rejected variants:
+Current classification of other variants:
 
-- `ck-phdr-unwind`: rejects on signal-handler safety. It is buildable and
-  returns good frames, but it runs libunwind in interrupted worker signal
-  handlers. PHDR preflight and global libunwind cache do not prove this is safe.
-- `ob-kill60`: rejects on signal-handler safety and timeout predictability. It
-  also uses libunwind in the handler, and 1000 ms all-thread repeats had a
-  timeout tail.
-- `snapshot-remote-unwind`: rejects on frame usefulness with the current build
-  image. The handler model is safest, but the installed libunwind remote address
-  space creator is stubbed, and the fallback recovered only interrupted PCs.
+- `ck-phdr-unwind`: frame quality is good. It fails the proposed production
+  safety policy if handler-side libunwind is forbidden. Without that policy, it
+  needs source-level and stress evidence proving libunwind cannot allocate,
+  lock, touch loader state, or otherwise violate signal-handler constraints.
+- `ob-kill60`: same handler-side libunwind policy issue. The 1000 ms timeout
+  tail is a HOLD item, not a proven direction failure, until instrumentation
+  separates signal delivery, handler entry/exit, signal-blocked threads,
+  coordinator waiting, and skipped request-thread behavior.
+- `snapshot-remote-unwind`: current implementation is blocked by the installed
+  thirdparty libunwind remote address-space stub. The direction remains open if
+  a real remote unwinder is linked or if a coordinator-side snapshot unwinder
+  can recover useful multi-frame stacks. Stack-byte depth alone was only checked
+  at 8KiB and 64KiB in an idle standalone BE and must be rerun under a standard
+  stack-depth sweep before making a stronger claim.
 
 Remaining risks for `fp-walk`:
 
@@ -45,7 +59,6 @@ Remaining risks for `fp-walk`:
 
 Next step:
 
-Harden `fp-walk` under the missing matrix rows. If frame-pointer dereference risk
-is unacceptable, revisit `snapshot-remote-unwind` only after Doris can link a
-real remote unwinder or provide a coordinator-side DWARF/EH-frame unwinder over
-copied stack bytes.
+Use `evaluation-protocol.md` and `subagent-brief-template.md` for the next
+round. First cleanly rerun the harness on one calibration variant, then rerun
+`fp-walk` and any still-interesting alternatives under the same matrix.

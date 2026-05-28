@@ -28,5 +28,16 @@ archive/phase1/risk_cases/*/*.raw
 *.tar.gz
 *.deb
 *.rpm
+/artifacts/
+/evidence/phase2/raw/
+/evidence/phase2/variants/*/api/all-threads*.json
+/evidence/phase2/variants/*/api/busy-holder*.json
+/evidence/phase2/variants/*/api/ready.json
+/evidence/phase2/variants/*/api/permission-denied.json
+/evidence/phase2/variants/*/build-output/build-sh*.txt
+/evidence/phase2/variants/*/build-output/ninja*.txt
+/evidence/phase2/variants/*/build-output/runtime-*.txt
+/evidence/phase2/variants/*/correctness/maps.txt
+/evidence/phase2/variants/*/patches/
 .task29-dep-cache/
 .claude/

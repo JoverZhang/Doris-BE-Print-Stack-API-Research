@@ -1,6 +1,6 @@
-# Final Comparison
+# Final Comparison - Attempt 1
 
-status: complete
+status: superseded-by-protocol
 
 Compared variants:
 
@@ -19,13 +19,13 @@ Summary:
 | variant | result | main reason |
 |---|---|---|
 | `fp-walk` | lead candidate | useful multi-frame stacks without libunwind in the handler |
-| `ck-phdr-unwind` | reject | libunwind in signal handler is not proven async-signal-safe |
-| `ob-kill60` | reject | libunwind in signal handler plus weaker timeout behavior |
-| `snapshot-remote-unwind` | reject for current build | remote libunwind is stubbed; fallback only returns depth 1 |
+| `ck-phdr-unwind` | policy fail if handler libunwind is forbidden | frame quality is good; safety proof absent |
+| `ob-kill60` | hold plus policy issue | handler libunwind; timeout tail needs root-cause instrumentation |
+| `snapshot-remote-unwind` | current implementation blocked | remote libunwind is stubbed; stack-depth/unwinder sweep incomplete |
 
 Recommendation:
 
-Carry `fp-walk` forward to the next implementation/hardening step. Do not treat
-this as a final production approval because the full matrix still lacks FE auth,
-query workload, allocation pressure, controlled churn, and broader jemalloc
-coverage.
+Carry `fp-walk` forward as the first hardening candidate, but do not ask for
+production review from this package. The next round must use
+`evidence/phase2/evaluation-protocol.md`; skipped required rows and unrooted
+timeout tails must produce `hold`, not narrative rejection.

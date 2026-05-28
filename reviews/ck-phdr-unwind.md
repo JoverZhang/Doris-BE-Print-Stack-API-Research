@@ -1,6 +1,6 @@
-# ck-phdr-unwind Review
+# ck-phdr-unwind Review - Attempt 1
 
-status: fail-for-production-safety
+status: policy-fail-if-handler-libunwind-forbidden
 
 Patch reviewed:
 
@@ -30,5 +30,7 @@ Blocking concern:
 
 Review result:
 
-- Reject as a production direction unless a stronger libunwind signal-safety
-  proof or implementation change appears.
+- Under `evaluation-protocol.md`, handler-side libunwind is a production
+  `policy-fail`; the variant can still be used as frame-quality evidence.
+- If this policy is challenged, the missing proof must be source-level and
+  stress-based. Repeating that it "did not fail" in smoke tests is not enough.

@@ -4,6 +4,19 @@ Base Doris commit: `c24d454f15cee2d937ef4749270a3ecb449eafe6`.
 
 Build image: `docker.io/apache/doris:build-env-ldb-toolchain-latest`; see `shared/docker-image.txt`.
 
+This directory is now a reviewable summary package. Full all-thread JSON dumps,
+complete build logs, `/proc/<pid>/maps`, runtime log tails, and duplicate patch
+copies were removed from the tracked evidence after the first attempt produced a
+249k-line review diff. Raw artifacts for future runs belong under ignored
+`evidence/phase2/raw/` or `artifacts/phase2/raw/`, with short summaries tracked
+here.
+
+Protocol for the next run:
+
+- `evaluation-protocol.md`: pass/fail/hold gates and evidence budget.
+- `subagent-brief-template.md`: standard brief for future variant workers.
+- `next-round.md`: recommended execution order.
+
 ## Shared Common API
 
 Patch series:
@@ -13,7 +26,6 @@ Patch series:
 Key evidence:
 
 - `shared/common-api-ninja-doris_be.txt`: successful `doris_be` target verification inside the Doris build image.
-- `shared/common-api-build.failed-output-copy.txt`: `build.sh --be` reached `doris_be` link/install but failed later at `cp -p` during root `output/` packaging on this bind mount.
 - `shared/be-startup-key.txt`: BE started from `be/output` in Docker with HTTP port 8040 mapped to host 18040.
 - `shared/api-smoke/*.json`: API smoke results for `ok`, `missing_tid`, `timeout`, `busy`, and `bad_request`.
 
@@ -34,13 +46,14 @@ Variant summaries:
 
 - `fp-walk`: lead candidate. Useful multi-frame stacks, no libunwind in signal
   handler, 50 repeated all-thread dumps passed.
-- `ck-phdr-unwind`: rejected for production safety. Good frame coverage, but
-  libunwind runs in the signal handler.
-- `ob-kill60`: rejected for production safety and timeout tail. It also uses
-  libunwind in the handler.
-- `snapshot-remote-unwind`: rejected for current build usefulness. Handler is
-  safest, but remote libunwind is stubbed and fallback stack walking only
-  returned interrupted PCs.
+- `ck-phdr-unwind`: exploration pass for frame quality, production policy fail
+  if handler-side libunwind is forbidden.
+- `ob-kill60`: exploration hold. Handler-side libunwind hits the same policy
+  gate; the timeout tail also needs root-cause instrumentation before it can be
+  called an implementation bug or a directional problem.
+- `snapshot-remote-unwind`: current implementation blocked. Handler model is
+  strongest, but the installed remote libunwind path is stubbed; stack-depth and
+  unwinder-availability checks must be rerun before rejecting the direction.
 
 Final comparison and decision files:
 

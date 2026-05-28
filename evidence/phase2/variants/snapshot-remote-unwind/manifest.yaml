@@ -30,8 +30,8 @@ build:
   build_sh_packaging: warning
   packaging_warning: cp preserving permissions failed for root output bind mount copy
 api_evidence:
-  all_threads_8k: api/all-threads.json
-  all_threads_64k: api/all-threads-64k.json
+  all_threads_8k: raw artifact omitted from tracked review package
+  all_threads_64k: raw artifact omitted from tracked review package
   one_tid: api/one-tid.json
   busy: api/busy.json
   timeout: api/timeout.json
@@ -39,4 +39,3 @@ api_evidence:
   no_symbol_check: api/no-symbol-check.txt
 patches:
   root: patches/snapshot-remote-unwind/0001-feature-be-Add-snapshot-remote-unwind-native-stack-c.patch
-  evidence_copy: evidence/phase2/variants/snapshot-remote-unwind/patches/0001-feature-be-Add-snapshot-remote-unwind-native-stack-c.patch

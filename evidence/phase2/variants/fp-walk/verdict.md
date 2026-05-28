@@ -1,6 +1,6 @@
-status: pilot-pass
+status: lead-candidate-not-production-pass
 
-fp-walk builds, starts a standalone BE, returns raw PCs with DSO offsets, avoids
+`fp-walk` builds, starts a standalone BE, returns raw PCs with DSO offsets, avoids
 online symbols, supports one-TID and all-thread dumps, handles `busy`,
 `missing_tid`, `timeout`, and `bad_request`, and survives a 50-iteration dump
 loop. Offline symbolization of raw offsets resolves the API path, including
@@ -25,3 +25,5 @@ Risks and gaps:
   no FE auth context; `permission-denied.status` records HTTP 200.
 - Query workload, allocation pressure, dedicated thread churn, and controlled
   `dlopen`/`dlclose` churn were not run in this pilot.
+- Under `evaluation-protocol.md`, these gaps keep the variant below production
+  `pass`; it remains the first candidate to rerun through the full matrix.

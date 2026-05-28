@@ -58,7 +58,7 @@ runtime:
     - "storage_root_path = ${DORIS_HOME}/storage"
 
 api_evidence:
-  all_threads: api/all-threads.json
+  all_threads: raw artifact omitted from tracked review package
   one_tid: api/one-tid.json
   busy: api/busy.json
   timeout: api/timeout.json
@@ -72,7 +72,7 @@ api_evidence:
     signal_method: rt_tgsigqueueinfo
 
 correctness_evidence:
-  maps: correctness/maps.txt
+  maps: raw artifact omitted from tracked review package
   build_ids: correctness/build-ids.txt
   offline_symbolization: correctness/offline-symbolization.txt
   offline_symbolization_observation: "DSO offsets symbolize offline to Doris frames including doris::NativeStackAction::handle"
@@ -90,4 +90,3 @@ repeat:
 
 patches:
   root_patch: patches/ck-phdr-unwind/0001-feature-be-Add-ck-phdr-unwind-native-stack-collector.patch
-  evidence_patch: evidence/phase2/variants/ck-phdr-unwind/patches/0001-feature-be-Add-ck-phdr-unwind-native-stack-collector.patch
