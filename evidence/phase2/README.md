@@ -17,6 +17,17 @@ Protocol for the next run:
 - `subagent-brief-template.md`: standard brief for future variant workers.
 - `next-round.md`: recommended execution order.
 
+Patch-first workflow:
+
+- Edit `patches/common/*.patch` or `patches/<variant>/*.patch` first.
+- Run `just phase2-apply <variant>` to regenerate `phase2/<variant>` from the
+  patch series.
+- Run `just phase2-diff <variant>` only to inspect temporary worktree edits.
+- Run `just phase2-export <variant>` only when intentionally converting
+  committed worktree changes back into patch files.
+- Apply/export scripts preserve ignored build/cache directories; they reset only
+  tracked files after refusing tracked dirty state.
+
 ## Shared Common API
 
 Patch series:

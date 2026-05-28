@@ -14,6 +14,13 @@ Project evidence directory:
 Patch output:
 `/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/patches/<variant>/`.
 
+Initialize or refresh the worktree with:
+
+`just phase2-apply <variant>`
+
+Treat `patches/` as the source of truth. Do not hand-copy the common patch into
+the variant worktree.
+
 ## Fixed Inputs
 
 - Base commit: `c24d454f15cee2d937ef4749270a3ecb449eafe6`.
@@ -23,6 +30,8 @@ Patch output:
 - Common API patch is fixed. Do not change the route, JSON contract, auth
   contract, busy behavior, timeout semantics, or response field names.
 - Use `evidence/phase2/evaluation-protocol.md` as the acceptance contract.
+- Use `scripts/phase2_patches.sh` or the `just phase2-*` recipes for patch
+  apply/diff/export operations.
 
 ## Allowed Writes
 
@@ -75,6 +84,7 @@ Stop and report `hold` instead of improvising when:
 
 - the common API contract needs to change
 - a shared build/environment issue appears
+- `just phase2-apply <variant>` fails
 - a timeout tail appears and instrumentation is missing
 - remote unwinder capability contradicts the variant design
 - required matrix rows cannot run under the shared harness
