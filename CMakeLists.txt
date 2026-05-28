@@ -25,8 +25,8 @@ endfunction()
 
 repo_executable(
   ck_directed_signal_unwind
-  schemes/ck-system-stack-trace/minimal_impl/default/directed_signal_unwind.cpp
-  schemes/ck-system-stack-trace/minimal_impl/default/build
+  archive/phase1/schemes/ck-system-stack-trace/minimal_impl/default/directed_signal_unwind.cpp
+  archive/phase1/schemes/ck-system-stack-trace/minimal_impl/default/build
   directed_signal_unwind
 )
 target_compile_options(ck_directed_signal_unwind PRIVATE -O2 -g)
@@ -35,8 +35,8 @@ link_local_unwind(ck_directed_signal_unwind)
 
 repo_executable(
   ck_fp_vs_unwind_fp
-  schemes/ck-system-stack-trace/minimal_impl/fp-build/fp_vs_unwind.cpp
-  schemes/ck-system-stack-trace/minimal_impl/fp-build/build
+  archive/phase1/schemes/ck-system-stack-trace/minimal_impl/fp-build/fp_vs_unwind.cpp
+  archive/phase1/schemes/ck-system-stack-trace/minimal_impl/fp-build/build
   fp_vs_unwind.fp
 )
 target_compile_options(
@@ -48,8 +48,8 @@ target_link_libraries(ck_fp_vs_unwind_fp PRIVATE unwind unwind-x86_64 dl)
 
 repo_executable(
   ck_fp_vs_unwind_no_fp
-  schemes/ck-system-stack-trace/minimal_impl/fp-build/fp_vs_unwind.cpp
-  schemes/ck-system-stack-trace/minimal_impl/fp-build/build
+  archive/phase1/schemes/ck-system-stack-trace/minimal_impl/fp-build/fp_vs_unwind.cpp
+  archive/phase1/schemes/ck-system-stack-trace/minimal_impl/fp-build/build
   fp_vs_unwind.no_fp
 )
 target_compile_options(
@@ -61,8 +61,8 @@ target_link_libraries(ck_fp_vs_unwind_no_fp PRIVATE unwind unwind-x86_64 dl)
 
 repo_executable(
   inprocess_minidump
-  schemes/inprocess-minidump/minimal_impl/inprocess_minidump.cpp
-  schemes/inprocess-minidump/minimal_impl/build
+  archive/phase1/schemes/inprocess-minidump/minimal_impl/inprocess_minidump.cpp
+  archive/phase1/schemes/inprocess-minidump/minimal_impl/build
   inprocess_minidump
 )
 target_compile_options(inprocess_minidump PRIVATE -O2 -g)
@@ -71,8 +71,8 @@ target_link_libraries(inprocess_minidump PRIVATE unwind unwind-x86_64 dl Threads
 
 repo_executable(
   ob_observer_kill60_minimal
-  schemes/ob-observer-kill60/minimal_impl/observer_kill60_minimal.cpp
-  schemes/ob-observer-kill60/minimal_impl/build
+  archive/phase1/schemes/ob-observer-kill60/minimal_impl/observer_kill60_minimal.cpp
+  archive/phase1/schemes/ob-observer-kill60/minimal_impl/build
   observer_kill60_minimal
 )
 target_compile_options(ob_observer_kill60_minimal PRIVATE -O2 -g -fno-omit-frame-pointer)
@@ -80,8 +80,8 @@ link_local_unwind(ob_observer_kill60_minimal)
 
 repo_executable(
   ob_open_obstack_target
-  schemes/ob-open-obstack-ptrace/minimal_impl/target.cpp
-  schemes/ob-open-obstack-ptrace/minimal_impl/build
+  archive/phase1/schemes/ob-open-obstack-ptrace/minimal_impl/target.cpp
+  archive/phase1/schemes/ob-open-obstack-ptrace/minimal_impl/build
   target
 )
 target_compile_options(ob_open_obstack_target PRIVATE -O1 -g -fno-omit-frame-pointer)
@@ -89,8 +89,8 @@ target_link_libraries(ob_open_obstack_target PRIVATE Threads::Threads)
 
 repo_executable(
   ob_open_obstack_ptrace_remote_unwind
-  schemes/ob-open-obstack-ptrace/minimal_impl/ptrace_remote_unwind.cpp
-  schemes/ob-open-obstack-ptrace/minimal_impl/build
+  archive/phase1/schemes/ob-open-obstack-ptrace/minimal_impl/ptrace_remote_unwind.cpp
+  archive/phase1/schemes/ob-open-obstack-ptrace/minimal_impl/build
   ptrace_remote_unwind
 )
 target_compile_options(ob_open_obstack_ptrace_remote_unwind PRIVATE -O1 -g -fno-omit-frame-pointer)
@@ -110,8 +110,8 @@ endif()
 
 repo_executable(
   ebpf_profile_target_fp
-  shared/ebpf/profile_target/profile_target.cpp
-  shared/ebpf/profile_target/build
+  archive/phase1/shared/ebpf/profile_target/profile_target.cpp
+  archive/phase1/shared/ebpf/profile_target/build
   profile_target_fp
 )
 target_compile_options(ebpf_profile_target_fp PRIVATE -O2 -g -fno-omit-frame-pointer)
@@ -119,8 +119,8 @@ target_link_libraries(ebpf_profile_target_fp PRIVATE Threads::Threads m)
 
 repo_executable(
   ebpf_profile_target_nofp
-  shared/ebpf/profile_target/profile_target.cpp
-  shared/ebpf/profile_target/build
+  archive/phase1/shared/ebpf/profile_target/profile_target.cpp
+  archive/phase1/shared/ebpf/profile_target/build
   profile_target_nofp
 )
 target_compile_options(ebpf_profile_target_nofp PRIVATE -O2 -g -fomit-frame-pointer)
@@ -128,8 +128,8 @@ target_link_libraries(ebpf_profile_target_nofp PRIVATE Threads::Threads m)
 
 repo_executable(
   risk_ck_unwind_no_phdr_cache
-  risk_cases/ck_unwind_without_phdr_cache/ck_unwind_without_phdr_cache.cpp
-  risk_cases/ck_unwind_without_phdr_cache/build
+  archive/phase1/risk_cases/ck_unwind_without_phdr_cache/ck_unwind_without_phdr_cache.cpp
+  archive/phase1/risk_cases/ck_unwind_without_phdr_cache/build
   unsafe_no_phdr_cache
 )
 target_compile_options(risk_ck_unwind_no_phdr_cache PRIVATE -O1 -g -DRISK_USE_PHDR_CACHE=0)
@@ -138,8 +138,8 @@ target_link_libraries(risk_ck_unwind_no_phdr_cache PRIVATE unwind unwind-x86_64 
 
 repo_executable(
   risk_ck_unwind_with_phdr_cache
-  risk_cases/ck_unwind_without_phdr_cache/ck_unwind_without_phdr_cache.cpp
-  risk_cases/ck_unwind_without_phdr_cache/build
+  archive/phase1/risk_cases/ck_unwind_without_phdr_cache/ck_unwind_without_phdr_cache.cpp
+  archive/phase1/risk_cases/ck_unwind_without_phdr_cache/build
   safe_with_phdr_cache
 )
 target_compile_options(risk_ck_unwind_with_phdr_cache PRIVATE -O1 -g -DRISK_USE_PHDR_CACHE=1)
@@ -171,7 +171,7 @@ add_custom_target(
 # Doris POC: snapshot-unwind stack dumper (Impl A kill60 + Impl B snapshot)
 # ---------------------------------------------------------------------------
 
-set(DORIS_POC_DIR ${CMAKE_SOURCE_DIR}/schemes/doris-poc-snapshot-unwind)
+set(DORIS_POC_DIR ${CMAKE_SOURCE_DIR}/archive/phase1/schemes/doris-poc-snapshot-unwind)
 set(DORIS_POC_SOURCES
   ${DORIS_POC_DIR}/src/common.cpp
   ${DORIS_POC_DIR}/src/kill60.cpp
