@@ -1,0 +1,77 @@
+From 48dee5666872a73d8692f22a1740f7fe770fbad2 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 22:43:15 +0800
+Subject: [PATCH 4/4] [feature](build) Wire jemalloc --enable-prof-libunwind
+ for ck-phdr-unwind
+
+jemalloc's heap-profile backtracer defaults to libgcc, which re-enters
+the dynamic linker. That re-entry is what previously forced Doris to
+disable the dl_iterate_phdr override in be/src/common/phdr_cache.cpp.
+
+Switch jemalloc to libunwind via the configure flag --enable-prof-libunwind
+(confirmed present in jemalloc 5.3.0 -- the version pinned in
+thirdparty/vars.sh). The flag's AC_CHECK_HEADERS([libunwind.h]) needs the
+thirdparty libunwind headers visible at configure time, so:
+
+- Pass CPPFLAGS=-I${TP_INCLUDE_DIR} and LDFLAGS=-L${TP_LIB_DIR} to the
+  configure invocation.
+- Move libunwind ahead of jemalloc_doris in the packages array so the
+  headers and the static library are installed before jemalloc's
+  configure runs.
+
+be/CMakeLists.txt already links libunwind into DORIS_DEPENDENCIES with
+USE_UNWIND=ON by default (lines 79, 432, 678), so no CMake change is
+needed.
+
+If the configure-detection still skips libunwind on a given build host
+(see jemalloc/jemalloc#2504 for past reports), the flag becomes a no-op:
+jemalloc falls back to libgcc and the dl_iterate_phdr override has to
+stay disabled. The build output should be checked for the
+'backtrace_method libunwind' line to confirm detection succeeded.
+---
+ thirdparty/build-thirdparty.sh | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/thirdparty/build-thirdparty.sh b/thirdparty/build-thirdparty.sh
+index 71a3b38afb8..0c9e702feb4 100755
+--- a/thirdparty/build-thirdparty.sh
++++ b/thirdparty/build-thirdparty.sh
+@@ -1613,8 +1613,17 @@ build_jemalloc_doris() {
+     # It is not easy to remove `with-jemalloc-prefix`, which may affect the compatibility between third-party and old version codes.
+     # Also, will building failed on Mac, it said can't find mallctl symbol. because jemalloc's default prefix on macOS is "je_", not "".
+     # Maybe can use alias instead of overwrite.
+-    CFLAGS="${cflags}" ../configure --prefix="${TP_INSTALL_DIR}" --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
+-        --with-jemalloc-prefix=je --enable-prof --disable-cxx --disable-libdl --disable-shared
++    # Reason: --enable-prof-libunwind makes jemalloc's heap-profile backtracer
++    # use libunwind instead of libgcc, so it does not re-enter the loader. This
++    # is the upstream fix for the regression that previously forced Doris to
++    # disable the dl_iterate_phdr override in be/src/common/phdr_cache.cpp.
++    # CPPFLAGS/LDFLAGS point jemalloc's configure at the thirdparty libunwind
++    # installed by build_libunwind (the build order is rearranged below so
++    # libunwind builds before jemalloc_doris).
++    CFLAGS="${cflags}" CPPFLAGS="-I${TP_INCLUDE_DIR}" LDFLAGS="-L${TP_LIB_DIR}" \
++        ../configure --prefix="${TP_INSTALL_DIR}" --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
++        --with-jemalloc-prefix=je --enable-prof --enable-prof-libunwind --disable-cxx \
++        --disable-libdl --disable-shared
+ 
+     make -j "${PARALLEL}"
+     make install
+@@ -2116,6 +2125,7 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
+         thrift
+         leveldb
+         brpc
++        libunwind # must be before jemalloc_doris because jemalloc's configure detects libunwind for --enable-prof-libunwind
+         jemalloc_doris
+         rocksdb
+         krb5 # before cyrus_sasl
+@@ -2152,7 +2162,6 @@ if [[ "${#packages[@]}" -eq 0 ]]; then
+         xxhash
+         concurrentqueue
+         fast_float
+-        libunwind
+         avx2neon
+         libdeflate
+         streamvbyte
+-- 
+2.53.0
+
