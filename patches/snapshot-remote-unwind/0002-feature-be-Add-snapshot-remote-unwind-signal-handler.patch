@@ -1,0 +1,415 @@
+From a943c1c8ad7ea9f18501e8c3dfc61d2737091552 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 23:45:47 +0800
+Subject: [PATCH 2/5] [feature](be) Add snapshot-remote-unwind signal handler
+ infrastructure
+
+Mirrors OceanBase's MP_SIG dispatch + two-phase per-thread coordination
+under a separate symbol set (kMpSig / g_sig_handler_ctx_ /
+srunwind_signal_handler) so the variant branch stays self-contained
+relative to Phase C's ob-kill60 series.
+
+The defining divergence from ob-kill60: the worker handler does NO
+libunwind work. It captures the ucontext_t verbatim and memcpy's up to
+kMaxSnapshotStackBytes (8 KiB per docs/phase2-plan.md:99) starting at
+%rsp into a fixed shared buffer; the coordinator runs libunwind remote
+unwind against the snapshot. Stack copy uses process_vm_readv (an
+async-signal-safe Linux syscall) so a bad %rsp returns -1 instead of
+faulting inside the handler. Stack-VMA bounds clamp the read so it
+never crosses a guard page even if the kernel just grew the stack.
+
+Anti-spoof req_id check and target_tid check identical to ob-kill60.
+install_srunwind_signal_handler narrows to MP_SIG only so it coexists
+with Doris's existing InstallFailureSignalHandler.
+
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:111-127
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:90-110
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-120
+Reference: docs/phase2-plan.md:67-71,99
+---
+ be/src/common/srunwind_signal_handler.cpp | 238 ++++++++++++++++++++++
+ be/src/common/srunwind_signal_handler.h   | 127 ++++++++++++
+ 2 files changed, 365 insertions(+)
+ create mode 100644 be/src/common/srunwind_signal_handler.cpp
+ create mode 100644 be/src/common/srunwind_signal_handler.h
+
+diff --git a/be/src/common/srunwind_signal_handler.cpp b/be/src/common/srunwind_signal_handler.cpp
+new file mode 100644
+index 00000000000..d4035e0d7b9
+--- /dev/null
++++ b/be/src/common/srunwind_signal_handler.cpp
+@@ -0,0 +1,238 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/oceanbase/blob/v4.5.0_CE/deps/oblib/src/lib/signal/ob_signal_struct.cpp
++// and ob_signal_handlers.cpp, modified by Doris for the
++// snapshot-remote-unwind native stack collector.
++
++#include "common/srunwind_signal_handler.h"
++
++#include <errno.h>
++#include <sys/syscall.h>
++#include <sys/uio.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <cstring>
++
++namespace doris::srunwind {
++
++SrunwindSigHandlerCtx g_sig_handler_ctx_;
++
++// Reason: TAS spin-loop with PAUSE / YIELD hint, signal-safe (no
++// allocation, no futex). The coordinator holds this for the whole
++// per-thread exchange. Arch-gated because __builtin_ia32_pause is
++// x86-only and Doris BE compiles for both x86_64 and aarch64 (see Phase
++// C lesson on multi-arch CPU hints).
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:97-102
++void SrunwindSigHandlerCtx::lock() {
++    while (__atomic_test_and_set(&lock_, __ATOMIC_ACQ_REL)) {
++#if defined(__x86_64__) || defined(__i386__)
++        __builtin_ia32_pause();
++#elif defined(__aarch64__)
++        asm volatile("yield");
++#endif
++    }
++}
++
++void SrunwindSigHandlerCtx::unlock() {
++    __atomic_clear(&lock_, __ATOMIC_RELEASE);
++}
++
++// Reason: non-blocking try_lock so the HTTP coordinator can report busy
++// when another dump is in flight, mirroring OB's spin policy but without
++// blocking the HTTP thread indefinitely.
++bool SrunwindSigHandlerCtx::try_lock() {
++    return !__atomic_test_and_set(&lock_, __ATOMIC_ACQ_REL);
++}
++
++// Reason: stamp the anti-spoof token under the lock so the worker handler
++// always observes a coherent req_id.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:90-95
++void SrunwindSigHandlerCtx::atomic_set_req_id(int64_t req_id) {
++    lock();
++    req_id_ = req_id;
++    unlock();
++}
++
++namespace {
++
++// Reason: signal-safe stack memcpy that never faults. process_vm_readv is
++// a Linux syscall (async-signal-safe) that returns -1 on a bad page
++// instead of raising SIGSEGV inside the handler. Reads in one iovec call.
++// Clamps to [ctx.stack_low_, ctx.stack_high_) so we never cross a guard
++// page even if the kernel just grew the stack.
++ssize_t safe_read_stack(SrunwindSigHandlerCtx* ctx, uintptr_t rsp, void* dst,
++                        size_t want_bytes) {
++    if (rsp == 0 || dst == nullptr || want_bytes == 0) {
++        return 0;
++    }
++    if (ctx->stack_low_ != 0 && ctx->stack_high_ != 0) {
++        if (rsp < ctx->stack_low_ || rsp >= ctx->stack_high_) {
++            return -1;
++        }
++        const uintptr_t available = ctx->stack_high_ - rsp;
++        if (want_bytes > available) {
++            want_bytes = static_cast<size_t>(available);
++        }
++    }
++    struct iovec local {};
++    struct iovec remote {};
++    local.iov_base = dst;
++    local.iov_len = want_bytes;
++    remote.iov_base = reinterpret_cast<void*>(rsp);
++    remote.iov_len = want_bytes;
++    return ::process_vm_readv(::getpid(), &local, 1, &remote, 1, 0);
++}
++
++// Reason: write a fixed-size ack down the worker->coordinator pipe with
++// EINTR retry. Async-signal-safe because ::write is on the safe list.
++bool safe_write_ack(int fd, int ack) {
++    while (true) {
++        ssize_t n = ::write(fd, &ack, sizeof(ack));
++        if (n == static_cast<ssize_t>(sizeof(ack))) {
++            return true;
++        }
++        if (n < 0 && errno == EINTR) {
++            continue;
++        }
++        return false;
++    }
++}
++
++// Reason: blocking read of one int from the coordinator->worker pipe with
++// EINTR retry. Bounded by the coordinator's timeout — if the coordinator
++// times out it closes fd2_, the read returns 0, and the worker exits.
++bool safe_read_ack(int fd, int* ack) {
++    while (true) {
++        ssize_t n = ::read(fd, ack, sizeof(*ack));
++        if (n == static_cast<ssize_t>(sizeof(*ack))) {
++            return true;
++        }
++        if (n == 0) {
++            return false; // pipe closed by coordinator timeout
++        }
++        if (n < 0 && errno == EINTR) {
++            continue;
++        }
++        return false;
++    }
++}
++
++} // namespace
++
++// Reason: top-level signal dispatcher. Mirrors OB's two-phase exchange
++// (prepare-ack on fd_[1], wait on fd2_[0], exit-ack on fd_[1]) but the
++// "prepare" payload is a register + stack snapshot rather than a
++// libunwind PC list. No libunwind is called on the worker side — that is
++// the defining property of the snapshot-remote-unwind variant per
++// docs/phase2-plan.md:67-71.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
++extern "C" void srunwind_signal_handler(int sig, siginfo_t* si, void* context) {
++    if (sig != kMpSig || si == nullptr || context == nullptr) {
++        return;
++    }
++
++    // 1. Anti-spoof: reject any sival_ptr that does not match the current
++    //    req_id. Mirrors OB ob_signal_handler:113-115.
++    int64_t req_id = reinterpret_cast<int64_t>(si->si_value.sival_ptr);
++    auto& ctx = g_sig_handler_ctx_;
++    if (ctx.req_id_ != req_id || req_id == 0) {
++        return;
++    }
++
++    // 2. Drop signals delivered to the wrong tid (a stray MP_SIG from an
++    //    earlier request that re-fires after the coordinator advanced).
++    int64_t self_tid = static_cast<int64_t>(syscall(SYS_gettid));
++    if (ctx.target_tid_ != self_tid) {
++        return;
++    }
++
++    int saved_errno = errno;
++    int prepare_rc = 0;
++
++    // 3. Snapshot ucontext_t verbatim — this is the full register file the
++    //    coordinator hands to libunwind via unw_init_remote. Memcpy is
++    //    fine because struct ucontext_t is POD on every Linux libc.
++    std::memcpy(&ctx.ucontext_, context, sizeof(ctx.ucontext_));
++    ctx.ucontext_valid_ = true;
++
++    // 4. memcpy up to kMaxSnapshotStackBytes from %rsp into ctx.stack_buf_.
++    //    The handler does NOT walk frames; the coordinator will. On x86_64
++    //    %rsp comes out of gregs[REG_RSP]; on non-x86_64 we record an
++    //    empty stack and the coordinator's remote unwind will short-circuit.
++#if defined(__x86_64__)
++    auto* uc = static_cast<ucontext_t*>(context);
++    ctx.stack_base_ = static_cast<uintptr_t>(uc->uc_mcontext.gregs[REG_RSP]);
++#else
++    ctx.stack_base_ = 0;
++#endif
++    ctx.stack_bytes_ = 0;
++    ctx.stack_truncated_ = false;
++
++    if (ctx.stack_base_ != 0) {
++        ssize_t got = safe_read_stack(&ctx, ctx.stack_base_, ctx.stack_buf_,
++                                       sizeof(ctx.stack_buf_));
++        if (got > 0) {
++            ctx.stack_bytes_ = got;
++            // Reason: the available range above the base is
++            // [stack_base_, stack_high_); if the kernel grew the stack
++            // beyond our 8 KiB cap we record truncated so the coordinator
++            // can report it without re-checking the bounds itself.
++            if (ctx.stack_high_ != 0 &&
++                ctx.stack_high_ - ctx.stack_base_ > static_cast<uintptr_t>(got)) {
++                ctx.stack_truncated_ = true;
++            }
++        } else {
++            prepare_rc = -1;
++        }
++    }
++
++    // 5. Notify the coordinator that prepare is done by writing the ack.
++    //    Mirrors OB ob_signal_worker.cpp:358-360. On write failure the
++    //    coordinator will time out on its own poll.
++    safe_write_ack(ctx.fd_[1], prepare_rc);
++
++    // 6. Wait for the coordinator's process-done write on fd2_, then post
++    //    the exit-ack. Bounded by the coordinator's timeout — if the
++    //    coordinator times out it closes ctx.fd2_[0] (read returns 0) and
++    //    we exit cleanly.
++    //    Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:362-385
++    int peer_ack = 0;
++    safe_read_ack(ctx.fd2_[0], &peer_ack);
++    safe_write_ack(ctx.fd_[1], peer_ack);
++
++    errno = saved_errno;
++}
++
++// Reason: install srunwind_signal_handler for MP_SIG only. Doris BE
++// already installs a failure handler for SIGSEGV/SIGABRT/SIGBUS/SIGFPE/
++// SIGILL/SIGTERM via doris::signal::InstallFailureSignalHandler at
++// be/src/common/signal_handler.h, so we MUST NOT widen SIG_SET to those.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-86
++int install_srunwind_signal_handler() {
++    struct sigaction sa {};
++    sa.sa_flags = SA_SIGINFO | SA_RESTART | SA_NODEFER | SA_ONSTACK;
++    sa.sa_sigaction = srunwind_signal_handler;
++    sigemptyset(&sa.sa_mask);
++    if (sigaction(kMpSig, &sa, nullptr) == -1) {
++        return -1;
++    }
++    return 0;
++}
++
++} // namespace doris::srunwind
+diff --git a/be/src/common/srunwind_signal_handler.h b/be/src/common/srunwind_signal_handler.h
+new file mode 100644
+index 00000000000..f564c65e7a7
+--- /dev/null
++++ b/be/src/common/srunwind_signal_handler.h
+@@ -0,0 +1,127 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/oceanbase/blob/v4.5.0_CE/deps/oblib/src/lib/signal/ob_signal_struct.h
++// and ob_signal_handlers.{h,cpp} and modified by Doris for the
++// snapshot-remote-unwind native stack collector. Diverges from ob-kill60
++// because this design forbids libunwind work inside the worker handler;
++// the handler copies registers + a stack slice and returns.
++
++#pragma once
++
++#include <signal.h>
++#include <ucontext.h>
++
++#include <cstdint>
++
++namespace doris::srunwind {
++
++// Reason: MP_SIG (multi-purpose signal) is the realtime-adjacent signal the
++// coordinator sends to interrupt one worker thread at a time. Reuses
++// OceanBase's SIGURG choice because POSIX leaves the default action as
++// "ignore" and Doris BE does not use SIGURG elsewhere. Same value as Phase
++// C ob-kill60 but a separate symbol so the two variants are independently
++// auditable.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:25
++constexpr int kMpSig = SIGURG;
++
++// Reason: maximum stack bytes the handler memcpy's per dump. Phase 2 plan
++// pinned 8 KiB as the default; the buffer is sized once at file scope so
++// no allocation happens in the signal handler.
++// Reference: docs/phase2-plan.md:99
++constexpr int kMaxSnapshotStackBytes = 8192;
++
++// Reason: shared context the coordinator hands to one worker handler in
++// turn. Mirrors OceanBase ObSigHandlerCtx in shape (lock_ + req_id_ +
++// fd_[2] + fd2_[2]) so the two-phase pipe coordination is identical;
++// the payload differs because this variant captures a ucontext_t +
++// stack bytes rather than libunwind PCs.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:111-127
++struct SrunwindSigHandlerCtx {
++    SrunwindSigHandlerCtx() = default;
++
++    // Reason: TAS spin-lock the coordinator holds for the whole per-thread
++    // exchange so concurrent HTTP requests serialize on the shared ctx.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:97-107
++    void lock();
++    void unlock();
++    bool try_lock();
++
++    // Reason: req_id is the anti-spoof token the coordinator stamps into
++    // si_value.sival_ptr; the handler rejects any signal whose req_id
++    // does not match. Lock during the swap so the handler observes a
++    // coherent value.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:90-95
++    void atomic_set_req_id(int64_t req_id);
++
++    // fd_[0/1] = worker -> coordinator (prepare-ack + exit-ack).
++    // fd2_[0/1]= coordinator -> worker (process-done signal).
++    // Lifecycle: pipe2(O_CLOEXEC) per request, closed by the coordinator.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:120-121
++    int fd_[2] = {-1, -1};
++    int fd2_[2] = {-1, -1};
++
++    // Reason: snapshot payload the worker handler fills in. ucontext_t
++    // is captured verbatim from sa_sigaction's third argument so the
++    // coordinator can read every general-purpose register without a
++    // libunwind round-trip on the worker side. stack_buf_ holds up to
++    // kMaxSnapshotStackBytes starting at stack_base_; the coordinator
++    // uses this for unw_init_remote's memory accessor.
++    ucontext_t ucontext_ = {};
++    bool ucontext_valid_ = false;
++
++    uintptr_t stack_base_ = 0;
++    int64_t stack_bytes_ = 0;
++    bool stack_truncated_ = false;
++    unsigned char stack_buf_[kMaxSnapshotStackBytes] = {};
++
++    // Reason: handler-side validation bounds the coordinator passed in
++    // (per-tid [stack] VMA from /proc/self/task/<tid>/maps). The handler
++    // clamps the memcpy to [stack_low_, stack_high_) so the read never
++    // crosses a guard page.
++    uintptr_t stack_low_ = 0;
++    uintptr_t stack_high_ = 0;
++
++    // Reason: tid of the thread currently being interrupted so the worker
++    // handler can ignore stray signals delivered to the wrong thread.
++    int64_t target_tid_ = 0;
++
++    int64_t lock_ = 0;
++    int64_t req_id_ = 0;
++};
++
++// Reason: single shared instance — the coordinator processes one worker
++// at a time under the spin-lock, exactly as OceanBase does.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:109
++extern SrunwindSigHandlerCtx g_sig_handler_ctx_;
++
++// Reason: top-level signal dispatcher; routes MP_SIG to the per-request
++// snapshot capture path and drops every other signal. Anti-spoof check
++// on req_id and target_tid. Async-signal-safe: copies the ucontext_t and
++// up to kMaxSnapshotStackBytes from the interrupted %rsp into ctx, then
++// returns. No libunwind, no allocation, no locking inside the handler.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
++extern "C" void srunwind_signal_handler(int sig, siginfo_t* si, void* context);
++
++// Reason: register srunwind_signal_handler for MP_SIG only. Doris already
++// owns SIGSEGV/SIGABRT/SIGBUS/SIGFPE/SIGILL/SIGTERM via
++// doris::signal::InstallFailureSignalHandler, so we narrow the OB
++// SIG_SET to MP_SIG to avoid stomping the failure handler.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-86
++int install_srunwind_signal_handler();
++
++} // namespace doris::srunwind
+-- 
+2.53.0
+
