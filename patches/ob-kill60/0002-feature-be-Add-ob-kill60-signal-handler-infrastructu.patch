@@ -1,0 +1,349 @@
+From c6834ce97b4c1ee205282d805138ec65d00adadb Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 23:30:30 +0800
+Subject: [PATCH 2/4] [feature](be) Add ob-kill60 signal handler infrastructure
+
+Mirrors OceanBase's MP_SIG dispatch and two-phase per-thread coordination
+without the SignalWorker thread (the HTTP coordinator runs the role
+inline). New ObSigHandlerCtx with TAS spin-lock, anti-spoof req_id, and
+fixed PC frame buffer; libunwind-based safe_backtrace; install hook that
+installs ob_signal_handler for MP_SIG only (Doris BE already owns
+SIGSEGV/SIGABRT/SIGBUS/SIGFPE/SIGILL/SIGTERM through its own failure
+handler).
+
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:111-127
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:90-110
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-120
+Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:26-99
+---
+ be/src/common/ob_signal_handler.cpp | 202 ++++++++++++++++++++++++++++
+ be/src/common/ob_signal_handler.h   | 108 +++++++++++++++
+ 2 files changed, 310 insertions(+)
+ create mode 100644 be/src/common/ob_signal_handler.cpp
+ create mode 100644 be/src/common/ob_signal_handler.h
+
+diff --git a/be/src/common/ob_signal_handler.cpp b/be/src/common/ob_signal_handler.cpp
+new file mode 100644
+index 00000000000..f882aa301d6
+--- /dev/null
++++ b/be/src/common/ob_signal_handler.cpp
+@@ -0,0 +1,202 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/oceanbase/blob/v4.5.0_CE/deps/oblib/src/lib/signal/ob_signal_struct.cpp
++// , ob_signal_handlers.cpp, and ob_libunwind.c, modified by Doris for the
++// ob-kill60 native stack collector.
++
++#include "common/ob_signal_handler.h"
++
++#ifndef UNW_LOCAL_ONLY
++#define UNW_LOCAL_ONLY
++#endif
++#include <libunwind.h>
++
++#include <errno.h>
++#include <unistd.h>
++
++namespace doris::ob_kill60 {
++
++ObSigHandlerCtx g_sig_handler_ctx_;
++
++// Reason: TAS spin-loop with PAUSE hint, signal-safe (no allocation, no
++// futex). The coordinator holds this for the whole per-thread exchange.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:97-102
++void ObSigHandlerCtx::lock() {
++    while (__atomic_test_and_set(&lock_, __ATOMIC_ACQ_REL)) {
++#if defined(__x86_64__) || defined(__i386__)
++        __builtin_ia32_pause();
++#elif defined(__aarch64__)
++        asm volatile("yield");
++#endif
++    }
++}
++
++void ObSigHandlerCtx::unlock() {
++    __atomic_clear(&lock_, __ATOMIC_RELEASE);
++}
++
++// Reason: non-blocking try_lock for the HTTP coordinator to report busy
++// when another dump is in flight, mirroring OB's spin policy but without
++// blocking the HTTP thread.
++bool ObSigHandlerCtx::try_lock() {
++    return !__atomic_test_and_set(&lock_, __ATOMIC_ACQ_REL);
++}
++
++// Reason: stamp the anti-spoof token under the lock so the worker handler
++// always observes a coherent req_id.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:90-95
++void ObSigHandlerCtx::atomic_set_req_id(int64_t req_id) {
++    lock();
++    req_id_ = req_id;
++    unlock();
++}
++
++// Reason: top-level signal dispatcher. Routes MP_SIG to the worker capture
++// path; drops every other signal (Doris's failure handler owns
++// SIGSEGV/SIGABRT/etc., so we MUST NOT raise the default here as OB does).
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
++extern "C" void ob_signal_handler(int sig, siginfo_t* si, void* /*context*/) {
++    if (sig != kMpSig || si == nullptr) {
++        return;
++    }
++
++    // 1. Anti-spoof: reject any sival_ptr that does not match the current
++    //    req_id. Mirrors OB ob_signal_handler:113-115.
++    int64_t req_id = reinterpret_cast<int64_t>(si->si_value.sival_ptr);
++    auto& ctx = g_sig_handler_ctx_;
++    if (ctx.req_id_ != req_id || req_id == 0) {
++        return;
++    }
++
++    // 2. Drop signals delivered to the wrong tid (a stray MP_SIG from an
++    //    earlier request that re-fires after the coordinator advanced).
++    int64_t self_tid = static_cast<int64_t>(syscall(SYS_gettid));
++    if (ctx.target_tid_ != self_tid) {
++        return;
++    }
++
++    // 3. Capture PCs into the shared ctx buffer. Worker-side prepare phase
++    //    in OB's ObSigBTOnlyProcessor::prepare (calls safe_backtrace).
++    //    Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_processor.cpp:51-68
++    int saved_errno = errno;
++    ctx.frame_count_ = 0;
++    ctx.truncated_ = false;
++    int captured = 0;
++    int rc = safe_backtrace(ctx.frames_, kMaxSignalFrames, &captured);
++    if (rc == 0) {
++        ctx.frame_count_ = captured;
++        ctx.truncated_ = (captured >= kMaxSignalFrames);
++    }
++
++    // 4. Notify the coordinator that prepare is done by writing the ack
++    //    (mirrors OB ob_signal_worker.cpp:358-360). On write failure the
++    //    coordinator will time out on its own poll.
++    int ack = rc;
++    ssize_t n = ::write(ctx.fd_[1], &ack, sizeof(ack));
++    static_cast<void>(n);
++
++    // 5. Wait for the coordinator's process-done write on fd2_, then post
++    //    the exit-ack. Bounded by the coordinator's timeout — if the
++    //    coordinator times out it will close ctx.fd2_[0] (read returns 0)
++    //    and we exit cleanly.
++    //    Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:362-385
++    int peer_ack = 0;
++    while (true) {
++        ssize_t r = ::read(ctx.fd2_[0], &peer_ack, sizeof(peer_ack));
++        if (r == sizeof(peer_ack)) {
++            break;
++        }
++        if (r == 0) {
++            break; // pipe closed by coordinator timeout
++        }
++        if (r < 0 && errno == EINTR) {
++            continue;
++        }
++        break;
++    }
++
++    int exit_ack = peer_ack;
++    n = ::write(ctx.fd_[1], &exit_ack, sizeof(exit_ack));
++    static_cast<void>(n);
++    errno = saved_errno;
++}
++
++// Reason: install ob_signal_handler for MP_SIG only. Doris BE already
++// installs a failure handler for SIGSEGV/SIGABRT/SIGBUS/SIGFPE/SIGILL/
++// SIGTERM via doris::signal::InstallFailureSignalHandler at
++// be/src/common/signal_handler.h, so we do NOT widen SIG_SET to those.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-86
++int install_ob_signal_handler() {
++    struct sigaction sa {};
++    sa.sa_flags = SA_SIGINFO | SA_RESTART | SA_NODEFER | SA_ONSTACK;
++    sa.sa_sigaction = ob_signal_handler;
++    sigemptyset(&sa.sa_mask);
++    if (sigaction(kMpSig, &sa, nullptr) == -1) {
++        return -1;
++    }
++    return 0;
++}
++
++// Reason: signal-safe libunwind PC walk. Mirrors OB safe_backtrace_ +
++// get_stack_trace_inplace + get_frame_info.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:26-99
++int safe_backtrace(uintptr_t* frames, int max_frames, int* count) {
++    *count = 0;
++    if (max_frames <= 0) {
++        return 0;
++    }
++
++    unw_context_t context;
++    if (unw_getcontext(&context) < 0) {
++        return -1;
++    }
++
++    unw_cursor_t cursor;
++    if (unw_init_local(&cursor, &context) < 0) {
++        return -1;
++    }
++
++    int n = 0;
++    while (n < max_frames) {
++        unw_word_t ip = 0;
++        if (unw_get_reg(&cursor, UNW_REG_IP, &ip) < 0) {
++            return -1;
++        }
++        // Reason: bias the IP one byte back for normal call frames so the PC
++        // falls inside the calling instruction (OB does the same to handle
++        // noreturn functions). Signal frames keep the exact IP.
++        // Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:84-98
++        int is_signal_frame = unw_is_signal_frame(&cursor);
++        if (is_signal_frame < 0) {
++            return -1;
++        }
++        frames[n++] = static_cast<uintptr_t>(ip) - (is_signal_frame == 0 ? 1 : 0);
++
++        int r = unw_step(&cursor);
++        if (r < 0) {
++            return -1;
++        }
++        if (r == 0) {
++            break;
++        }
++    }
++    *count = n;
++    return 0;
++}
++
++} // namespace doris::ob_kill60
+diff --git a/be/src/common/ob_signal_handler.h b/be/src/common/ob_signal_handler.h
+new file mode 100644
+index 00000000000..f932ddedfa8
+--- /dev/null
++++ b/be/src/common/ob_signal_handler.h
+@@ -0,0 +1,108 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/oceanbase/blob/v4.5.0_CE/deps/oblib/src/lib/signal/ob_signal_struct.h
++// and ob_signal_handlers.{h,cpp} and modified by Doris for the ob-kill60
++// native stack collector.
++
++#pragma once
++
++#include <signal.h>
++
++#include <atomic>
++#include <cstdint>
++
++namespace doris::ob_kill60 {
++
++// Reason: MP_SIG (multi-purpose signal) is the realtime-adjacent signal the
++// coordinator sends to interrupt every worker thread. OceanBase uses SIGURG
++// because POSIX leaves the default action as "ignore"; Doris BE does not
++// use SIGURG elsewhere (grep be/src/), so we keep the same choice.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:25
++constexpr int kMpSig = SIGURG;
++
++// Reason: maximum number of PCs the worker captures into one ctx buffer. OB
++// caps at 100 in ob_libunwind.c; we follow that so the buffer stays bounded.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:19
++constexpr int kMaxSignalFrames = 100;
++
++// Reason: shared context the coordinator hands to each worker handler in
++// turn. Mirrors OceanBase ObSigHandlerCtx.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:111-127
++struct ObSigHandlerCtx {
++    ObSigHandlerCtx() = default;
++
++    // Reason: TAS spin-lock the coordinator holds for the whole per-thread
++    // exchange so concurrent HTTP requests serialize on the shared ctx.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:97-107
++    void lock();
++    void unlock();
++    bool try_lock();
++
++    // Reason: req_id is the anti-spoof token the coordinator stamps into
++    // si_value.sival_ptr; the handler rejects any signal whose req_id does
++    // not match. Lock during the swap so the handler observes a coherent
++    // value. Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:90-95
++    void atomic_set_req_id(int64_t req_id);
++
++    // fd_[0/1] = worker -> coordinator (prepare-ack + exit-ack).
++    // fd_[1]   = write end inside the worker handler.
++    // fd2_[0/1]= coordinator -> worker (process-done signal).
++    // fd2_[1]  = write end inside the coordinator after processing.
++    // Lifecycle: pipe2(O_CLOEXEC) per request, closed by the coordinator.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:120-121
++    int fd_[2] = {-1, -1};
++    int fd2_[2] = {-1, -1};
++
++    // Reason: PC buffer the worker fills via libunwind in the signal handler
++    // and the coordinator reads after the prepare-ack. Worker-only writes;
++    // coordinator-only reads. No allocation, no locking inside the handler.
++    uintptr_t frames_[kMaxSignalFrames] = {};
++    int frame_count_ = 0;
++    bool truncated_ = false;
++
++    // Reason: tid of the thread currently being interrupted; used so the
++    // worker handler can ignore stray signals delivered to the wrong thread.
++    int64_t target_tid_ = 0;
++
++    int64_t lock_ = 0;
++    int64_t req_id_ = 0;
++};
++
++// Reason: single shared instance — the coordinator processes one worker at
++// a time under the spin-lock, exactly as OceanBase does.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:109
++extern ObSigHandlerCtx g_sig_handler_ctx_;
++
++// Reason: top-level signal dispatcher; routes MP_SIG to the per-request
++// handler and drops every other signal. Anti-spoof check on req_id.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
++extern "C" void ob_signal_handler(int sig, siginfo_t* si, void* context);
++
++// Reason: register ob_signal_handler for MP_SIG only. Doris already owns
++// SIGSEGV/SIGABRT/SIGBUS/SIGFPE/SIGILL/SIGTERM via
++// doris::signal::InstallFailureSignalHandler, so we narrow the OB
++// SIG_SET to MP_SIG to avoid stomping the failure handler.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-86
++int install_ob_signal_handler();
++
++// Reason: signal-safe libunwind PC walk. Worker handler calls this to fill
++// ctx.frames_/frame_count_ before posting the prepare-ack.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:26-53
++int safe_backtrace(uintptr_t* frames, int max_frames, int* count);
++
++} // namespace doris::ob_kill60
+-- 
+2.53.0
+

@@ -1,0 +1,174 @@
+From 3afe53f0512e8eda81b6878f182c51ca9b8cdd2b Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 23:24:44 +0800
+Subject: [PATCH 1/4] [feature](be) Add ObProcMaps cache for ob-kill60 native
+ stack collector
+
+Mirrors OceanBase's ObProcMaps so the coordinator can resolve PCs to DSO
+offsets after capturing raw IPs in the signal handler. Cache lives in
+be/src/common/ alongside phdr_cache.{h,cpp} and stack_trace.{h,cpp}: the
+existing canonical home for signal/observability infrastructure inside
+Doris BE.
+
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:87-107
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:52-88
+---
+ be/src/common/ob_proc_maps.cpp | 81 ++++++++++++++++++++++++++++++++++
+ be/src/common/ob_proc_maps.h   | 57 ++++++++++++++++++++++++
+ 2 files changed, 138 insertions(+)
+ create mode 100644 be/src/common/ob_proc_maps.cpp
+ create mode 100644 be/src/common/ob_proc_maps.h
+
+diff --git a/be/src/common/ob_proc_maps.cpp b/be/src/common/ob_proc_maps.cpp
+new file mode 100644
+index 00000000000..85e6f093f4e
+--- /dev/null
++++ b/be/src/common/ob_proc_maps.cpp
+@@ -0,0 +1,81 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/oceanbase/blob/v4.5.0_CE/deps/oblib/src/lib/signal/ob_signal_struct.cpp
++// (ObProcMaps::load_maps) and modified by Doris for the ob-kill60 native
++// stack collector.
++
++#include "common/ob_proc_maps.h"
++
++#include <cstdio>
++#include <cstring>
++#include <unistd.h>
++
++namespace doris::ob_kill60 {
++
++// Reason: parse /proc/self/maps, keep only executable mappings, and store
++// them in a fixed buffer the coordinator can scan after the worker dump.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:52-88
++void ObProcMaps::load_maps() {
++    // 1. Reset the cache so a re-load reflects the current process layout.
++    _pos = 0;
++
++    // 2. Open /proc/<pid>/maps; tolerate failure (collector reports DSO miss).
++    char fn[64];
++    snprintf(fn, sizeof(fn), "/proc/%d/maps", getpid());
++    FILE* file = std::fopen(fn, "rt");
++    if (file == nullptr) {
++        return;
++    }
++
++    // 3. For each line, drop non-executable mappings and append the rest
++    //    verbatim. Skip parsing entries with fewer than six tokens (OB does
++    //    the same to avoid mis-classifying odd kernel entries).
++    char line[1024];
++    while (std::fgets(line, sizeof(line), file) != nullptr) {
++        int len = static_cast<int>(std::strlen(line));
++        if (len > 0 && line[len - 1] == '\n') {
++            line[--len] = '\0';
++        }
++
++        // strtok_r mutates the line, so snapshot the buffer length first.
++        int64_t n = std::snprintf(_buf + _pos, sizeof(_buf) - _pos, "%s\n", line);
++
++        char* tokens[8] = {};
++        int token_cnt = 0;
++        char* saveptr = nullptr;
++        for (char* value = strtok_r(line, " ", &saveptr); value != nullptr && token_cnt < 8;
++             value = strtok_r(nullptr, " ", &saveptr)) {
++            tokens[token_cnt++] = value;
++        }
++        if (token_cnt < 6) {
++            continue;
++        }
++        const char* perms = tokens[1];
++        if (std::strlen(perms) == 4 && perms[2] != 'x') {
++            continue;
++        }
++        if (n < 0 || static_cast<size_t>(n) >= sizeof(_buf) - static_cast<size_t>(_pos)) {
++            break;
++        }
++        _pos += n;
++    }
++
++    std::fclose(file);
++}
++
++} // namespace doris::ob_kill60
+diff --git a/be/src/common/ob_proc_maps.h b/be/src/common/ob_proc_maps.h
+new file mode 100644
+index 00000000000..911e6a46788
+--- /dev/null
++++ b/be/src/common/ob_proc_maps.h
+@@ -0,0 +1,57 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++// This file is derived from
++// https://github.com/oceanbase/oceanbase/blob/v4.5.0_CE/deps/oblib/src/lib/signal/ob_signal_struct.h
++// (class ObProcMaps) and modified by Doris for the ob-kill60 native stack
++// collector.
++
++#pragma once
++
++#include <cstdint>
++
++namespace doris::ob_kill60 {
++
++// Reason: caches /proc/self/maps so the coordinator can compute DSO offsets
++// without re-reading the file per request. Mirrors OceanBase ObProcMaps.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h:87-107
++class ObProcMaps {
++public:
++    static ObProcMaps& get_instance() {
++        static ObProcMaps the_one;
++        return the_one;
++    }
++
++    // Reason: reload the cache; called from the HTTP coordinator before each
++    // dump so dlopen()'d shared objects show up. Reference:
++    // <ob>/deps/oblib/src/lib/signal/ob_signal_struct.cpp:52-88
++    void load_maps();
++
++    const char* get_maps(int64_t& len) const {
++        len = _pos;
++        return _buf;
++    }
++
++private:
++    ObProcMaps() = default;
++
++    // Reason: OB uses an 8 KiB fixed buffer; keep the same cap so the
++    // coordinator pass is bounded and signal-safe.
++    char _buf[8192] {};
++    int64_t _pos = 0;
++};
++
++} // namespace doris::ob_kill60
+-- 
+2.53.0
+

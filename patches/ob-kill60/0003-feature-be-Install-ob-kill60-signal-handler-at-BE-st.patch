@@ -1,0 +1,51 @@
+From ef824d3bd01521385fbfc2762c7af252e532d1cd Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 23:30:36 +0800
+Subject: [PATCH 3/4] [feature](be) Install ob-kill60 signal handler at BE
+ startup
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Wires install_ob_signal_handler() into doris_main.cpp at the same
+post-init site Phase B chose for updatePHDRCache() — after disk/mem info
+logging, before BackendOptions::init/ExecEnv::init spawn the thread
+pools the HTTP collector wants to capture.
+
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-86
+---
+ be/src/service/doris_main.cpp | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/be/src/service/doris_main.cpp b/be/src/service/doris_main.cpp
+index fd534bc77f0..fe315f7b78f 100644
+--- a/be/src/service/doris_main.cpp
++++ b/be/src/service/doris_main.cpp
+@@ -66,6 +66,7 @@
+ #include "common/config.h"
+ #include "common/daemon.h"
+ #include "common/logging.h"
++#include "common/ob_signal_handler.h"
+ #include "common/signal_handler.h"
+ #include "common/status.h"
+ #include "io/cache/block_file_cache_factory.h"
+@@ -589,6 +590,16 @@ int main(int argc, char** argv) {
+     // will work only after additional call of this function.
+     // rewrites dl_iterate_phdr will cause Jemalloc to fail to run after enable profile. see #
+     // updatePHDRCache();
++    // Reason: install MP_SIG (SIGURG) sigaction so the native_stack HTTP
++    // action can interrupt every worker thread via rt_tgsigqueueinfo. Anchor
++    // at the same post-init site Phase B chose for updatePHDRCache(): after
++    // DiskInfo/MemInfo logging, before BackendOptions::init/ExecEnv::init
++    // spawn the thread pools we want to capture.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73-86
++    if (doris::ob_kill60::install_ob_signal_handler() != 0) {
++        LOG(WARNING) << "install_ob_signal_handler failed; native_stack HTTP action will return "
++                        "signal_handler_unavailable";
++    }
+     if (!doris::BackendOptions::init()) {
+         exit(-1);
+     }
+-- 
+2.53.0
+
