@@ -10,6 +10,16 @@ AM_USER_EMAIL="mira@example.invalid"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
+# PHASE2_ROOT lets a task worktree reuse the persistent phase2/ worktrees of the
+# main project repo instead of materializing a fresh phase2/ under itself. The
+# doris-master submodule is 14 GB, so cloning it per task is impractical.
+PHASE2_ROOT="${PHASE2_ROOT:-$ROOT/phase2}"
+
+# DORIS_SOURCE_REPO lets a task worktree point source_repo() at the main
+# project's initialized submodule when its own repos/source/doris-master is an
+# uninitialized stub.
+DORIS_SOURCE_REPO="${DORIS_SOURCE_REPO:-$ROOT/repos/source/doris-master}"
+
 usage() {
   cat <<'EOF'
 usage:
@@ -53,7 +63,7 @@ patch_key_for() {
 
 worktree_for() {
   local target="$1"
-  echo "$ROOT/phase2/$target"
+  echo "$PHASE2_ROOT/$target"
 }
 
 patch_dir_for() {
@@ -64,7 +74,7 @@ patch_dir_for() {
 }
 
 source_repo() {
-  echo "$ROOT/repos/source/doris-master"
+  echo "$DORIS_SOURCE_REPO"
 }
 
 list_targets() {
@@ -106,7 +116,7 @@ ensure_worktree() {
   local src
   src="$(source_repo)"
   [[ -d "$src" ]] || die "cannot create $wt: missing source repo $src"
-  mkdir -p "$ROOT/phase2"
+  mkdir -p "$PHASE2_ROOT"
   git -C "$src" worktree add --detach "$wt" "$BASE_COMMIT"
 }
 

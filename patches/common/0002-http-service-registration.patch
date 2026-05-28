@@ -1,0 +1,36 @@
+From 9a5d39e7bf90629e1a3d87d6075e49afff04703b Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 28 May 2026 21:44:00 +0800
+Subject: [PATCH 2/2] [feature](be) Register native stack debug HTTP route
+
+---
+ be/src/service/http_service.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/be/src/service/http_service.cpp b/be/src/service/http_service.cpp
+index 93a50a81cc1..d005f701ac1 100644
+--- a/be/src/service/http_service.cpp
++++ b/be/src/service/http_service.cpp
+@@ -58,6 +58,7 @@
+ #include "service/http/action/load_stream_action.h"
+ #include "service/http/action/meta_action.h"
+ #include "service/http/action/metrics_action.h"
++#include "service/http/action/native_stack_action.h"
+ #include "service/http/action/pad_rowset_action.h"
+ #include "service/http/action/pipeline_task_action.h"
+ #include "service/http/action/pprof_actions.h"
+@@ -190,6 +191,11 @@ Status HttpService::start() {
+     _ev_http_server->register_handler(HttpMethod::GET, "/api/be_process_thread_num",
+                                       be_proc_thread_action);
+ 
++    NativeStackAction* native_stack_action =
++            _pool.add(new NativeStackAction(_env, TPrivilegeHier::GLOBAL, TPrivilegeType::ADMIN));
++    _ev_http_server->register_handler(HttpMethod::GET, "/api/debug/native_stack",
++                                      native_stack_action);
++
+     // Register BE LoadStream action
+     LoadStreamAction* load_stream_action = _pool.add(new LoadStreamAction(_env));
+     _ev_http_server->register_handler(HttpMethod::GET, "/api/load_streams", load_stream_action);
+-- 
+2.53.0
+
