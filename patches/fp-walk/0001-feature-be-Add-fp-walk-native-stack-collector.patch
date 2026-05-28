@@ -1,4 +1,4 @@
-From 0c99c8f877497feb9f02201f747272c485a46cce Mon Sep 17 00:00:00 2001
+From a6120f8bd4229b37970f91a9218b2150b67a691e Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Thu, 28 May 2026 15:50:11 +0800
 Subject: [PATCH] [feature](be) Add fp-walk native stack collector
@@ -7,11 +7,11 @@ Collect raw PCs in a signal handler using RIP/RBP frame-pointer walking.
 
 Compute DSO offsets in the coordinator and mark threads that block the collector signal.
 ---
- .../http/action/native_stack_action.cpp       | 446 +++++++++++++++++-
- 1 file changed, 430 insertions(+), 16 deletions(-)
+ .../http/action/native_stack_action.cpp       | 448 +++++++++++++++++-
+ 1 file changed, 430 insertions(+), 18 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_action.cpp b/be/src/service/http/action/native_stack_action.cpp
-index 1a7cd4a2ce1..5cba9c7e578 100644
+index cb9b6e336cb..b094e2e2068 100644
 --- a/be/src/service/http/action/native_stack_action.cpp
 +++ b/be/src/service/http/action/native_stack_action.cpp
 @@ -18,16 +18,31 @@
@@ -95,10 +95,10 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
 +std::once_flag s_signal_install_once;
 +std::atomic<bool> s_signal_installed {false};
 +
+ // Reason: tracks one in-flight dump so concurrent HTTP requests return busy.
  class ScopedDumpSlot {
  public:
-     ScopedDumpSlot() {
-@@ -73,12 +127,24 @@ struct RequestOptions {
+@@ -75,12 +129,24 @@ struct RequestOptions {
      std::optional<int64_t> target_tid;
  };
  
@@ -120,10 +120,10 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
 +    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + static_cast<int64_t>(ts.tv_nsec);
 +}
 +
+ // Reason: parses one signed integer and rejects trailing garbage.
  bool parse_i64(const std::string& value, int64_t* parsed) {
      try {
-         size_t consumed = 0;
-@@ -93,6 +159,35 @@ bool parse_i64(const std::string& value, int64_t* parsed) {
+@@ -96,6 +162,35 @@ bool parse_i64(const std::string& value, int64_t* parsed) {
      }
  }
  
@@ -156,10 +156,10 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
 +    }
 +}
 +
+ // Reason: applies the default when the query param is absent and bounds-checks otherwise.
  bool parse_optional_i64(const HttpRequest* req, const std::string& key, int64_t default_value,
                          int64_t min_value, int64_t max_value, int64_t* parsed,
-                         std::string* error_reason) {
-@@ -116,8 +211,8 @@ bool parse_options(const HttpRequest* req, RequestOptions* options, std::string*
+@@ -121,8 +216,8 @@ bool parse_options(const HttpRequest* req, RequestOptions* options, std::string*
                              error_reason)) {
          return false;
      }
@@ -170,7 +170,7 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
          return false;
      }
      if (!parse_optional_i64(req, "max_stack_bytes", kDefaultMaxStackBytes, 0, 1048576,
-@@ -157,10 +252,94 @@ std::vector<int64_t> list_thread_ids() {
+@@ -163,11 +258,95 @@ std::vector<int64_t> list_thread_ids() {
      return tids;
  }
  
@@ -258,6 +258,7 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
 +    return out.str();
 +}
 +
+ // Reason: writes the response envelope fields shared by every status path.
  void fill_common_fields(EasyJson* root, const std::string& status, const RequestOptions& options,
                          int64_t elapsed) {
      (*root)["status"] = status;
@@ -266,12 +267,10 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
      (*root)["timeout_ms"] = options.timeout_ms;
      (*root)["max_frames_per_thread"] = options.max_frames;
      (*root)["max_copied_stack_bytes"] = options.max_stack_bytes;
-@@ -171,8 +350,23 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
+@@ -178,9 +357,24 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
      root->Set("threads", EasyJson::kArray);
  }
  
--void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
--                        const std::string& error_reason) {
 +void append_frame(EasyJson* frames, uintptr_t pc, const std::vector<MemoryMap>& maps) {
 +    EasyJson frame = frames->PushBack(EasyJson::kObject);
 +    frame["pc"] = hex_uintptr(pc);
@@ -287,15 +286,19 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
 +    frame["dso_offset"] = hex_uintptr(map->offset + (pc - map->start));
 +}
 +
+ // Reason: appends one thread entry with the stable schema variants will fill in.
+-void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
+-                        const std::string& error_reason) {
 +void append_status_thread(EasyJson* threads, int64_t tid, const std::string& status,
 +                          const std::string& error_reason) {
      EasyJson thread = threads->PushBack(EasyJson::kObject);
      thread["tid"] = tid;
      thread["status"] = status;
-@@ -191,27 +385,237 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
+@@ -200,28 +394,237 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
      return root;
  }
  
+-// Reason: returns stable JSON without collecting PCs so reviewers see the response shape.
 -EasyJson collect_stub_stacks(const RequestOptions& options, int64_t elapsed) {
 +bool rbp_can_read(uintptr_t initial_rbp, uintptr_t rbp, uintptr_t max_stack_bytes) {
 +    constexpr uintptr_t kReadBytes = static_cast<uintptr_t>(2U * sizeof(uintptr_t));
@@ -540,10 +543,11 @@ index 1a7cd4a2ce1..5cba9c7e578 100644
      }
      return root;
  }
-@@ -257,7 +661,17 @@ void NativeStackAction::handle(HttpRequest* req) {
+@@ -270,8 +673,17 @@ void NativeStackAction::handle(HttpRequest* req) {
          }
      }
  
+-    // 4. Collect stub stacks and write the response.
 -    EasyJson response = collect_stub_stacks(options, elapsed_ms(start));
 +    install_signal_handler_once();
 +    if (!s_signal_installed.load(std::memory_order_acquire)) {

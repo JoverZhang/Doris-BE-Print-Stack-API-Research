@@ -1,15 +1,15 @@
-From dc29ca4bc404f6b9267c60dfa9a058c0905dfebd Mon Sep 17 00:00:00 2001
+From 49538742df7fb774cd583504bd78d3ce804777c4 Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
 Date: Thu, 28 May 2026 17:24:08 +0800
 Subject: [PATCH] [feature](be) Add ob-kill60 native stack collector
 
 Co-Authored-By: jover <joverzh@gmail.com>
 ---
- .../http/action/native_stack_action.cpp       | 578 +++++++++++++++++-
- 1 file changed, 564 insertions(+), 14 deletions(-)
+ .../http/action/native_stack_action.cpp       | 580 +++++++++++++++++-
+ 1 file changed, 564 insertions(+), 16 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_action.cpp b/be/src/service/http/action/native_stack_action.cpp
-index 1a7cd4a2ce1..0c82b82bbd1 100644
+index cb9b6e336cb..b27643a3f36 100644
 --- a/be/src/service/http/action/native_stack_action.cpp
 +++ b/be/src/service/http/action/native_stack_action.cpp
 @@ -17,15 +17,33 @@
@@ -112,10 +112,10 @@ index 1a7cd4a2ce1..0c82b82bbd1 100644
 +std::once_flag s_signal_install_once;
 +std::atomic<bool> s_signal_installed {false};
 +
+ // Reason: tracks one in-flight dump so concurrent HTTP requests return busy.
  class ScopedDumpSlot {
  public:
-     ScopedDumpSlot() {
-@@ -73,12 +147,24 @@ struct RequestOptions {
+@@ -75,12 +149,24 @@ struct RequestOptions {
      std::optional<int64_t> target_tid;
  };
  
@@ -137,10 +137,10 @@ index 1a7cd4a2ce1..0c82b82bbd1 100644
 +    return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + static_cast<uint64_t>(ts.tv_nsec);
 +}
 +
+ // Reason: parses one signed integer and rejects trailing garbage.
  bool parse_i64(const std::string& value, int64_t* parsed) {
      try {
-         size_t consumed = 0;
-@@ -93,6 +179,35 @@ bool parse_i64(const std::string& value, int64_t* parsed) {
+@@ -96,6 +182,35 @@ bool parse_i64(const std::string& value, int64_t* parsed) {
      }
  }
  
@@ -173,10 +173,10 @@ index 1a7cd4a2ce1..0c82b82bbd1 100644
 +    }
 +}
 +
+ // Reason: applies the default when the query param is absent and bounds-checks otherwise.
  bool parse_optional_i64(const HttpRequest* req, const std::string& key, int64_t default_value,
                          int64_t min_value, int64_t max_value, int64_t* parsed,
-                         std::string* error_reason) {
-@@ -157,10 +272,94 @@ std::vector<int64_t> list_thread_ids() {
+@@ -163,11 +278,95 @@ std::vector<int64_t> list_thread_ids() {
      return tids;
  }
  
@@ -264,6 +264,7 @@ index 1a7cd4a2ce1..0c82b82bbd1 100644
 +    return out.str();
 +}
 +
+ // Reason: writes the response envelope fields shared by every status path.
  void fill_common_fields(EasyJson* root, const std::string& status, const RequestOptions& options,
                          int64_t elapsed) {
      (*root)["status"] = status;
@@ -272,12 +273,10 @@ index 1a7cd4a2ce1..0c82b82bbd1 100644
      (*root)["timeout_ms"] = options.timeout_ms;
      (*root)["max_frames_per_thread"] = options.max_frames;
      (*root)["max_copied_stack_bytes"] = options.max_stack_bytes;
-@@ -171,8 +370,23 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
+@@ -178,9 +377,24 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
      root->Set("threads", EasyJson::kArray);
  }
  
--void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
--                        const std::string& error_reason) {
 +void append_frame(EasyJson* frames, uintptr_t pc, const std::vector<MemoryMap>& maps) {
 +    EasyJson frame = frames->PushBack(EasyJson::kObject);
 +    frame["pc"] = hex_uintptr(pc);
@@ -293,15 +292,19 @@ index 1a7cd4a2ce1..0c82b82bbd1 100644
 +    frame["dso_offset"] = hex_uintptr(map->offset + (pc - map->start));
 +}
 +
+ // Reason: appends one thread entry with the stable schema variants will fill in.
+-void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
+-                        const std::string& error_reason) {
 +void append_status_thread(EasyJson* threads, int64_t tid, const std::string& status,
 +                          const std::string& error_reason) {
      EasyJson thread = threads->PushBack(EasyJson::kObject);
      thread["tid"] = tid;
      thread["status"] = status;
-@@ -191,27 +405,353 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
+@@ -200,28 +414,353 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
      return root;
  }
  
+-// Reason: returns stable JSON without collecting PCs so reviewers see the response shape.
 -EasyJson collect_stub_stacks(const RequestOptions& options, int64_t elapsed) {
 +bool state_finished_phase_one(int state) {
 +    return state != SLOT_PENDING && state != SLOT_CAPTURING;
@@ -662,10 +665,11 @@ index 1a7cd4a2ce1..0c82b82bbd1 100644
      }
      return root;
  }
-@@ -257,7 +797,17 @@ void NativeStackAction::handle(HttpRequest* req) {
+@@ -270,8 +809,17 @@ void NativeStackAction::handle(HttpRequest* req) {
          }
      }
  
+-    // 4. Collect stub stacks and write the response.
 -    EasyJson response = collect_stub_stacks(options, elapsed_ms(start));
 +    install_signal_handler_once();
 +    if (!s_signal_installed.load(std::memory_order_acquire)) {
