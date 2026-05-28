@@ -14,5 +14,7 @@ Phase 2 will test four stack collection designs inside Doris:
 - Snapshot plus remote unwind from copied stack bytes.
 - Frame-pointer walking with Doris Release build flags.
 
+See [`PLAN.md`](PLAN.md) for the Phase 2 plan.
+
 Use `just phase1 --list` to list archived Phase 1 commands.
 Use `just validate` to check repositories and archived lightweight builds.
