@@ -1,0 +1,93 @@
+variant: ck-phdr-unwind
+date: "2026-05-28"
+host: ttmo
+host_kernel: "Linux ttmo 6.19.8-arch1-1 #1 SMP PREEMPT_DYNAMIC Sat, 14 Mar 2026 01:07:43 +0000 x86_64 GNU/Linux"
+
+doris:
+  worktree: phase2/ck-phdr-unwind
+  branch: phase2-ck-phdr-unwind
+  common_api_commit: 055bb465015fa6bcd61f9e33f352de78475fcc2e
+  variant_head: d7394889fc2689a3c5bd9189d5976fbe8e335a1a
+
+build:
+  image: docker.io/apache/doris:build-env-ldb-toolchain-latest
+  image_id: sha256:7b449a709746b22a4ea8dc7d7fa4a0939fb2f65f3a57e88b9006b97b834a8381
+  thirdparty: /var/local/thirdparty/installed
+  cmake_target: "cmake --build be/build_Release --target doris_be -j 8"
+  cmake_target_result: pass
+  build_sh_result: "packaging_failure_after_successful_compile_and_install"
+  build_sh_packaging_failure: "cp -p could not preserve permissions under the bind-mounted root output directory"
+  link_fix: "define UNW_LOCAL_ONLY before including libunwind.h so calls bind to _ULx86_64_* symbols from libunwind.a"
+
+collector:
+  endpoint: /api/debug/native_stack
+  name: ck-phdr-unwind
+  signal: SIGRTMIN+6
+  primary_signal_send: rt_tgsigqueueinfo
+  fallback_signal_send: tgkill
+  unwind: "libunwind local-only API, unw_init_local2(..., UNW_INIT_SIGNAL_FRAME)"
+  max_frames_default: 64
+  max_stack_bytes_default: 8192
+  max_signal_frames: 1024
+  response_frame_fields:
+    - pc
+    - dso
+    - dso_offset
+  forbidden_symbol_fields:
+    - symbol
+    - symbol_name
+    - function
+    - file
+    - line
+
+phdr_cache:
+  preflight: dl_iterate_phdr
+  objects_observed: 13
+  executable_segments_observed: 13
+  unwind_cache_policy: UNW_CACHE_GLOBAL
+  unwind_cache_policy_ret: 0
+  configured: true
+  limitation: "preflight records loader PHDR state; libunwind may still touch internal locks/caches on unseen PCs"
+
+runtime:
+  container: doris-ck-phdr-unwind-test
+  host_http_port: 18043
+  be_http_port: 8040
+  runtime_only_config:
+    - enable_java_support = false
+    - "storage_root_path = ${DORIS_HOME}/storage"
+
+api_evidence:
+  all_threads: api/all-threads.json
+  one_tid: api/one-tid.json
+  busy: api/busy.json
+  timeout: api/timeout.json
+  missing_tid: api/missing-tid.json
+  no_symbol_check: api/no-symbol-check.txt
+  all_threads_summary:
+    status: ok
+    threads: 1871
+    ok_threads: 1867
+    signal_blocked_threads: 4
+    signal_method: rt_tgsigqueueinfo
+
+correctness_evidence:
+  maps: correctness/maps.txt
+  build_ids: correctness/build-ids.txt
+  offline_symbolization: correctness/offline-symbolization.txt
+  offline_symbolization_observation: "DSO offsets symbolize offline to Doris frames including doris::NativeStackAction::handle"
+
+repeat:
+  result: repeat/result.md
+  iterations: 50
+  status: pass
+  crash_observed: false
+  latency_ms_p50: 76
+  latency_ms_p95: 88
+  latency_ms_max: 88
+  max_signal_blocked_threads: 4
+  max_handler_time_ns: 17246469
+
+patches:
+  root_patch: patches/ck-phdr-unwind/0001-feature-be-Add-ck-phdr-unwind-native-stack-collector.patch
+  evidence_patch: evidence/phase2/variants/ck-phdr-unwind/patches/0001-feature-be-Add-ck-phdr-unwind-native-stack-collector.patch

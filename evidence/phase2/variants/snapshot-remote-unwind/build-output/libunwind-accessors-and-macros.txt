@@ -1,0 +1,86 @@
+typedef struct unw_accessors
+  {
+    /* Look up the unwind info associated with instruction-pointer IP.
+       On success, the routine fills in the PROC_INFO structure.  */
+    int (*find_proc_info) (unw_addr_space_t, unw_word_t, unw_proc_info_t *,
+			   int, void *);
+
+    /* Release any resources (e.g., memory) that were allocated for
+       the unwind info returned in by a previous call to
+       find_proc_info() with NEED_UNWIND_INFO set to 1.  */
+    void (*put_unwind_info) (unw_addr_space_t, unw_proc_info_t *, void *);
+
+    /* Return the list-head of the dynamically registered unwind
+       info.  */
+    int (*get_dyn_info_list_addr) (unw_addr_space_t, unw_word_t *, void *);
+
+    /* Access aligned word at address ADDR.  The value is returned
+       according to the endianness of the host (e.g., if the host is
+       little-endian and the target is big-endian, access_mem() needs
+       to byte-swap the value before returning it).  */
+    int (*access_mem) (unw_addr_space_t, unw_word_t, unw_word_t *, int,
+		       void *);
+
+    /* Access register number REG at address ADDR.  */
+    int (*access_reg) (unw_addr_space_t, unw_regnum_t, unw_word_t *, int,
+		       void *);
+
+    /* Access register number REG at address ADDR.  */
+    int (*access_fpreg) (unw_addr_space_t, unw_regnum_t,
+			 unw_fpreg_t *, int, void *);
+
+    int (*resume) (unw_addr_space_t, unw_cursor_t *, void *);
+
+    /* Optional call back to obtain the name of a (static) procedure.
+       Dynamically generated procedures are handled automatically by
+       libunwind.  This callback is optional and may be set to
+       NULL.  */
+    int (*get_proc_name) (unw_addr_space_t, unw_word_t, char *, size_t,
+			  unw_word_t *, void *);
+  }
+unw_accessors_t;
+
+typedef enum unw_save_loc_type
+  {
+    UNW_SLT_NONE,	/* register is not saved ("not an l-value") */
+    unw_tdep_save_loc_t extra;	/* target-dependent additional information */
+  }
+unw_save_loc_t;
+
+/* These routines work both for local and remote unwinding.  */
+
+#define unw_local_addr_space	UNW_OBJ(local_addr_space)
+#define unw_create_addr_space	UNW_OBJ(create_addr_space)
+#define unw_destroy_addr_space	UNW_OBJ(destroy_addr_space)
+#define unw_get_accessors	UNW_ARCH_OBJ(get_accessors)
+#define unw_get_accessors_int	UNW_ARCH_OBJ(get_accessors_int)
+#define unw_init_local		UNW_OBJ(init_local)
+#define unw_init_local2	        UNW_OBJ(init_local2)
+#define unw_init_remote		UNW_OBJ(init_remote)
+#define unw_step		UNW_OBJ(step)
+#define unw_resume		UNW_OBJ(resume)
+#define unw_get_proc_info	UNW_OBJ(get_proc_info)
+#define unw_get_proc_info_by_ip	UNW_OBJ(get_proc_info_by_ip)
+#define unw_reg_states_iterate  UNW_OBJ(reg_states_iterate)
+#define unw_apply_reg_state     UNW_OBJ(apply_reg_state)
+#define unw_get_reg		UNW_OBJ(get_reg)
+#define unw_set_reg		UNW_OBJ(set_reg)
+#define unw_get_fpreg		UNW_OBJ(get_fpreg)
+#define unw_set_fpreg		UNW_OBJ(set_fpreg)
+#define unw_get_save_loc	UNW_OBJ(get_save_loc)
+#define unw_is_signal_frame	UNW_OBJ(is_signal_frame)
+#define unw_get_proc_name	UNW_OBJ(get_proc_name)
+#define unw_set_caching_policy	UNW_OBJ(set_caching_policy)
+#define unw_set_cache_size	UNW_OBJ(set_cache_size)
+#define unw_regname		UNW_ARCH_OBJ(regname)
+#define unw_flush_cache		UNW_ARCH_OBJ(flush_cache)
+#define unw_strerror		UNW_ARCH_OBJ(strerror)
+
+extern unw_addr_space_t unw_create_addr_space (unw_accessors_t *, int);
+extern void unw_destroy_addr_space (unw_addr_space_t);
+extern unw_accessors_t *unw_get_accessors (unw_addr_space_t);
+extern unw_accessors_t *unw_get_accessors_int (unw_addr_space_t);
+extern void unw_flush_cache (unw_addr_space_t, unw_word_t, unw_word_t);
+extern int unw_set_caching_policy (unw_addr_space_t, unw_caching_policy_t);
+extern int unw_set_cache_size (unw_addr_space_t, size_t, int);
+extern const char *unw_regname (unw_regnum_t);

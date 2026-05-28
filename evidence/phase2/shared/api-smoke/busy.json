@@ -1,0 +1,11 @@
+{
+  "status": "busy",
+  "collector": "stub",
+  "timeout_ms": 100,
+  "max_frames_per_thread": 64,
+  "max_copied_stack_bytes": 8192,
+  "elapsed_ms": 0,
+  "target_tid": 748,
+  "threads": [],
+  "error_reason": "another native stack dump is already running"
+}

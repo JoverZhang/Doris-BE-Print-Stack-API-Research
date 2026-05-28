@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "collector": "stub",
+  "timeout_ms": 5000,
+  "max_frames_per_thread": 64,
+  "max_copied_stack_bytes": 8192,
+  "elapsed_ms": 2000,
+  "target_tid": 748,
+  "threads": [
+    {
+      "tid": 748,
+      "status": "ok",
+      "truncated": false,
+      "error_reason": "stub collector has no PCs",
+      "frames": []
+    }
+  ]
+}

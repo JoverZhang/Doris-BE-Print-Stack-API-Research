@@ -1,0 +1,729 @@
+From d7394889fc2689a3c5bd9189d5976fbe8e335a1a Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 28 May 2026 17:23:27 +0800
+Subject: [PATCH] [feature](be) Add ck phdr unwind native stack collector
+
+### What problem does this PR solve?
+
+Issue Number: None
+
+Problem Summary:
+Add the ck-phdr-unwind phase-2 native stack collector variant. It interrupts BE threads with a realtime signal using rt_tgsigqueueinfo and falls back to tgkill, unwinds PCs in the signal handler with local-only libunwind, records PHDR/libunwind cache preflight metadata, and reports only PC plus DSO offset data through the existing debug API contract.
+
+### Release note
+
+None
+
+### Check List (For Author)
+
+- Test: Manual test
+    - Built `doris_be` in `docker.io/apache/doris:build-env-ldb-toolchain-latest` with `cmake --build be/build_Release --target doris_be -j 8`
+    - Smoke-tested `/api/debug/native_stack` all-thread, one-tid, missing-tid, timeout, and busy paths
+- Behavior changed: No
+- Does this need documentation: No
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ .../http/action/native_stack_action.cpp       | 594 +++++++++++++++++-
+ 1 file changed, 578 insertions(+), 16 deletions(-)
+
+diff --git a/be/src/service/http/action/native_stack_action.cpp b/be/src/service/http/action/native_stack_action.cpp
+index 1a7cd4a2ce1..c8aaf1ec46a 100644
+--- a/be/src/service/http/action/native_stack_action.cpp
++++ b/be/src/service/http/action/native_stack_action.cpp
+@@ -18,16 +18,37 @@
+ #include "service/http/action/native_stack_action.h"
+ 
+ #include <glog/logging.h>
++#include <link.h>
++#include <signal.h>
++#include <sys/syscall.h>
++#include <sys/types.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#ifdef USE_UNWIND
++#define UNW_LOCAL_ONLY
++#include <libunwind.h>
++#endif
+ 
+ #include <algorithm>
++#include <array>
+ #include <atomic>
++#include <cerrno>
+ #include <chrono>
+ #include <cstdint>
++#include <cstring>
+ #include <exception>
+ #include <filesystem>
++#include <fstream>
++#include <iomanip>
++#include <limits>
++#include <memory>
++#include <mutex>
+ #include <optional>
++#include <sstream>
+ #include <string>
+ #include <thread>
++#include <utility>
+ #include <vector>
+ 
+ #include "service/http/http_channel.h"
+@@ -40,12 +61,70 @@ namespace doris {
+ namespace {
+ 
+ constexpr char kJsonContentType[] = "application/json";
++constexpr char kCollectorName[] = "ck-phdr-unwind";
+ constexpr int64_t kDefaultTimeoutMs = 100;
+ constexpr int64_t kDefaultMaxFrames = 64;
+ constexpr int64_t kDefaultMaxStackBytes = 8192;
++constexpr int kMaxSignalFrames = 1024;
+ 
+ std::atomic<bool> s_dump_running {false};
+ 
++enum SlotState : int {
++    SLOT_PENDING = 0,
++    SLOT_DONE = 1,
++    SLOT_SIGNAL_FAILED = 2,
++    SLOT_TIMEOUT = 3,
++    SLOT_UNSUPPORTED = 4,
++    SLOT_SIGNAL_BLOCKED = 5,
++    SLOT_UNWIND_FAILED = 6,
++};
++
++enum SignalMethod : int {
++    SIGNAL_METHOD_NONE = 0,
++    SIGNAL_METHOD_RT_TGSIGQUEUEINFO = 1,
++    SIGNAL_METHOD_TGKILL_FALLBACK = 2,
++};
++
++struct PhdrCacheSnapshot {
++    int object_count = 0;
++    int executable_segment_count = 0;
++    int unwind_cache_policy_ret = 0;
++};
++
++struct ThreadCaptureSlot {
++    int64_t tid = 0;
++    std::atomic<int> state {SLOT_PENDING};
++    std::atomic<int64_t> handler_time_ns {0};
++    int signal_errno = 0;
++    int rt_signal_errno = 0;
++    int signal_method = SIGNAL_METHOD_NONE;
++    int unwind_init_result = 0;
++    int unwind_step_result = 0;
++    int frame_count = 0;
++    bool truncated = false;
++    std::array<uintptr_t, kMaxSignalFrames> frames {};
++};
++
++struct DumpSession {
++    ThreadCaptureSlot* slots = nullptr;
++    size_t slot_count = 0;
++    int max_frames = 0;
++};
++
++struct MemoryMap {
++    uintptr_t start = 0;
++    uintptr_t end = 0;
++    uintptr_t offset = 0;
++    std::string path;
++};
++
++std::atomic<DumpSession*> s_active_session {nullptr};
++std::once_flag s_signal_install_once;
++std::atomic<bool> s_signal_installed {false};
++std::once_flag s_unwind_cache_once;
++std::atomic<bool> s_unwind_cache_configured {false};
++std::atomic<int> s_unwind_cache_policy_ret {0};
++
+ class ScopedDumpSlot {
+ public:
+     ScopedDumpSlot() {
+@@ -73,12 +152,53 @@ struct RequestOptions {
+     std::optional<int64_t> target_tid;
+ };
+ 
++int native_stack_signal_number() {
++    return SIGRTMIN + 6;
++}
++
++int count_phdr_objects(dl_phdr_info* info, size_t, void* data) {
++    auto* snapshot = static_cast<PhdrCacheSnapshot*>(data);
++    ++snapshot->object_count;
++    for (int i = 0; i < info->dlpi_phnum; ++i) {
++        const ElfW(Phdr)& phdr = info->dlpi_phdr[i];
++        if (phdr.p_type == PT_LOAD && (phdr.p_flags & PF_X) != 0) {
++            ++snapshot->executable_segment_count;
++        }
++    }
++    return 0;
++}
++
++PhdrCacheSnapshot refresh_unwind_cache_metadata() {
++    std::call_once(s_unwind_cache_once, [] {
++#ifdef USE_UNWIND
++        const int ret = unw_set_caching_policy(unw_local_addr_space, UNW_CACHE_GLOBAL);
++        s_unwind_cache_policy_ret.store(ret, std::memory_order_release);
++        s_unwind_cache_configured.store(ret == 0, std::memory_order_release);
++#else
++        s_unwind_cache_policy_ret.store(-1, std::memory_order_release);
++#endif
++    });
++
++    PhdrCacheSnapshot snapshot;
++    snapshot.unwind_cache_policy_ret = s_unwind_cache_policy_ret.load(std::memory_order_acquire);
++    dl_iterate_phdr(count_phdr_objects, &snapshot);
++    return snapshot;
++}
++
+ int64_t elapsed_ms(std::chrono::steady_clock::time_point start) {
+     return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now() - start)
+                                         .count());
+ }
+ 
++int64_t monotonic_ns_for_signal() {
++    timespec ts {};
++    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
++        return 0;
++    }
++    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + static_cast<int64_t>(ts.tv_nsec);
++}
++
+ bool parse_i64(const std::string& value, int64_t* parsed) {
+     try {
+         size_t consumed = 0;
+@@ -93,6 +213,35 @@ bool parse_i64(const std::string& value, int64_t* parsed) {
+     }
+ }
+ 
++bool parse_hex_uintptr(const std::string& value, uintptr_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size() ||
++            result > static_cast<unsigned long long>(std::numeric_limits<uintptr_t>::max())) {
++            return false;
++        }
++        *parsed = static_cast<uintptr_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
++bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size()) {
++            return false;
++        }
++        *parsed = static_cast<uint64_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
+ bool parse_optional_i64(const HttpRequest* req, const std::string& key, int64_t default_value,
+                         int64_t min_value, int64_t max_value, int64_t* parsed,
+                         std::string* error_reason) {
+@@ -116,8 +265,8 @@ bool parse_options(const HttpRequest* req, RequestOptions* options, std::string*
+                             error_reason)) {
+         return false;
+     }
+-    if (!parse_optional_i64(req, "max_frames", kDefaultMaxFrames, 1, 1024, &options->max_frames,
+-                            error_reason)) {
++    if (!parse_optional_i64(req, "max_frames", kDefaultMaxFrames, 1, kMaxSignalFrames,
++                            &options->max_frames, error_reason)) {
+         return false;
+     }
+     if (!parse_optional_i64(req, "max_stack_bytes", kDefaultMaxStackBytes, 0, 1048576,
+@@ -157,10 +306,94 @@ std::vector<int64_t> list_thread_ids() {
+     return tids;
+ }
+ 
++bool is_signal_blocked(int64_t tid, int signal_number) {
++    if (signal_number <= 0 || signal_number > 64) {
++        return false;
++    }
++
++    std::ifstream status("/proc/self/task/" + std::to_string(tid) + "/status");
++    std::string line;
++    while (std::getline(status, line)) {
++        constexpr char kSigBlkPrefix[] = "SigBlk:";
++        if (line.rfind(kSigBlkPrefix, 0) != 0) {
++            continue;
++        }
++
++        std::istringstream iss(line.substr(sizeof(kSigBlkPrefix) - 1));
++        std::string hex_mask;
++        if (!(iss >> hex_mask)) {
++            return false;
++        }
++        uint64_t mask = 0;
++        if (!parse_hex_u64(hex_mask, &mask)) {
++            return false;
++        }
++        return (mask & (uint64_t {1} << (signal_number - 1))) != 0;
++    }
++    return false;
++}
++
++std::string trim_left_spaces(std::string value) {
++    const size_t first = value.find_first_not_of(' ');
++    if (first == std::string::npos) {
++        return "";
++    }
++    return value.substr(first);
++}
++
++std::vector<MemoryMap> load_memory_maps() {
++    std::vector<MemoryMap> maps;
++    std::ifstream input("/proc/self/maps");
++    std::string line;
++    while (std::getline(input, line)) {
++        std::istringstream iss(line);
++        std::string range;
++        std::string perms;
++        std::string offset_hex;
++        std::string dev;
++        std::string inode;
++        if (!(iss >> range >> perms >> offset_hex >> dev >> inode)) {
++            continue;
++        }
++        const size_t dash = range.find('-');
++        if (dash == std::string::npos) {
++            continue;
++        }
++
++        MemoryMap map;
++        if (!parse_hex_uintptr(range.substr(0, dash), &map.start) ||
++            !parse_hex_uintptr(range.substr(dash + 1), &map.end) ||
++            !parse_hex_uintptr(offset_hex, &map.offset) || map.start >= map.end) {
++            continue;
++        }
++
++        std::string path;
++        std::getline(iss, path);
++        map.path = trim_left_spaces(path);
++        maps.emplace_back(std::move(map));
++    }
++    return maps;
++}
++
++const MemoryMap* find_map_for_pc(const std::vector<MemoryMap>& maps, uintptr_t pc) {
++    for (const MemoryMap& map : maps) {
++        if (pc >= map.start && pc < map.end) {
++            return &map;
++        }
++    }
++    return nullptr;
++}
++
++std::string hex_uintptr(uintptr_t value) {
++    std::ostringstream out;
++    out << "0x" << std::hex << value;
++    return out.str();
++}
++
+ void fill_common_fields(EasyJson* root, const std::string& status, const RequestOptions& options,
+                         int64_t elapsed) {
+     (*root)["status"] = status;
+-    (*root)["collector"] = "stub";
++    (*root)["collector"] = kCollectorName;
+     (*root)["timeout_ms"] = options.timeout_ms;
+     (*root)["max_frames_per_thread"] = options.max_frames;
+     (*root)["max_copied_stack_bytes"] = options.max_stack_bytes;
+@@ -171,8 +404,38 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
+     root->Set("threads", EasyJson::kArray);
+ }
+ 
+-void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
+-                        const std::string& error_reason) {
++void append_unwind_cache_fields(EasyJson* root, const PhdrCacheSnapshot& snapshot) {
++    root->Set("phdr_cache", EasyJson::kObject);
++    EasyJson phdr_cache = root->Get("phdr_cache");
++    phdr_cache["preflight"] = "dl_iterate_phdr";
++    phdr_cache["objects"] = snapshot.object_count;
++    phdr_cache["executable_segments"] = snapshot.executable_segment_count;
++    phdr_cache["unwind_cache_policy"] = "global";
++    phdr_cache["unwind_cache_policy_ret"] = snapshot.unwind_cache_policy_ret;
++    phdr_cache["unwind_cache_configured"] =
++            s_unwind_cache_configured.load(std::memory_order_acquire);
++    phdr_cache["limitation"] =
++            "preflight records loader PHDR state; libunwind may still touch internal caches on "
++            "unseen PCs";
++}
++
++void append_frame(EasyJson* frames, uintptr_t pc, const std::vector<MemoryMap>& maps) {
++    EasyJson frame = frames->PushBack(EasyJson::kObject);
++    frame["pc"] = hex_uintptr(pc);
++
++    const MemoryMap* map = find_map_for_pc(maps, pc);
++    if (map == nullptr) {
++        frame["dso"] = "";
++        frame["dso_offset"] = "";
++        return;
++    }
++
++    frame["dso"] = map->path;
++    frame["dso_offset"] = hex_uintptr(map->offset + (pc - map->start));
++}
++
++void append_status_thread(EasyJson* threads, int64_t tid, const std::string& status,
++                          const std::string& error_reason) {
+     EasyJson thread = threads->PushBack(EasyJson::kObject);
+     thread["tid"] = tid;
+     thread["status"] = status;
+@@ -191,27 +454,316 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
+     return root;
+ }
+ 
+-EasyJson collect_stub_stacks(const RequestOptions& options, int64_t elapsed) {
++ThreadCaptureSlot* find_slot_for_tid(DumpSession* session, int64_t tid) {
++    for (size_t i = 0; i < session->slot_count; ++i) {
++        if (session->slots[i].tid == tid) {
++            return &session->slots[i];
++        }
++    }
++    return nullptr;
++}
++
++ThreadCaptureSlot* find_slot_from_signal(DumpSession* session, siginfo_t* info, int64_t tid) {
++    if (info != nullptr && info->si_code == SI_QUEUE && info->si_value.sival_ptr != nullptr) {
++        const uintptr_t raw = reinterpret_cast<uintptr_t>(info->si_value.sival_ptr);
++        const uintptr_t begin = reinterpret_cast<uintptr_t>(session->slots);
++        const uintptr_t end = begin + session->slot_count * sizeof(ThreadCaptureSlot);
++        if (raw >= begin && raw < end && (raw - begin) % sizeof(ThreadCaptureSlot) == 0) {
++            auto* slot = reinterpret_cast<ThreadCaptureSlot*>(raw);
++            if (slot->tid == tid) {
++                return slot;
++            }
++        }
++    }
++    return find_slot_for_tid(session, tid);
++}
++
++void capture_with_libunwind(ThreadCaptureSlot* slot, DumpSession* session, void* raw_context) {
++#if defined(USE_UNWIND) && defined(__linux__) && defined(__x86_64__)
++    auto* signal_context = static_cast<ucontext_t*>(raw_context);
++    unw_cursor_t cursor;
++    int result = unw_init_local2(&cursor, reinterpret_cast<unw_context_t*>(signal_context),
++                                 UNW_INIT_SIGNAL_FRAME);
++    slot->unwind_init_result = result;
++    if (result < 0) {
++        slot->unwind_step_result = result;
++        slot->state.store(SLOT_UNWIND_FAILED, std::memory_order_release);
++        return;
++    }
++
++    int frame_count = 0;
++    int last_step = 0;
++    while (frame_count < session->max_frames) {
++        unw_word_t ip = 0;
++        result = unw_get_reg(&cursor, UNW_REG_IP, &ip);
++        if (result < 0) {
++            last_step = result;
++            break;
++        }
++        if (ip != 0) {
++            slot->frames[static_cast<size_t>(frame_count)] = static_cast<uintptr_t>(ip);
++            ++frame_count;
++        }
++        if (frame_count >= session->max_frames) {
++            break;
++        }
++
++        result = unw_step(&cursor);
++        if (result <= 0) {
++            last_step = result;
++            break;
++        }
++    }
++
++    slot->frame_count = frame_count;
++    slot->truncated = frame_count >= session->max_frames;
++    slot->unwind_step_result = last_step;
++    slot->state.store(frame_count == 0 && last_step < 0 ? SLOT_UNWIND_FAILED : SLOT_DONE,
++                      std::memory_order_release);
++#else
++    slot->unwind_init_result = -1;
++    slot->state.store(SLOT_UNSUPPORTED, std::memory_order_release);
++#endif
++}
++
++void native_stack_signal_handler(int, siginfo_t* info, void* raw_context) {
++    const int64_t handler_start_ns = monotonic_ns_for_signal();
++    DumpSession* session = s_active_session.load(std::memory_order_acquire);
++    if (session == nullptr) {
++        return;
++    }
++
++    const int64_t tid = static_cast<int64_t>(syscall(SYS_gettid));
++    ThreadCaptureSlot* slot = find_slot_from_signal(session, info, tid);
++    if (slot == nullptr) {
++        return;
++    }
++    if (slot->state.load(std::memory_order_acquire) != SLOT_PENDING) {
++        return;
++    }
++
++    capture_with_libunwind(slot, session, raw_context);
++    const int64_t handler_end_ns = monotonic_ns_for_signal();
++    if (handler_start_ns > 0 && handler_end_ns >= handler_start_ns) {
++        slot->handler_time_ns.store(handler_end_ns - handler_start_ns, std::memory_order_relaxed);
++    }
++}
++
++void install_signal_handler_once() {
++    std::call_once(s_signal_install_once, [] {
++        struct sigaction action {};
++        sigemptyset(&action.sa_mask);
++        action.sa_sigaction = native_stack_signal_handler;
++        action.sa_flags = SA_SIGINFO | SA_RESTART;
++        if (sigaction(native_stack_signal_number(), &action, nullptr) == 0) {
++            s_signal_installed.store(true, std::memory_order_release);
++        } else {
++            LOG(ERROR) << "failed to install native stack signal handler: " << std::strerror(errno);
++        }
++    });
++}
++
++void mark_signal_failure(ThreadCaptureSlot* slot, int error_number) {
++    slot->signal_errno = error_number;
++    slot->state.store(SLOT_SIGNAL_FAILED, std::memory_order_release);
++}
++
++bool send_rt_tgsigqueueinfo(pid_t pid, ThreadCaptureSlot* slot) {
++#ifdef SYS_rt_tgsigqueueinfo
++    siginfo_t info {};
++    info.si_signo = native_stack_signal_number();
++    info.si_code = SI_QUEUE;
++    info.si_pid = pid;
++    info.si_uid = getuid();
++    info.si_value.sival_ptr = slot;
++    const long result = syscall(SYS_rt_tgsigqueueinfo, pid, static_cast<pid_t>(slot->tid),
++                                native_stack_signal_number(), &info);
++    if (result == 0) {
++        slot->signal_method = SIGNAL_METHOD_RT_TGSIGQUEUEINFO;
++        return true;
++    }
++    slot->rt_signal_errno = errno;
++#else
++    slot->rt_signal_errno = ENOSYS;
++#endif
++    return false;
++}
++
++void send_signal_with_fallback(pid_t pid, ThreadCaptureSlot* slot) {
++    if (send_rt_tgsigqueueinfo(pid, slot)) {
++        return;
++    }
++
++    slot->signal_method = SIGNAL_METHOD_TGKILL_FALLBACK;
++    const long result =
++            syscall(SYS_tgkill, pid, static_cast<pid_t>(slot->tid), native_stack_signal_number());
++    if (result != 0) {
++        mark_signal_failure(slot, errno);
++    }
++}
++
++void collect_thread_frames(ThreadCaptureSlot* slots, size_t slot_count, int max_frames,
++                           const RequestOptions& options,
++                           std::chrono::steady_clock::time_point start) {
++    DumpSession session;
++    session.slots = slots;
++    session.slot_count = slot_count;
++    session.max_frames = max_frames;
++
++    s_active_session.store(&session, std::memory_order_release);
++    const pid_t pid = getpid();
++    for (size_t i = 0; i < slot_count; ++i) {
++        if (slots[i].state.load(std::memory_order_acquire) != SLOT_PENDING) {
++            continue;
++        }
++        send_signal_with_fallback(pid, &slots[i]);
++    }
++
++    const auto deadline = start + std::chrono::milliseconds(options.timeout_ms);
++    while (std::chrono::steady_clock::now() < deadline) {
++        bool all_done = true;
++        for (size_t i = 0; i < slot_count; ++i) {
++            if (slots[i].state.load(std::memory_order_acquire) == SLOT_PENDING) {
++                all_done = false;
++                break;
++            }
++        }
++        if (all_done) {
++            break;
++        }
++        std::this_thread::sleep_for(std::chrono::milliseconds(1));
++    }
++
++    s_active_session.store(nullptr, std::memory_order_release);
++    for (size_t i = 0; i < slot_count; ++i) {
++        int expected = SLOT_PENDING;
++        slots[i].state.compare_exchange_strong(expected, SLOT_TIMEOUT, std::memory_order_acq_rel);
++    }
++}
++
++const char* signal_method_name(int method) {
++    switch (method) {
++    case SIGNAL_METHOD_RT_TGSIGQUEUEINFO:
++        return "rt_tgsigqueueinfo";
++    case SIGNAL_METHOD_TGKILL_FALLBACK:
++        return "tgkill_fallback";
++    default:
++        return "none";
++    }
++}
++
++std::string slot_status(const ThreadCaptureSlot& slot) {
++    switch (slot.state.load(std::memory_order_acquire)) {
++    case SLOT_DONE:
++        return "ok";
++    case SLOT_SIGNAL_FAILED:
++        return slot.signal_errno == ESRCH ? "exited_thread" : "signal_failed";
++    case SLOT_TIMEOUT:
++        return "timeout";
++    case SLOT_UNSUPPORTED:
++        return "unsupported_arch";
++    case SLOT_SIGNAL_BLOCKED:
++        return "signal_blocked";
++    case SLOT_UNWIND_FAILED:
++        return "unwind_failed";
++    default:
++        return "pending";
++    }
++}
++
++std::string slot_error_reason(const ThreadCaptureSlot& slot) {
++    switch (slot.state.load(std::memory_order_acquire)) {
++    case SLOT_DONE:
++        if (slot.frame_count == 0) {
++            return "libunwind returned no PCs";
++        }
++        if (slot.unwind_step_result < 0) {
++            return "libunwind step failed after collecting PCs";
++        }
++        return "";
++    case SLOT_SIGNAL_FAILED:
++        if (slot.rt_signal_errno != 0) {
++            return std::string("rt_tgsigqueueinfo failed: ") + std::strerror(slot.rt_signal_errno) +
++                   "; tgkill failed: " + std::strerror(slot.signal_errno);
++        }
++        return std::string("tgkill failed: ") + std::strerror(slot.signal_errno);
++    case SLOT_TIMEOUT:
++        return "thread did not run native stack signal handler before timeout";
++    case SLOT_UNSUPPORTED:
++        return "libunwind collector requires Linux x86_64 with USE_UNWIND";
++    case SLOT_SIGNAL_BLOCKED:
++        return "thread blocks the native stack signal";
++    case SLOT_UNWIND_FAILED:
++        return "libunwind failed in the signal handler";
++    default:
++        return "unexpected pending state";
++    }
++}
++
++EasyJson collect_ck_phdr_unwind_stacks(const RequestOptions& options,
++                                       std::chrono::steady_clock::time_point start) {
+     std::vector<int64_t> tids = list_thread_ids();
+     EasyJson root;
+     if (options.target_tid.has_value() &&
+         !std::binary_search(tids.begin(), tids.end(), options.target_tid.value())) {
+-        fill_common_fields(&root, "missing_tid", options, elapsed);
++        fill_common_fields(&root, "missing_tid", options, elapsed_ms(start));
+         EasyJson threads = root.Get("threads");
+-        append_stub_thread(&threads, options.target_tid.value(), "missing_tid",
+-                           "target tid is not present in /proc/self/task");
++        append_status_thread(&threads, options.target_tid.value(), "missing_tid",
++                             "target tid is not present in /proc/self/task");
+         return root;
+     }
+ 
+-    fill_common_fields(&root, "ok", options, elapsed);
+-    EasyJson threads = root.Get("threads");
+     if (options.target_tid.has_value()) {
+-        append_stub_thread(&threads, options.target_tid.value(), "ok", "stub collector has no PCs");
+-        return root;
++        tids = {options.target_tid.value()};
+     }
+ 
+-    for (int64_t tid : tids) {
+-        append_stub_thread(&threads, tid, "ok", "stub collector has no PCs");
++    const int max_frames =
++            static_cast<int>(std::min<int64_t>(options.max_frames, kMaxSignalFrames));
++    std::unique_ptr<ThreadCaptureSlot[]> slots(new ThreadCaptureSlot[tids.size()]);
++    for (size_t i = 0; i < tids.size(); ++i) {
++        slots[i].tid = tids[i];
++        if (is_signal_blocked(tids[i], native_stack_signal_number())) {
++            slots[i].state.store(SLOT_SIGNAL_BLOCKED, std::memory_order_release);
++        }
++    }
++
++    const PhdrCacheSnapshot phdr_snapshot = refresh_unwind_cache_metadata();
++    collect_thread_frames(slots.get(), tids.size(), max_frames, options, start);
++    const std::vector<MemoryMap> maps = load_memory_maps();
++
++    bool any_timeout = false;
++    for (size_t i = 0; i < tids.size(); ++i) {
++        any_timeout = any_timeout || slots[i].state.load(std::memory_order_acquire) == SLOT_TIMEOUT;
++    }
++    fill_common_fields(&root, any_timeout ? "timeout" : "ok", options, elapsed_ms(start));
++    append_unwind_cache_fields(&root, phdr_snapshot);
++
++    EasyJson threads = root.Get("threads");
++    for (size_t i = 0; i < tids.size(); ++i) {
++        ThreadCaptureSlot& slot = slots[i];
++        EasyJson thread = threads.PushBack(EasyJson::kObject);
++        thread["tid"] = slot.tid;
++        thread["status"] = slot_status(slot);
++        thread["truncated"] = slot.truncated;
++        thread["handler_time_ns"] = slot.handler_time_ns.load(std::memory_order_relaxed);
++        thread["signal_method"] = signal_method_name(slot.signal_method);
++        thread["unwind_init_result"] = slot.unwind_init_result;
++        thread["unwind_step_result"] = slot.unwind_step_result;
++        if (slot.rt_signal_errno != 0) {
++            thread["rt_signal_errno"] = slot.rt_signal_errno;
++        }
++        if (slot.signal_errno != 0) {
++            thread["signal_errno"] = slot.signal_errno;
++        }
++        const std::string error_reason = slot_error_reason(slot);
++        if (!error_reason.empty()) {
++            thread["error_reason"] = error_reason;
++        }
++        thread.Set("frames", EasyJson::kArray);
++        EasyJson frames = thread.Get("frames");
++        for (int frame_index = 0; frame_index < slot.frame_count; ++frame_index) {
++            append_frame(&frames, slot.frames[static_cast<size_t>(frame_index)], maps);
++        }
+     }
+     return root;
+ }
+@@ -257,7 +809,17 @@ void NativeStackAction::handle(HttpRequest* req) {
+         }
+     }
+ 
+-    EasyJson response = collect_stub_stacks(options, elapsed_ms(start));
++    install_signal_handler_once();
++    if (!s_signal_installed.load(std::memory_order_acquire)) {
++        HttpChannel::send_reply(
++                req, HttpStatus::OK,
++                make_error_response("signal_handler_unavailable", options, elapsed_ms(start),
++                                    "failed to install native stack signal handler")
++                        .ToString());
++        return;
++    }
++
++    EasyJson response = collect_ck_phdr_unwind_stacks(options, start);
+     HttpChannel::send_reply(req, HttpStatus::OK, response.ToString());
+ }
+ 
+-- 
+2.53.0
+

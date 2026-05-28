@@ -1,0 +1,1 @@
+{"status":"bad_request","collector":"fp-walk","timeout_ms":100,"max_frames_per_thread":64,"max_copied_stack_bytes":8192,"elapsed_ms":0,"threads":[],"error_reason":"invalid timeout_ms"}

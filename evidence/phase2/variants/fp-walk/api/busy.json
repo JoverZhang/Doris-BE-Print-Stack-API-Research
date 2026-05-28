@@ -1,0 +1,1 @@
+{"status":"busy","collector":"fp-walk","timeout_ms":1000,"max_frames_per_thread":4,"max_copied_stack_bytes":8192,"elapsed_ms":0,"threads":[],"error_reason":"another native stack dump is already running"}

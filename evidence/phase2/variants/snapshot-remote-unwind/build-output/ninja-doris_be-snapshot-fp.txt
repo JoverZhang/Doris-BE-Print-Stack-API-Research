@@ -1,0 +1,53 @@
+[0/2] Re-checking globbed directories...
+[1/5] cd /workspace/project/phase2/snapshot-remote-unwind/be/build_Release/openblas && /var/local/ldb-toolchain/bin/cmake -E copy /workspace/project/phase2/snapshot-remote-unwind/contrib/openblas/lapack-netlib/LAPACKE/include/lapacke_mangling_with_flags.h.in /workspace/project/phase2/snapshot-remote-unwind/be/build_Release/lapacke_mangling.h
+[2/5] Building CXX object src/service/CMakeFiles/Service.dir/http/action/native_stack_action.cpp.o
+[3/5] Linking CXX static library src/service/libService.a
+[4/5] Linking CXX executable src/service/doris_be
+[0/2] Re-checking globbed directories...
+[1/3] cd /workspace/project/phase2/snapshot-remote-unwind/be/build_Release/openblas && /var/local/ldb-toolchain/bin/cmake -E copy /workspace/project/phase2/snapshot-remote-unwind/contrib/openblas/lapack-netlib/LAPACKE/include/lapacke_mangling_with_flags.h.in /workspace/project/phase2/snapshot-remote-unwind/be/build_Release/lapacke_mangling.h
+[1/3] Install the project...
+-- Install configuration: "RELEASE"
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pos_dict
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pos_dict/prob_emit.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pos_dict/prob_trans.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pos_dict/prob_start.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pos_dict/char_state_tab.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/stop_words.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/jieba.dict.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/idf.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/hmm_model.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/user.dict.utf8
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/README.md
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/icu/uax29
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/icu/uax29/Default.txt
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/icu/uax29/MyanmarSyllable.txt
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/main.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/surname.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/extra_stopword.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/extra_main.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/suffix.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/extra_single_word.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/stopword.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/extra_single_word_full.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/quantifier.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/preposition.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/ik/extra_single_word_low_freq.dic
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pinyin
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pinyin/polyphone.txt
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pinyin/pinyin_alphabet.dict
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/dict/pinyin/pinyin.txt
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/lib/
+-- Installing: /workspace/project/phase2/snapshot-remote-unwind/be/output/lib/doris_be
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/bin
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/conf
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/bin/start_be.sh
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/bin/stop_be.sh
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/bin/jeprof
+-- Installing: /workspace/project/phase2/snapshot-remote-unwind/be/output/conf/be.conf
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/conf/odbcinst.ini
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/conf/asan_suppr.conf
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/conf/lsan_suppr.conf
+-- Up-to-date: /workspace/project/phase2/snapshot-remote-unwind/be/output/conf/ubsan_suppr.conf

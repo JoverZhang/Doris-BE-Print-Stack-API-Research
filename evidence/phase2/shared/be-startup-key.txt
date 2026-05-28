@@ -1,0 +1,6 @@
+I20260528 06:46:53.095010 748 doris_main.cpp:394]  version doris-0.0.0(AVX2) RELEASE features: -TDE,-HDFS_STORAGE_VAULT,+UI,+AZURE_BLOB,+AZURE_STORAGE_VAULT,-HIVE_UDF,-BE_JAVA_EXTENSIONS (build git://b598e752e6fc@c24d454f15cee2d937ef4749270a3ecb449eafe6)
+I20260528 06:46:53.456676 748 backend_service.cpp:704] Doris BackendService listening on 9060
+I20260528 06:46:53.482616 748 brpc_service.cpp:96] BRPC server bind to host: 0.0.0.0, port: 8060
+I20260528 06:46:53.492030 748 server.cpp:1144] Server[doris::PInternalServiceImpl] is serving on port=8060.
+I20260528 06:46:53.530093 748 thrift_server.cpp:423] ThriftServer 'heartbeat' started on port: 9050
+I20260528 06:46:53.531570 748 flight_sql_service.cpp:147] Arrow Flight Service bind to host: 0.0.0.0, port: 8050

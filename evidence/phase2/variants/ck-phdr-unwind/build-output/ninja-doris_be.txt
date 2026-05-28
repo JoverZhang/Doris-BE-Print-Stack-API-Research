@@ -1,0 +1,13 @@
+[0/2] Re-checking globbed directories...
+[1/5] cd /workspace/project/phase2/ck-phdr-unwind/be/build_Release/openblas && /var/local/ldb-toolchain/bin/cmake -E copy /workspace/project/phase2/ck-phdr-unwind/contrib/openblas/lapack-netlib/LAPACKE/include/lapacke_mangling_with_flags.h.in /workspace/project/phase2/ck-phdr-unwind/be/build_Release/lapacke_mangling.h
+[2/5] Building CXX object src/service/CMakeFiles/Service.dir/http/action/native_stack_action.cpp.o
+[3/5] Linking CXX static library src/service/libService.a
+[4/5] Linking CXX executable src/service/doris_be
+
+# rerun after UNW_LOCAL_ONLY fix 2026-05-28T08:55:31+0000
+[0/2] Re-checking globbed directories...
+[1/2] cd /workspace/project/phase2/ck-phdr-unwind/be/build_Release/openblas && /var/local/ldb-toolchain/bin/cmake -E copy /workspace/project/phase2/ck-phdr-unwind/contrib/openblas/lapack-netlib/LAPACKE/include/lapacke_mangling_with_flags.h.in /workspace/project/phase2/ck-phdr-unwind/be/build_Release/lapacke_mangling.h
+
+# final compile check 2026-05-28T09:22:56+0000
+[0/2] Re-checking globbed directories...
+[1/2] cd /workspace/project/phase2/ck-phdr-unwind/be/build_Release/openblas && /var/local/ldb-toolchain/bin/cmake -E copy /workspace/project/phase2/ck-phdr-unwind/contrib/openblas/lapack-netlib/LAPACKE/include/lapacke_mangling_with_flags.h.in /workspace/project/phase2/ck-phdr-unwind/be/build_Release/lapacke_mangling.h

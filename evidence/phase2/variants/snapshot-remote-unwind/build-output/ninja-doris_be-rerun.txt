@@ -1,0 +1,229 @@
+[0/2] Re-checking globbed directories...
+[1/189] cd /workspace/project/phase2/snapshot-remote-unwind/be/build_Release/openblas && /var/local/ldb-toolchain/bin/cmake -E copy /workspace/project/phase2/snapshot-remote-unwind/contrib/openblas/lapack-netlib/LAPACKE/include/lapacke_mangling_with_flags.h.in /workspace/project/phase2/snapshot-remote-unwind/be/build_Release/lapacke_mangling.h
+[2/189] Building CXX object src/load/CMakeFiles/Load.dir/channel/load_stream_mgr.cpp.o
+[3/189] Building CXX object src/load/CMakeFiles/Load.dir/channel/load_channel.cpp.o
+[4/189] Building CXX object src/load/CMakeFiles/Load.dir/delta_writer/delta_writer_v2.cpp.o
+[5/189] Building CXX object src/load/CMakeFiles/Load.dir/channel/tablets_channel.cpp.o
+[6/189] Building CXX object src/load/CMakeFiles/Load.dir/channel/load_stream_writer.cpp.o
+[7/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/wal/wal_dirs_info.cpp.o
+[8/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/wal/wal_file_reader.cpp.o
+[9/189] Building CXX object src/load/CMakeFiles/Load.dir/delta_writer/delta_writer.cpp.o
+[10/189] Building CXX object src/load/CMakeFiles/Load.dir/channel/load_stream.cpp.o
+[11/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/wal/wal_info.cpp.o
+[12/189] Building CXX object src/load/CMakeFiles/Load.dir/delta_writer/push_handler.cpp.o
+[13/189] Building CXX object src/load/CMakeFiles/Load.dir/load_path_mgr.cpp.o
+[14/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/wal/wal_reader.cpp.o
+[15/189] Building CXX object src/load/CMakeFiles/Load.dir/memtable/memtable.cpp.o
+[16/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/wal/wal_writer.cpp.o
+[17/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/wal/wal_manager.cpp.o
+[18/189] Building CXX object src/load/CMakeFiles/Load.dir/routine_load/consumer_helpers.cpp.o
+[19/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/wal/wal_table.cpp.o
+[20/189] Building CXX object src/load/CMakeFiles/Load.dir/message_body_sink.cpp.o
+[21/189] Building CXX object src/load/CMakeFiles/Load.dir/memtable/memtable_flush_executor.cpp.o
+[22/189] Building CXX object src/load/CMakeFiles/Load.dir/routine_load/kinesis_conf.cpp.o
+[23/189] Building CXX object src/load/CMakeFiles/Load.dir/stream_load/new_load_stream_mgr.cpp.o
+[24/189] Building CXX object src/load/CMakeFiles/Load.dir/memtable/memtable_memory_limiter.cpp.o
+[25/189] Building CXX object src/load/CMakeFiles/Load.dir/group_commit/group_commit_mgr.cpp.o
+[26/189] Building CXX object src/load/CMakeFiles/Load.dir/routine_load/data_consumer_group.cpp.o
+[27/189] Building CXX object src/load/CMakeFiles/Load.dir/routine_load/data_consumer_pool.cpp.o
+[28/189] Building CXX object src/load/CMakeFiles/Load.dir/stream_load/stream_load_recorder.cpp.o
+[29/189] Building CXX object src/load/CMakeFiles/Load.dir/routine_load/data_consumer.cpp.o
+[30/189] Building CXX object src/load/CMakeFiles/Load.dir/stream_load/stream_load_context.cpp.o
+[31/189] Building CXX object src/load/CMakeFiles/Load.dir/routine_load/routine_load_task_executor.cpp.o
+[32/189] Building CXX object src/load/CMakeFiles/Load.dir/memtable/memtable_writer.cpp.o
+[33/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_active_queries_scanner.cpp.o
+[34/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_backend_configuration_scanner.cpp.o
+[35/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_authentication_integrations_scanner.cpp.o
+[36/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_backend_active_tasks.cpp.o
+[37/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_charsets_scanner.cpp.o
+[38/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_backend_kerberos_ticket_cache.cpp.o
+[39/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_backend_ms_rpc_table_throttlers_scanner.cpp.o
+[40/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_collations_scanner.cpp.o
+[41/189] Building CXX object src/load/CMakeFiles/Load.dir/stream_load/stream_load_recorder_manager.cpp.o
+[42/189] Building CXX object src/load/CMakeFiles/Load.dir/stream_load/stream_load_executor.cpp.o
+[43/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_dummy_scanner.cpp.o
+[44/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_columns_scanner.cpp.o
+[45/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_compaction_tasks_scanner.cpp.o
+[46/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_database_properties_scanner.cpp.o
+[47/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_catalog_meta_cache_stats_scanner.cpp.o
+[48/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_cluster_snapshot_properties_scanner.cpp.o
+[49/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_file_cache_info_scanner.cpp.o
+[50/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_encryption_keys_scanner.cpp.o
+[51/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_files_scanner.cpp.o
+[52/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_helper.cpp.o
+[53/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_cluster_snapshots_scanner.cpp.o
+[54/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_file_cache_statistics.cpp.o
+[55/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_metadata_name_ids_scanner.cpp.o
+[56/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_profiling_scanner.cpp.o
+[57/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_column_data_sizes_scanner.cpp.o
+[58/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_load_job_scanner.cpp.o
+[59/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_partitions_scanner.cpp.o
+[60/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_role_mappings_scanner.cpp.o
+[61/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_routine_load_job_scanner.cpp.o
+[62/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_processlist_scanner.cpp.o
+[63/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_schema_privileges_scanner.cpp.o
+[64/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_schemata_scanner.cpp.o
+[65/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_table_privileges_scanner.cpp.o
+[66/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_scanner_helper.cpp.o
+[67/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_rowsets_scanner.cpp.o
+[68/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_tables_scanner.cpp.o
+[69/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_sql_block_rule_status_scanner.cpp.o
+[70/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_table_options_scanner.cpp.o
+[71/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_table_properties_scanner.cpp.o
+[72/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_table_stream_consumption_scanner.cpp.o
+[73/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_user_privileges_scanner.cpp.o
+[74/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_variables_scanner.cpp.o
+[75/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_table_streams_scanner.cpp.o
+[76/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_views_scanner.cpp.o
+[77/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_scanner.cpp.o
+[78/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_user_scanner.cpp.o
+[79/189] Building CXX object src/util/CMakeFiles/Util.dir/bfd_parser.cpp.o
+[80/189] Building CXX object src/util/CMakeFiles/Util.dir/bitmap.cpp.o
+[81/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_view_dependency_scanner.cpp.o
+[82/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_workload_group_privileges.cpp.o
+[83/189] Building CXX object src/util/CMakeFiles/Util.dir/byte_stream_split.cpp.o
+[84/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_workload_group_resource_usage_scanner.cpp.o
+[85/189] Building CXX object src/util/CMakeFiles/Util.dir/cidr.cpp.o
+[86/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_workload_groups_scanner.cpp.o
+[87/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_workload_sched_policy_scanner.cpp.o
+[88/189] Building CXX object src/util/CMakeFiles/Util.dir/coding.cpp.o
+[89/189] Building CXX object src/util/CMakeFiles/Util.dir/concurrency_stats.cpp.o
+[90/189] Building CXX object src/util/CMakeFiles/Util.dir/cgroup_util.cpp.o
+[91/189] Building CXX object src/util/CMakeFiles/Util.dir/debug_points.cpp.o
+[92/189] Building CXX object src/util/CMakeFiles/Util.dir/brpc_client_cache.cpp.o
+[93/189] Building CXX object src/util/CMakeFiles/Util.dir/cpu_info.cpp.o
+[94/189] Building CXX object src/util/CMakeFiles/Util.dir/debug_util.cpp.o
+[95/189] Building CXX object src/information_schema/CMakeFiles/InformationSchema.dir/schema_tablets_scanner.cpp.o
+[96/189] Building CXX object src/util/CMakeFiles/Util.dir/decompressor.cpp.o
+[97/189] Building CXX object src/util/CMakeFiles/Util.dir/dns_cache.cpp.o
+[98/189] Building CXX object src/util/CMakeFiles/Util.dir/block_compression.cpp.o
+[99/189] Building CXX object src/util/CMakeFiles/Util.dir/dynamic_util.cpp.o
+[100/189] Building CXX object src/util/CMakeFiles/Util.dir/error_util.cc.o
+[101/189] Building CXX object src/util/CMakeFiles/Util.dir/disk_info.cpp.o
+[102/189] Building CXX object src/util/CMakeFiles/Util.dir/easy_json.cc.o
+[103/189] Building CXX object src/util/CMakeFiles/Util.dir/encryption_util.cpp.o
+[104/189] Building CXX object src/util/CMakeFiles/Util.dir/client_cache.cpp.o
+[105/189] Building CXX object src/util/CMakeFiles/Util.dir/faststring.cc.o
+[106/189] Building CXX object src/util/CMakeFiles/Util.dir/hash/city.cc.o
+[107/189] Building CXX object src/util/CMakeFiles/Util.dir/hash/murmur_hash3.cpp.o
+[108/189] Building CXX object src/util/CMakeFiles/Util.dir/jdbc_utils.cpp.o
+[109/189] Building CXX object src/util/CMakeFiles/Util.dir/histogram.cpp.o
+[110/189] Building CXX object src/util/CMakeFiles/Util.dir/jni-util.cpp.o
+[111/189] Building CXX object src/util/CMakeFiles/Util.dir/jsonb_document.cpp.o
+[112/189] Building CXX object src/util/CMakeFiles/Util.dir/frame_of_reference_coding.cpp.o
+[113/189] Building CXX object src/util/CMakeFiles/Util.dir/load_util.cpp.o
+[114/189] Building CXX object src/util/CMakeFiles/Util.dir/jsonb_utils.cpp.o
+[115/189] Building CXX object src/util/CMakeFiles/Util.dir/jni_native_method.cpp.o
+[116/189] Building CXX object src/util/CMakeFiles/Util.dir/lzo_decompressor.cpp.o
+[117/189] Building CXX object src/util/CMakeFiles/Util.dir/md5.cpp.o
+[118/189] Building CXX object src/util/CMakeFiles/Util.dir/date_func.cpp.o
+[119/189] Building CXX object src/util/CMakeFiles/Util.dir/mustache/mustache.cc.o
+[120/189] Building CXX object src/util/CMakeFiles/Util.dir/json/json_parser.cpp.o
+[121/189] Building CXX object src/util/CMakeFiles/Util.dir/network_util.cpp.o
+[122/189] Building CXX object src/util/CMakeFiles/Util.dir/json/path_in_data.cpp.o
+[123/189] Building CXX object src/util/CMakeFiles/Util.dir/os_info.cpp.o
+[124/189] Building CXX object src/util/CMakeFiles/Util.dir/jsonb/serialize.cpp.o
+[125/189] Building CXX object src/util/CMakeFiles/Util.dir/path_builder.cpp.o
+[126/189] Building CXX object src/util/CMakeFiles/Util.dir/path_util.cpp.o
+[127/189] Building CXX object src/util/CMakeFiles/Util.dir/os_util.cpp.o
+[128/189] Building CXX object src/util/CMakeFiles/Util.dir/mem_info.cpp.o
+[129/189] Building CXX object src/util/CMakeFiles/Util.dir/parse_util.cpp.o
+[130/189] Building CXX object src/util/CMakeFiles/Util.dir/s3_uri.cpp.o
+[131/189] Building CXX object src/util/CMakeFiles/Util.dir/lru_cache.cpp.o
+[132/189] Building CXX object src/util/CMakeFiles/Util.dir/pprof_utils.cpp.o
+[133/189] Building CXX object src/util/CMakeFiles/Util.dir/sha.cpp.o
+[134/189] Building CXX object src/util/CMakeFiles/Util.dir/slice.cpp.o
+[135/189] Building CXX object src/util/CMakeFiles/Util.dir/sm3.cpp.o
+[136/189] Building CXX object src/util/CMakeFiles/Util.dir/perf_counters.cpp.o
+[137/189] Building CXX object src/util/CMakeFiles/Util.dir/stack_util.cpp.o
+[138/189] Building CXX object src/util/CMakeFiles/Util.dir/string_util.cpp.o
+[139/189] Building CXX object src/util/CMakeFiles/Util.dir/static_asserts.cpp.o
+[140/189] Building CXX object src/util/CMakeFiles/Util.dir/obj_lru_cache.cpp.o
+[141/189] Building CXX object src/util/CMakeFiles/Util.dir/string_parser.cpp.o
+[142/189] Building CXX object src/util/CMakeFiles/Util.dir/thrift_client.cpp.o
+[143/189] Building CXX object src/util/CMakeFiles/Util.dir/time.cpp.o
+[144/189] Building CXX object src/util/CMakeFiles/Util.dir/time_lut.cpp.o
+[145/189] Building CXX object src/util/CMakeFiles/Util.dir/threadpool.cpp.o
+[146/189] Building CXX object src/util/CMakeFiles/Util.dir/mysql_row_buffer.cpp.o
+[147/189] Building CXX object src/util/CMakeFiles/Util.dir/thrift_server.cpp.o
+[148/189] Building CXX object src/util/CMakeFiles/Util.dir/url_coding.cpp.o
+[149/189] Building CXX object src/util/CMakeFiles/Util.dir/uid_util.cpp.o
+[150/189] Building CXX object src/util/CMakeFiles/Util.dir/thrift_rpc_helper.cpp.o
+[151/189] Building CXX object src/util/CMakeFiles/Util.dir/timezone_utils.cpp.o
+[152/189] Building CXX object src/util/CMakeFiles/Util.dir/utf8_check.cpp.o
+[153/189] Building CXX object src/util/CMakeFiles/Util.dir/thread.cpp.o
+[154/189] Building CXX object src/util/CMakeFiles/Util.dir/zlib.cpp.o
+[155/189] Building CXX object src/util/CMakeFiles/Util.dir/url_parser.cpp.o
+[156/189] Building CXX object src/common_cpp/CMakeFiles/CommonCPP.dir/util.cpp.o
+[157/189] Linking CXX static library bin/liborc.a
+[158/189] Linking C static library bin/libic.a
+[159/189] Linking CXX static library bin/libclucene-contribs-lib.a
+[160/189] Building C object src/glibc-compatibility/CMakeFiles/glibc-compatibility-explicit.dir/musl/getrandom.c.o
+[161/189] Building CXX object src/glibc-compatibility/CMakeFiles/glibc-compatibility-explicit.dir/memcpy/memcpy_x86_64.cpp.o
+[162/189] Linking C static library bin/libglibc-compatibility.a
+[163/189] Linking CXX static library src/agent/libAgent.a
+[164/189] Linking CXX static library src/common/libCommon.a
+[165/189] Building CXX object src/common_cpp/CMakeFiles/CommonCPP.dir/sync_point.cpp.o
+[166/189] Linking CXX static library src/core/libCore.a
+[167/189] Building CXX object src/common_cpp/CMakeFiles/CommonCPP.dir/custom_aws_credentials_provider_chain.cpp.o
+[168/189] Building CXX object src/common_cpp/CMakeFiles/CommonCPP.dir/token_bucket_rate_limiter.cpp.o
+[169/189] Linking CXX static library src/format/libFormat.a
+[170/189] Building CXX object src/common_cpp/CMakeFiles/CommonCPP.dir/obj_retry_strategy.cpp.o
+[171/189] Linking CXX static library src/io/libIO.a
+[172/189] Linking CXX static library src/gen_cpp/libDorisGen.a
+[173/189] Linking CXX static library src/runtime/libRuntime.a
+[174/189] Linking CXX static library src/exec/libExec.a
+[175/189] Linking CXX static library src/service/libService.a
+[176/189] Linking CXX static library src/udf/libUdf.a
+[177/189] Linking CXX static library src/cloud/libCloud.a
+[178/189] Linking CXX static library src/load/libLoad.a
+[179/189] Linking CXX static library src/information_schema/libInformationSchema.a
+[180/189] Building CXX object src/common_cpp/CMakeFiles/CommonCPP.dir/aws_common.cpp.o
+[181/189] Linking CXX static library src/common_cpp/libCommonCPP.a
+[182/189] Linking CXX static library src/storage/libStorage.a
+[183/189] Linking CXX static library src/exprs/libExprs.a
+[184/189] Building CXX object src/util/CMakeFiles/Util.dir/thrift_util.cpp.o
+[185/189] Building CXX object src/util/CMakeFiles/Util.dir/s3_util.cpp.o
+[186/189] Linking CXX static library src/util/libUtil.a
+[187/189] Building CXX object src/service/CMakeFiles/doris_be.dir/doris_main.cpp.o
+[188/189] Linking CXX executable src/service/doris_be
+FAILED: [code=1] src/service/doris_be 
+: && /var/local/ldb-toolchain/bin/clang++ -O3 -DNDEBUG  -O3 -DNDEBUG -fuse-ld=lld   -Wl,--export-dynamic -rdynamic src/glibc-compatibility/CMakeFiles/glibc-compatibility-explicit.dir/musl/getrandom.c.o src/glibc-compatibility/CMakeFiles/glibc-compatibility-explicit.dir/memcpy/memcpy_x86_64.cpp.o src/service/CMakeFiles/doris_be.dir/doris_main.cpp.o -o src/service/doris_be  -Wl,--start-group  src/agent/libAgent.a  src/common/libCommon.a  src/core/libCore.a  src/exec/libExec.a  src/exprs/libExprs.a  src/format/libFormat.a  src/io/libIO.a  src/storage/libStorage.a  src/runtime/libRuntime.a  src/service/libService.a  src/udf/libUdf.a  src/util/libUtil.a  src/gen_cpp/libDorisGen.a  src/load/libLoad.a  src/information_schema/libInformationSchema.a  src/cloud/libCloud.a  -Wl,--end-group  src/common_cpp/libCommonCPP.a  /usr/lib/jvm/jdk-17.0.2//lib/server/libjvm.so  -Wl,--start-group  /var/local/thirdparty/installed/lib64/libboost_date_time.a  /var/local/thirdparty/installed/lib64/libboost_container.a  /var/local/thirdparty/installed/lib/libgflags.a  /var/local/thirdparty/installed/lib/libglog.a  /var/local/thirdparty/installed/lib/libbacktrace.a  /var/local/thirdparty/installed/lib/libre2.a  /var/local/thirdparty/installed/lib64/libhs.a  /var/local/thirdparty/installed/lib/libodbc.a  /var/local/thirdparty/installed/gperftools/lib/libprofiler.a  /var/local/thirdparty/installed/lib/libprotobuf.a  /var/local/thirdparty/installed/lib/libgtest.a  /var/local/thirdparty/installed/lib/libgtest_main.a  /var/local/thirdparty/installed/lib/libbenchmark.a  /var/local/thirdparty/installed/lib/libgmock.a  /var/local/thirdparty/installed/lib/libsnappy.a  /var/local/thirdparty/installed/lib/libcurl.a  /var/local/thirdparty/installed/lib/liblz4.a  /var/local/thirdparty/installed/lib/libthrift.a  /var/local/thirdparty/installed/lib/libthriftnb.a  /var/local/thirdparty/installed/lib/libcrc32c.a  /var/local/thirdparty/installed/lib/libevent_core.a  /var/local/thirdparty/installed/lib/libevent_openssl.a  /var/local/thirdparty/installed/lib/libevent.a  /var/local/thirdparty/installed/lib/libevent_pthreads.a  /var/local/thirdparty/installed/lib/libbz2.a  /var/local/thirdparty/installed/lib/libz.a  /var/local/thirdparty/installed/lib/libcrypto.a  /var/local/thirdparty/installed/lib/libssl.a  /var/local/thirdparty/installed/lib/libleveldb.a  /var/local/thirdparty/installed/lib/libjemalloc_doris.a  /var/local/thirdparty/installed/lib64/libunwind.a  /var/local/thirdparty/installed/lib64/libgrpc++_reflection.a  /var/local/thirdparty/installed/lib64/libgrpc.a  /var/local/thirdparty/installed/lib64/libgrpc++.a  /var/local/thirdparty/installed/lib64/libgrpc++_unsecure.a  /var/local/thirdparty/installed/lib64/libgpr.a  /var/local/thirdparty/installed/lib64/libupb.a  /var/local/thirdparty/installed/lib64/libcares.a  /var/local/thirdparty/installed/lib64/libaddress_sorting.a  /var/local/thirdparty/installed/lib64/libz.a  /var/local/thirdparty/installed/lib64/libbrotlicommon.a  /var/local/thirdparty/installed/lib64/libbrotlidec.a  /var/local/thirdparty/installed/lib64/libbrotlienc.a  /var/local/thirdparty/installed/lib64/libzstd.a  /var/local/thirdparty/installed/lib64/libarrow.a  /var/local/thirdparty/installed/lib64/libarrow_flight.a  /var/local/thirdparty/installed/lib64/libarrow_flight_sql.a  /var/local/thirdparty/installed/lib64/libarrow_dataset.a  /var/local/thirdparty/installed/lib64/libarrow_acero.a  /var/local/thirdparty/installed/lib64/libparquet.a  /var/local/thirdparty/installed/lib64/libbrpc.a  /var/local/thirdparty/installed/lib/librocksdb.a  /var/local/thirdparty/installed/lib/libsasl2.a  /var/local/thirdparty/installed/lib/librdkafka++.a  /var/local/thirdparty/installed/lib/librdkafka.a  /var/local/thirdparty/installed/lib/libs2.a  /var/local/thirdparty/installed/lib/libbitshuffle.a  /var/local/thirdparty/installed/lib/libroaring.a  /var/local/thirdparty/installed/lib/libfmt.a  /var/local/thirdparty/installed/lib/libcctz.a  /var/local/thirdparty/installed/lib/libbase64.a  /var/local/thirdparty/installed/lib64/libaws-cpp-sdk-core.a  /var/local/thirdparty/installed/lib64/libaws-cpp-sdk-s3.a  /var/local/thirdparty/installed/lib64/libaws-cpp-sdk-transfer.a  /var/local/thirdparty/installed/lib64/libaws-cpp-sdk-s3-crt.a  /var/local/thirdparty/installed/lib64/libaws-crt-cpp.a  /var/local/thirdparty/installed/lib64/libaws-c-cal.a  /var/local/thirdparty/installed/lib64/libaws-c-auth.a  /var/local/thirdparty/installed/lib64/libaws-c-compression.a  /var/local/thirdparty/installed/lib64/libaws-c-common.a  /var/local/thirdparty/installed/lib64/libaws-c-event-stream.a  /var/local/thirdparty/installed/lib64/libaws-c-io.a  /var/local/thirdparty/installed/lib64/libaws-c-http.a  /var/local/thirdparty/installed/lib64/libaws-c-mqtt.a  /var/local/thirdparty/installed/lib64/libaws-checksums.a  /var/local/thirdparty/installed/lib64/libaws-c-s3.a  /var/local/thirdparty/installed/lib64/libaws-c-sdkutils.a  /var/local/thirdparty/installed/lib64/libaws-cpp-sdk-identity-management.a  /var/local/thirdparty/installed/lib64/libaws-cpp-sdk-sts.a  /var/local/thirdparty/installed/lib64/libaws-cpp-sdk-kinesis.a  /var/local/thirdparty/installed/lib/libs2n.a  /var/local/thirdparty/installed/lib/libazure-core.a  /var/local/thirdparty/installed/lib/libazure-identity.a  /var/local/thirdparty/installed/lib/libazure-storage-blobs.a  /var/local/thirdparty/installed/lib/libazure-storage-common.a  /var/local/thirdparty/installed/lib64/libminizip.a  /var/local/thirdparty/installed/lib64/libsimdjson.a  /var/local/thirdparty/installed/lib64/libidn.a  /var/local/thirdparty/installed/lib64/libxml2.a  /var/local/thirdparty/installed/lib64/liblzma.a  /var/local/thirdparty/installed/lib/libgsasl.a  /var/local/thirdparty/installed/lib/libkrb5support.a  /var/local/thirdparty/installed/lib/libkrb5.a  /var/local/thirdparty/installed/lib/libcom_err.a  /var/local/thirdparty/installed/lib/libk5crypto.a  /var/local/thirdparty/installed/lib/libgssapi_krb5.a  /var/local/thirdparty/installed/lib64/libstreamvbyte.a  /var/local/thirdparty/installed/lib/libdeflate.a  /var/local/thirdparty/installed/lib64/libicuuc.a  /var/local/thirdparty/installed/lib64/libicui18n.a  /var/local/thirdparty/installed/lib64/libicudata.a  /var/local/thirdparty/installed/lib64/libpugixml.a  /var/local/thirdparty/installed/lib64/libpaimon.a  /var/local/thirdparty/installed/lib64/libpaimon_orc_file_format.a  /var/local/thirdparty/installed/lib64/libpaimon_blob_file_format.a  /var/local/thirdparty/installed/lib64/libpaimon_local_file_system.a  /var/local/thirdparty/installed/lib64/libpaimon_file_index.a  /var/local/thirdparty/installed/lib64/libpaimon_global_index.a  /var/local/thirdparty/installed/lib64/libroaring_bitmap_paimon.a  /var/local/thirdparty/installed/lib64/libxxhash_paimon.a  /var/local/thirdparty/installed/lib64/libfmt_paimon.a  /var/local/thirdparty/installed/lib64/libtbb_paimon.a  /var/local/thirdparty/installed/lib/hadoop_hdfs_3_4/native/libhdfs.a  /var/local/thirdparty/installed/lib/libabsl_cord.a  /var/local/thirdparty/installed/lib/libabsl_cord_internal.a  /var/local/thirdparty/installed/lib/libabsl_cordz_functions.a  /var/local/thirdparty/installed/lib/libabsl_cordz_info.a  /var/local/thirdparty/installed/lib/libabsl_crc_cord_state.a  /var/local/thirdparty/installed/lib/libabsl_spinlock_wait.a  /var/local/thirdparty/installed/lib/libabsl_status.a  /var/local/thirdparty/installed/lib/libabsl_statusor.a  /var/local/thirdparty/installed/lib/libabsl_strings.a  /var/local/thirdparty/installed/lib/libkrb5support.a  /var/local/thirdparty/installed/lib/libkrb5.a  /var/local/thirdparty/installed/lib/libcom_err.a  /var/local/thirdparty/installed/lib/libgssapi_krb5.a  /var/local/thirdparty/installed/lib/libk5crypto.a  /var/local/thirdparty/installed/lib64/libunwind.a  bin/liborc.a  bin/libic.a  bin/libclucene-core-static.a  bin/libclucene-shared-static.a  bin/libclucene-contribs-lib.a  -Wl,--whole-archive  /var/local/thirdparty/installed/lib64/libpaimon_parquet_file_format.a  -Wl,--no-whole-archive  /var/local/thirdparty/installed/lib64/libroaring_bitmap_paimon.a  /var/local/thirdparty/installed/lib64/libxxhash_paimon.a  /var/local/thirdparty/installed/lib64/libfmt_paimon.a  /var/local/thirdparty/installed/lib64/libtbb_paimon.a  -Wl,--end-group  -static-libstdc++  -static-libgcc  -lresolv  -lstdc++fs  /var/local/thirdparty/installed/lib/libjemalloc_doris.a  bin/libglibc-compatibility.a  bin/libann_index.a  bin/libfaiss.a  openblas/lib/libopenblas.a  -lm  /var/local/ldb-toolchain/lib/libomp.a  -lpthread  /var/local/thirdparty/installed/lib/libabsl_flags_internal.a  /var/local/thirdparty/installed/lib/libabsl_flags_marshalling.a  /var/local/thirdparty/installed/lib/libabsl_flags_reflection.a  /var/local/thirdparty/installed/lib/libabsl_flags_config.a  /var/local/thirdparty/installed/lib/libabsl_flags_program_name.a  /var/local/thirdparty/installed/lib/libabsl_flags_private_handle_accessor.a  /var/local/thirdparty/installed/lib/libabsl_flags_commandlineflag.a  /var/local/thirdparty/installed/lib/libabsl_flags_commandlineflag_internal.a  /var/local/thirdparty/installed/lib/libabsl_raw_hash_set.a  /var/local/thirdparty/installed/lib/libabsl_hash.a  /var/local/thirdparty/installed/lib/libabsl_city.a  /var/local/thirdparty/installed/lib/libabsl_low_level_hash.a  /var/local/thirdparty/installed/lib/libabsl_hashtablez_sampler.a  /var/local/thirdparty/installed/lib/libabsl_random_distributions.a  /var/local/thirdparty/installed/lib/libabsl_random_seed_sequences.a  /var/local/thirdparty/installed/lib/libabsl_random_internal_entropy_pool.a  /var/local/thirdparty/installed/lib/libabsl_random_internal_randen.a  /var/local/thirdparty/installed/lib/libabsl_random_internal_randen_hwaes.a  /var/local/thirdparty/installed/lib/libabsl_random_internal_randen_hwaes_impl.a  /var/local/thirdparty/installed/lib/libabsl_random_internal_randen_slow.a  /var/local/thirdparty/installed/lib/libabsl_random_internal_platform.a  /var/local/thirdparty/installed/lib/libabsl_random_internal_seed_material.a  /var/local/thirdparty/installed/lib/libabsl_random_seed_gen_exception.a  /var/local/thirdparty/installed/lib/libabsl_status.a  /var/local/thirdparty/installed/lib/libabsl_cord.a  /var/local/thirdparty/installed/lib/libabsl_cordz_info.a  /var/local/thirdparty/installed/lib/libabsl_cord_internal.a  /var/local/thirdparty/installed/lib/libabsl_cordz_functions.a  /var/local/thirdparty/installed/lib/libabsl_exponential_biased.a  /var/local/thirdparty/installed/lib/libabsl_cordz_handle.a  /var/local/thirdparty/installed/lib/libabsl_synchronization.a  /var/local/thirdparty/installed/lib/libabsl_graphcycles_internal.a  /var/local/thirdparty/installed/lib/libabsl_kernel_timeout_internal.a  /var/local/thirdparty/installed/lib/libabsl_tracing_internal.a  /var/local/thirdparty/installed/lib/libabsl_time.a  /var/local/thirdparty/installed/lib/libabsl_civil_time.a  /var/local/thirdparty/installed/lib/libabsl_time_zone.a  /var/local/thirdparty/installed/lib/libabsl_crc_cord_state.a  /var/local/thirdparty/installed/lib/libabsl_crc32c.a  /var/local/thirdparty/installed/lib/libabsl_crc_internal.a  /var/local/thirdparty/installed/lib/libabsl_crc_cpu_detect.a  /var/local/thirdparty/installed/lib/libabsl_stacktrace.a  /var/local/thirdparty/installed/lib/libabsl_leak_check.a  /var/local/thirdparty/installed/lib/libabsl_strerror.a  /var/local/thirdparty/installed/lib/libabsl_symbolize.a  /var/local/thirdparty/installed/lib/libabsl_debugging_internal.a  /var/local/thirdparty/installed/lib/libabsl_malloc_internal.a  /var/local/thirdparty/installed/lib/libabsl_demangle_internal.a  /var/local/thirdparty/installed/lib/libabsl_demangle_rust.a  /var/local/thirdparty/installed/lib/libabsl_decode_rust_punycode.a  /var/local/thirdparty/installed/lib/libabsl_utf8_for_code_point.a  /var/local/thirdparty/installed/lib/libabsl_str_format_internal.a  /var/local/thirdparty/installed/lib/libabsl_strings.a  /var/local/thirdparty/installed/lib/libabsl_string_view.a  /var/local/thirdparty/installed/lib/libabsl_strings_internal.a  /var/local/thirdparty/installed/lib/libabsl_int128.a  /var/local/thirdparty/installed/lib/libabsl_base.a  /var/local/thirdparty/installed/lib/libabsl_spinlock_wait.a  -lrt  /var/local/thirdparty/installed/lib/libabsl_throw_delegate.a  /var/local/thirdparty/installed/lib/libabsl_raw_logging_internal.a  /var/local/thirdparty/installed/lib/libabsl_log_severity.a  /var/local/thirdparty/installed/lib/libprotobuf.a  /var/local/thirdparty/installed/lib/libz.a  /var/local/thirdparty/installed/lib/libsnappy.a  /var/local/thirdparty/installed/lib/liblz4.a  /var/local/thirdparty/installed/lib/libzstd.a  bin/libclucene-core-static.a  /var/local/thirdparty/installed/lib64/libzstd.a  bin/libclucene-shared-static.a  -lpthread  -lrt -l:libbfd.a -liberty -lc -lm -ldl -pthread && :
+ld.lld: error: undefined symbol: _Ux86_64_local_addr_space
+>>> referenced by native_stack_action.cpp:1004 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:1004)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+>>> referenced by native_stack_action.cpp:700 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:700)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::remote_find_proc_info(unw_addr_space*, unsigned long, unw_proc_info*, int, void*)) in archive src/service/libService.a
+>>> referenced by native_stack_action.cpp:710 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:710)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::remote_put_unwind_info(unw_addr_space*, unw_proc_info*, void*)) in archive src/service/libService.a
+>>> referenced 1 more times
+>>> did you mean: _ULx86_64_local_addr_space
+>>> defined in: /var/local/thirdparty/installed/lib64/libunwind.a(Linit.o)
+
+ld.lld: error: undefined symbol: _Ux86_64_create_addr_space
+>>> referenced by native_stack_action.cpp:1014 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:1014)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+
+ld.lld: error: undefined symbol: _Ux86_64_set_caching_policy
+>>> referenced by native_stack_action.cpp:1016 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:1016)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+
+ld.lld: error: undefined symbol: _Ux86_64_destroy_addr_space
+>>> referenced by native_stack_action.cpp:1033 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:1033)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+
+ld.lld: error: undefined symbol: _Ux86_64_init_remote
+>>> referenced by native_stack_action.cpp:836 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:836)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+
+ld.lld: error: undefined symbol: _Ux86_64_get_reg
+>>> referenced by native_stack_action.cpp:850 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:850)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+>>> referenced by native_stack_action.cpp:861 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:861)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+
+ld.lld: error: undefined symbol: _Ux86_64_step
+>>> referenced by native_stack_action.cpp:870 (./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:870)
+>>>               native_stack_action.cpp.o:(doris::(anonymous namespace)::collect_snapshot_remote_unwind_stacks(doris::(anonymous namespace)::RequestOptions const&, std::chrono::time_point<std::chrono::_V2::steady_clock, std::chrono::duration<long, std::ratio<1l, 1000000000l>>>)) in archive src/service/libService.a
+clang++: error: linker command failed with exit code 1 (use -v to see invocation)
+ninja: build stopped: subcommand failed.

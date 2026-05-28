@@ -1,0 +1,342 @@
+0x101543d1
+doris::ExternalScanContextMgr::gc_expired_context()
+./be/build_Release/../src/runtime/external_scan_context_mgr.cpp:117:5
+
+0x1015d510
+doris::FragmentMgr::cancel_worker()
+./be/build_Release/../src/runtime/fragment_mgr.cpp:825:5
+
+0x101ebece
+doris::ResultBufferMgr::cancel_thread()
+./be/build_Release/../src/runtime/result_buffer_mgr.cpp:182:5
+
+0x1028b6b8
+std::__shared_ptr<doris::PipelineTask, (__gnu_cxx::_Lock_policy)2>::operator bool() const
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1677:16
+doris::TaskScheduler::_do_work(int)
+./be/build_Release/../src/exec/pipeline/task_scheduler.cpp:96:14
+
+0x10293a30
+std::__shared_ptr<doris::PipelineTask, (__gnu_cxx::_Lock_policy)2>::__shared_ptr(std::__shared_ptr<doris::PipelineTask, (__gnu_cxx::_Lock_policy)2>&&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1539:20
+std::__shared_ptr<doris::PipelineTask, (__gnu_cxx::_Lock_policy)2>::operator=(std::__shared_ptr<doris::PipelineTask, (__gnu_cxx::_Lock_policy)2>&&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1627:2
+std::shared_ptr<doris::PipelineTask>::operator=(std::shared_ptr<doris::PipelineTask>&&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr.h:439:27
+doris::MultiCoreTaskQueue::take(int)
+./be/build_Release/../src/exec/pipeline/task_queue.cpp:164:14
+
+0x102c14dd
+doris::WorkloadSchedPolicyMgr::_schedule_workload()
+./be/build_Release/../src/runtime/workload_management/workload_sched_policy_mgr.cpp:80:5
+
+0x1033c30d
+std::__shared_count<(__gnu_cxx::_Lock_policy)2>::operator=(std::__shared_count<(__gnu_cxx::_Lock_policy)2> const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1083:12
+std::__shared_ptr<event_base, (__gnu_cxx::_Lock_policy)2>::operator=(std::__shared_ptr<event_base, (__gnu_cxx::_Lock_policy)2> const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1530:69
+std::shared_ptr<event_base>::operator=(std::shared_ptr<event_base> const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr.h:413:65
+doris::EvHttpServer::start()::$_0::operator()() const
+./be/build_Release/../src/service/http/ev_http_server.cpp:147:22
+void std::__invoke_impl<void, doris::EvHttpServer::start()::$_0&>(std::__invoke_other, doris::EvHttpServer::start()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:63:14
+std::enable_if<is_invocable_r_v<void, doris::EvHttpServer::start()::$_0&>, void>::type std::__invoke_r<void, doris::EvHttpServer::start()::$_0&>(doris::EvHttpServer::start()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:113:2
+std::_Function_handler<void (), doris::EvHttpServer::start()::$_0>::_M_invoke(std::_Any_data const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/std_function.h:292:9
+
+0x103bb2ef
+doris::NativeStackAction::handle(doris::HttpRequest*)
+./be/build_Release/./be/src/service/http/action/native_stack_action.cpp:0:25
+
+0x104d0541
+doris::WorkThreadPool<false>::work_thread(int)
+./be/build_Release/../src/util/work_thread_pool.hpp:157:29
+
+0x1067a3dc
+__pthread_cleanup_class::~__pthread_cleanup_class()
+/var/local/ldb-toolchain/bin/../usr/include/pthread.h:562:46
+doris::Thread::supervise_thread(void*)
+./be/build_Release/../src/util/thread.cpp:461:5
+
+0x10687672
+std::__shared_count<(__gnu_cxx::_Lock_policy)2>::_M_swap(std::__shared_count<(__gnu_cxx::_Lock_policy)2>&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1097:37
+std::__shared_ptr<doris::Runnable, (__gnu_cxx::_Lock_policy)2>::swap(std::__shared_ptr<doris::Runnable, (__gnu_cxx::_Lock_policy)2>&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1694:14
+std::__shared_ptr<doris::Runnable, (__gnu_cxx::_Lock_policy)2>::reset()
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/shared_ptr_base.h:1649:24
+doris::ThreadPool::dispatch_thread()
+./be/build_Release/../src/util/threadpool.cpp:623:23
+
+0x106960be
+doris::ThriftServer::ThriftServerEventProcessor::supervise()
+./be/build_Release/../src/util/thrift_server.cpp:213:5
+
+0x10f10c4c
+doris::LoadChannelMgr::_start_bg_worker()::$_0::operator()() const
+./be/build_Release/../src/load/channel/load_channel_mgr.cpp:242:5
+void std::__invoke_impl<void, doris::LoadChannelMgr::_start_bg_worker()::$_0&>(std::__invoke_other, doris::LoadChannelMgr::_start_bg_worker()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:63:14
+std::enable_if<is_invocable_r_v<void, doris::LoadChannelMgr::_start_bg_worker()::$_0&>, void>::type std::__invoke_r<void, doris::LoadChannelMgr::_start_bg_worker()::$_0&>(doris::LoadChannelMgr::_start_bg_worker()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:113:2
+std::_Function_handler<void (), doris::LoadChannelMgr::_start_bg_worker()::$_0>::_M_invoke(std::_Any_data const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/std_function.h:292:9
+
+0x10faa145
+std::unique_ptr<doris::Status::ErrMsg, std::default_delete<doris::Status::ErrMsg>>::~unique_ptr()
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/unique_ptr.h:398:6
+doris::Status::~Status()
+./be/build_Release/./be/build_Release/../src/common/status.h:369:21
+doris::WalManager::init()::$_0::operator()() const
+./be/build_Release/../src/load/group_commit/wal/wal_manager.cpp:87:48
+void std::__invoke_impl<void, doris::WalManager::init()::$_0&>(std::__invoke_other, doris::WalManager::init()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:63:14
+std::enable_if<is_invocable_r_v<void, doris::WalManager::init()::$_0&>, void>::type std::__invoke_r<void, doris::WalManager::init()::$_0&>(doris::WalManager::init()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:113:2
+std::_Function_handler<void (), doris::WalManager::init()::$_0>::_M_invoke(std::_Any_data const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/std_function.h:292:9
+
+0x10faa26e
+doris::WalManager::_replay_background()
+./be/build_Release/../src/load/group_commit/wal/wal_manager.cpp:421:5
+
+0x10faa6b5
+std::unique_ptr<doris::Status::ErrMsg, std::default_delete<doris::Status::ErrMsg>>::~unique_ptr()
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/unique_ptr.h:398:6
+doris::Status::~Status()
+./be/build_Release/./be/build_Release/../src/common/status.h:369:21
+doris::WalManager::_init_wal_dirs_info()::$_0::operator()() const
+./be/build_Release/../src/load/group_commit/wal/wal_manager.cpp:164:24
+void std::__invoke_impl<void, doris::WalManager::_init_wal_dirs_info()::$_0&>(std::__invoke_other, doris::WalManager::_init_wal_dirs_info()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:63:14
+std::enable_if<is_invocable_r_v<void, doris::WalManager::_init_wal_dirs_info()::$_0&>, void>::type std::__invoke_r<void, doris::WalManager::_init_wal_dirs_info()::$_0&>(doris::WalManager::_init_wal_dirs_info()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:113:2
+std::_Function_handler<void (), doris::WalManager::_init_wal_dirs_info()::$_0>::_M_invoke(std::_Any_data const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/std_function.h:292:9
+
+0x10fe094c
+doris::LoadPathMgr::init()::$_0::operator()() const
+./be/build_Release/../src/load/load_path_mgr.cpp:78:5
+void std::__invoke_impl<void, doris::LoadPathMgr::init()::$_0&>(std::__invoke_other, doris::LoadPathMgr::init()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:63:14
+std::enable_if<is_invocable_r_v<void, doris::LoadPathMgr::init()::$_0&>, void>::type std::__invoke_r<void, doris::LoadPathMgr::init()::$_0&>(doris::LoadPathMgr::init()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:113:2
+std::_Function_handler<void (), doris::LoadPathMgr::init()::$_0>::_M_invoke(std::_Any_data const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/std_function.h:292:9
+
+0x1103caeb
+doris::DataConsumerPool::start_bg_worker()::$_0::operator()() const
+./be/build_Release/../src/load/routine_load/data_consumer_pool.cpp:144:5
+void std::__invoke_impl<void, doris::DataConsumerPool::start_bg_worker()::$_0&>(std::__invoke_other, doris::DataConsumerPool::start_bg_worker()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:63:14
+std::enable_if<is_invocable_r_v<void, doris::DataConsumerPool::start_bg_worker()::$_0&>, void>::type std::__invoke_r<void, doris::DataConsumerPool::start_bg_worker()::$_0&>(doris::DataConsumerPool::start_bg_worker()::$_0&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:113:2
+std::_Function_handler<void (), doris::DataConsumerPool::start_bg_worker()::$_0>::_M_invoke(std::_Any_data const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/std_function.h:292:9
+
+0x11ce3dbe
+apache::thrift::server::TServerFramework::serve()
+??:0:0
+
+0x11ce538a
+apache::thrift::transport::TServerTransport::accept()
+??:0:0
+
+0x11ce8782
+apache::thrift::server::TThreadedServer::serve()
+??:0:0
+
+0x11d0a220
+bufferevent_inbuf_wm_check
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/bufferevent.c:123:5
+bufferevent_run_readcb_
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/bufferevent.c:252:3
+
+0x11d131e5
+event_persist_closure
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/event.c:1624:1
+event_process_active_single_queue
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/event.c:1682:4
+
+0x11d13837
+event_process_active
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/event.c:1788:7
+
+0x11d15e88
+event_base_loop.constprop.0
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/event.c:1994:6
+
+0x11d16020
+event_base_loop.constprop.0
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/event.c:2006:12
+
+0x11d21dc1
+epoll_dispatch
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/epoll.c:467:2
+
+0x11d2a187
+??
+??:0:0
+
+0x11d2c2c3
+bufferevent_readcb
+/home/runner/work/doris-thirdparty/doris-thirdparty/thirdparty/src/doris-thirdparty-libevent-2.1.12.1/bufferevent_sock.c:227:1
+
+0x1326ad75
+pollset_work(grpc_pollset*, grpc_pollset_worker**, grpc_core::Timestamp)
+ev_epoll1_linux.cc:0:0
+
+0x1399cf99
+bvar::detail::SamplerCollector::sampling_thread(void*)
+??:0:0
+
+0x139db921
+bthread_make_fcontext
+??:0:0
+
+0x139e9e18
+bthread::TaskControl::worker_thread(void*)
+??:0:0
+
+0x139f0df7
+bthread::TaskGroup::task_runner(long)
+??:0:0
+
+0x139f121f
+bthread::TaskGroup::run_main_task()
+??:0:0
+
+0x139f5eb9
+bthread::TimerThread::run_this(void*)
+??:0:0
+
+0x13a5a9d7
+brpc::EventDispatcher::Run()
+??:0:0
+
+0x13a5ab39
+brpc::EventDispatcher::RunThis(void*)
+??:0:0
+
+0x13f83f0b
+rocksdb::ThreadPoolImpl::Impl::BGThreadWrapper(void*)
+??:0:0
+
+0x145ea9ea
+??
+??:0:0
+
+0x145ff49e
+??
+??:0:0
+
+0x158dee95
+__syscall
+./be/build_Release/./be/src/glibc-compatibility/musl/x86_64/syscall.s:14:0
+
+0x16ff3ba0
+execute_native_thread_routine
+archive64.c:0:0
+
+0xa4deded
+doris::Daemon::memory_maintenance_thread()
+./be/build_Release/../src/common/daemon.cpp:332:5
+
+0xa4df8b9
+doris::Daemon::calculate_metrics_thread()
+./be/build_Release/../src/common/daemon.cpp:452:5
+
+0xa4dfe99
+doris::Daemon::report_runtime_query_statistics_thread()
+./be/build_Release/../src/common/daemon.cpp:456:5
+
+0xa4e0a82
+doris::Daemon::cache_prune_stale_thread()
+./be/build_Release/../src/common/daemon.cpp:555:5
+
+0xa4e0d89
+doris::Daemon::calculate_workload_group_metrics_thread()
+./be/build_Release/../src/common/daemon.cpp:579:5
+
+0xa4ec102
+std::unique_lock<std::mutex>::~unique_lock()
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/unique_lock.h:113:6
+bool doris::CountDownLatch::wait_for<long, std::ratio<1l, 1000l>>(std::chrono::duration<long, std::ratio<1l, 1000l>> const&)
+./be/build_Release/../src/util/countdown_latch.h:79:5
+
+0xa4ec292
+std::unique_lock<std::mutex>::~unique_lock()
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/unique_lock.h:113:6
+bool doris::CountDownLatch::wait_for<long, std::ratio<1l, 1l>>(std::chrono::duration<long, std::ratio<1l, 1l>> const&)
+./be/build_Release/../src/util/countdown_latch.h:79:5
+
+0xa54fcce
+doris::WorkThreadPool<true>::work_thread(int)
+./be/build_Release/../src/util/work_thread_pool.hpp:157:29
+
+0xe244ec4
+doris::StorageEngine::_unused_rowset_monitor_thread_callback()
+./be/build_Release/../src/storage/olap_server.cpp:437:5
+
+0xe24519f
+doris::StorageEngine::_garbage_sweeper_thread_callback()
+./be/build_Release/../src/storage/olap_server.cpp:409:5
+
+0xe245424
+doris::StorageEngine::_disk_stat_monitor_thread_callback()
+./be/build_Release/../src/storage/olap_server.cpp:423:5
+
+0xe246132
+doris::StorageEngine::_update_replica_infos_callback()
+./be/build_Release/../src/storage/olap_server.cpp:846:5
+
+0xe24779d
+doris::StorageEngine::_tablet_checkpoint_callback(std::vector<doris::DataDir*, std::allocator<doris::DataDir*>> const&)
+./be/build_Release/../src/storage/olap_server.cpp:508:5
+
+0xe248602
+doris::StorageEngine::_path_gc_thread_callback(doris::DataDir*)
+./be/build_Release/../src/storage/olap_server.cpp:491:5
+
+0xe248c62
+doris::StorageEngine::_cooldown_tasks_producer_callback()
+./be/build_Release/../src/storage/olap_server.cpp:1409:5
+
+0xe24982b
+doris::StorageEngine::_remove_unused_remote_files_callback()
+./be/build_Release/../src/storage/olap_server.cpp:1413:5
+
+0xe24995e
+doris::StorageEngine::_cold_data_compaction_producer_callback()
+./be/build_Release/../src/storage/olap_server.cpp:1577:5
+
+0xe24a55b
+doris::StorageEngine::_async_publish_callback()
+./be/build_Release/../src/storage/olap_server.cpp:1822:5
+doris::StorageEngine::start_bg_threads(std::shared_ptr<doris::WorkloadGroup>)::$_12::operator()() const
+./be/build_Release/../src/storage/olap_server.cpp:350:5
+void std::__invoke_impl<void, doris::StorageEngine::start_bg_threads(std::shared_ptr<doris::WorkloadGroup>)::$_12&>(std::__invoke_other, doris::StorageEngine::start_bg_threads(std::shared_ptr<doris::WorkloadGroup>)::$_12&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:63:14
+std::enable_if<is_invocable_r_v<void, doris::StorageEngine::start_bg_threads(std::shared_ptr<doris::WorkloadGroup>)::$_12&>, void>::type std::__invoke_r<void, doris::StorageEngine::start_bg_threads(std::shared_ptr<doris::WorkloadGroup>)::$_12&>(doris::StorageEngine::start_bg_threads(std::shared_ptr<doris::WorkloadGroup>)::$_12&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/invoke.h:113:2
+std::_Function_handler<void (), doris::StorageEngine::start_bg_threads(std::shared_ptr<doris::WorkloadGroup>)::$_12>::_M_invoke(std::_Any_data const&)
+/var/local/ldb-toolchain/bin/../lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15/bits/std_function.h:292:9
+
+0xe24a6de
+doris::StorageEngine::_check_tablet_delete_bitmap_score_callback()
+./be/build_Release/../src/storage/olap_server.cpp:1829:5
+
+0xed6ec64
+doris::BaseStorageEngine::_evict_quring_rowset_thread_callback()
+./be/build_Release/../src/storage/storage_engine.cpp:1580:5
+
+0xf35f095
+doris::BrokerMgr::ping_worker()
+./be/build_Release/../src/runtime/broker_mgr.cpp:120:5
+
+0xf7296da
+doris::SpillFileManager::_spill_gc_thread_callback()
+./be/build_Release/../src/exec/spill/spill_file_manager.cpp:102:5
+

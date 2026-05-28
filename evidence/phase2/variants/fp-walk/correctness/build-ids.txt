@@ -1,0 +1,1 @@
+doris_be: no GNU Build ID note found by readelf -n

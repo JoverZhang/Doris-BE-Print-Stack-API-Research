@@ -1,0 +1,3 @@
+patch applies to common-api commit 055bb465015fa6bcd61f9e33f352de78475fcc2e
+ be/src/service/http/action/native_stack_action.cpp | 976 ++++++++++++++++++++-
+ 1 file changed, 962 insertions(+), 14 deletions(-)

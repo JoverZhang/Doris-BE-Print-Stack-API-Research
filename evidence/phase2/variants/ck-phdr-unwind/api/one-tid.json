@@ -1,0 +1,56 @@
+{
+  "status": "ok",
+  "collector": "ck-phdr-unwind",
+  "timeout_ms": 1000,
+  "max_frames_per_thread": 16,
+  "max_copied_stack_bytes": 8192,
+  "elapsed_ms": 5,
+  "target_tid": 752,
+  "threads": [
+    {
+      "tid": 752,
+      "status": "ok",
+      "truncated": false,
+      "handler_time_ns": 53601,
+      "signal_method": "rt_tgsigqueueinfo",
+      "unwind_init_result": 0,
+      "unwind_step_result": 0,
+      "frames": [
+        {
+          "pc": "0x7fa7804939fd",
+          "dso": "/usr/lib64/libc-2.17.so",
+          "dso_offset": "0xc59fd"
+        },
+        {
+          "pc": "0x7fa780493894",
+          "dso": "/usr/lib64/libc-2.17.so",
+          "dso_offset": "0xc5894"
+        },
+        {
+          "pc": "0x564fe527b3c3",
+          "dso": "/workspace/project/phase2/ck-phdr-unwind/be/output/lib/doris_be",
+          "dso_offset": "0xa43b3c3"
+        },
+        {
+          "pc": "0x7fa7803f0555",
+          "dso": "/usr/lib64/libc-2.17.so",
+          "dso_offset": "0x22555"
+        },
+        {
+          "pc": "0x564fe527802a",
+          "dso": "/workspace/project/phase2/ck-phdr-unwind/be/output/lib/doris_be",
+          "dso_offset": "0xa43802a"
+        }
+      ]
+    }
+  ],
+  "phdr_cache": {
+    "preflight": "dl_iterate_phdr",
+    "objects": 13,
+    "executable_segments": 13,
+    "unwind_cache_policy": "global",
+    "unwind_cache_policy_ret": 0,
+    "unwind_cache_configured": true,
+    "limitation": "preflight records loader PHDR state; libunwind may still touch internal caches on unseen PCs"
+  }
+}

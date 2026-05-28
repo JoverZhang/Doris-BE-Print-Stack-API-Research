@@ -1,0 +1,102 @@
+variant: ob-kill60
+phase: phase2
+date: 2026-05-28
+persona: mira
+
+source:
+  common_api_commit: 055bb465015fa6bcd61f9e33f352de78475fcc2e
+  worktree: phase2/ob-kill60
+  branch: phase2-ob-kill60
+  head_commit: dc29ca4bc404f6b9267c60dfa9a058c0905dfebd
+  patch:
+    repo_path: patches/ob-kill60/0001-feature-be-Add-ob-kill60-native-stack-collector.patch
+    evidence_copy: evidence/phase2/variants/ob-kill60/patches/0001-feature-be-Add-ob-kill60-native-stack-collector.patch
+
+build:
+  image: docker.io/apache/doris:build-env-ldb-toolchain-latest
+  build_sh_log: build-output/build-sh.txt
+  doris_be_target_log: build-output/ninja-doris_be.txt
+  cxx_build: pass
+  packaging: cp_preserve_permissions_warning_at_root_output_copy
+  notes:
+    - cmake --build be/build_Release --target doris_be completed successfully.
+    - build.sh linked and installed be/output/lib/doris_be, then printed cp -p permission preservation warnings while copying to the root output directory on the bind mount.
+
+implementation:
+  collector: ob-kill60
+  signal: 60
+  dispatch:
+    primary: rt_tgsigqueueinfo
+    fallback: tgkill
+  handler_contract:
+    returns_symbols: false
+    collects: raw_program_counters
+    max_raw_pcs: 1024
+  coordinator_contract:
+    computes_dso_offsets: true
+    reads_proc_maps: true
+    returns_frame_fields:
+      - pc
+      - dso
+      - dso_offset
+  two_phase_control_flow: true
+
+api_smoke:
+  endpoint: GET /api/debug/native_stack
+  port: 18042
+  all_threads:
+    file: api/all-threads.json
+    status: ok
+    elapsed_ms: 696
+    threads: 1869
+    ok_threads: 1864
+    signal_blocked_threads: 4
+    skipped_self_threads: 1
+  one_tid:
+    file: api/one-tid.json
+    target_tid_file: api/target-tid.txt
+    status: ok
+  busy:
+    file: api/busy.json
+    status: busy
+  timeout:
+    file: api/timeout.json
+    status: timeout
+  missing_tid:
+    file: api/missing-tid.json
+    status: missing_tid
+  no_symbol_check:
+    file: api/no-symbol-check.txt
+    status: pass
+
+correctness:
+  maps: correctness/maps.txt
+  build_ids: correctness/build-ids.txt
+  offline_symbolization: correctness/offline-symbolization.txt
+  offset_symbolization: pass
+  api_symbol_names: absent
+  doris_be_gnu_build_id: absent
+
+repeat:
+  file: repeat/result.md
+  iterations: 50
+  curl_success: 50
+  curl_failures: 0
+  statuses:
+    ok: 27
+    timeout: 23
+  duration_ms:
+    min: 508
+    p50: 1040
+    p95: 1049
+    max: 1051
+
+verdict:
+  overall: hold
+  build: pass
+  api_contract: pass
+  coverage: partial
+  production_safety: fail
+  reasons:
+    - The signal handler calls libunwind to collect raw PCs. It does not symbolize, allocate intentionally, or log, but libunwind is not async-signal-safe.
+    - 1000 ms all-thread repeat runs sometimes timed out on a small tail of threads; a 5000 ms all-thread smoke completed.

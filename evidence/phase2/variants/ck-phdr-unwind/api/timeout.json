@@ -1,0 +1,10 @@
+{
+  "status": "timeout",
+  "collector": "ck-phdr-unwind",
+  "timeout_ms": 10,
+  "max_frames_per_thread": 64,
+  "max_copied_stack_bytes": 8192,
+  "elapsed_ms": 10,
+  "threads": [],
+  "error_reason": "test sleep exceeded timeout"
+}

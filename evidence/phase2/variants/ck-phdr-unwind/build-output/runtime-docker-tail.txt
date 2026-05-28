@@ -1,0 +1,200 @@
+I20260528 09:18:18.964984 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/511, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.964928 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/511, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.965085 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.964529 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.965016 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.965119 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.964573 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.965065 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.964955 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.965149 752 work_thread_pool.hpp:154] WorkThreadPool started: FifoThreadPool(name=brpc_arrow_flight, queue_size=0/20480, active_thread=0/512, total_get_wait_time=0, total_put_wait_time=0, is_shutdown=false)
+I20260528 09:18:18.967079 752 brpc_service.cpp:96] BRPC server bind to host: 0.0.0.0, port: 8060
+I20260528 09:18:18.976706 752 server.cpp:1144] Server[doris::PInternalServiceImpl] is serving on port=8060.
+I20260528 09:18:18.976719 752 server.cpp:1147] Check out http://df0f34c0724d:8060 in web browser.
+I20260528 09:18:19.022492 752 thrift_server.cpp:423] ThriftServer 'heartbeat' started on port: 9050
+I20260528 09:18:19.026458 752 flight_sql_service.cpp:147] Arrow Flight Service bind to host: 0.0.0.0, port: 8050
+I20260528 09:18:19.026799 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:19.026803 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:19.026803 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:19.026800 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:19.080302 752 daemon.cpp:231] sys physical memory 61.94 GB. process memory used 536.70 MB(= 536.70 MB[vm/rss] + 0[reserved] + 0B[waiting_refresh]), limit 55.74 GB, soft limit 50.17 GB. sys available memory 42.08 GB(= 42.08 GB[proc/available] - 0[reserved] - 0B[waiting_refresh]), low water mark 3.10 GB, warning water mark 6.19 GB
+I20260528 09:18:19.080346 752 workload_group_manager.cpp:964] 
+Query Memory Summary: 
+I20260528 09:18:19.708038 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9474505932 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9474505932 Bytes.];
+I20260528 09:18:29.026889 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:29.026917 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:29.719906 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9480393113 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9480393113 Bytes.];
+I20260528 09:18:38.920091 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:18:39.026990 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:39.027002 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:39.731386 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9479616102 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9479616102 Bytes.];
+I20260528 09:18:48.917300 752 storage_engine.cpp:1304] start to delete unused rowset, size: 0, unused delete bitmap size: 0
+I20260528 09:18:48.917346 752 storage_engine.cpp:1362] collected 0 unused rowsets to remove, skipped 0 rowsets due to use count > 1, skipped 0 rowsets due to don't need to delete file, skipped 0 rowsets due to delayed expired timestamp. left 0 unused delete bitmap.
+I20260528 09:18:48.917352 752 storage_engine.cpp:1387] removed all collected unused rowsets
+I20260528 09:18:49.026865 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:49.027082 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:49.027091 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:49.742677 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9479207731 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9479207731 Bytes.];
+I20260528 09:18:58.920207 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:18:59.027158 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:59.027177 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:18:59.759838 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9478508134 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9478508134 Bytes.];
+I20260528 09:19:09.027254 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:09.027252 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:09.772521 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9478030540 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9478030540 Bytes.];
+I20260528 09:19:18.707645 752 load_channel_mgr.cpp:257] cleaning timed out load channels
+I20260528 09:19:18.917426 752 storage_engine.cpp:1304] start to delete unused rowset, size: 0, unused delete bitmap size: 0
+I20260528 09:19:18.917479 752 storage_engine.cpp:1362] collected 0 unused rowsets to remove, skipped 0 rowsets due to use count > 1, skipped 0 rowsets due to don't need to delete file, skipped 0 rowsets due to delayed expired timestamp. left 0 unused delete bitmap.
+I20260528 09:19:18.917487 752 storage_engine.cpp:1387] removed all collected unused rowsets
+I20260528 09:19:18.920312 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:19:19.026839 752 lru_cache_policy.h:197] [MemoryGC] CreateTabletRRIdxCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:19:19.026867 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:19.026886 752 lru_cache_policy.h:197] [MemoryGC] TabletColumnObjectPool not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:19:19.026894 752 lru_cache_policy.h:197] [MemoryGC] TabletSchemaCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:19:19.026901 752 lru_cache_policy.h:191] [MemoryGC] MowDeleteBitmapAggCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026907 752 lru_cache_policy.h:191] [MemoryGC] DataPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026912 752 lru_cache_policy.h:191] [MemoryGC] IndexPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026917 752 lru_cache_policy.h:191] [MemoryGC] PKIndexPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026922 752 lru_cache_policy.h:191] [MemoryGC] AnnIndexIVFListCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026926 752 lru_cache_policy.h:191] [MemoryGC] PointQueryRowCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026932 752 lru_cache_policy.h:174] [MemoryGC] CommonObjLRUCache prune stale start, consumption 0, usage 0
+I20260528 09:19:19.026939 752 lru_cache_policy.h:184] [MemoryGC] CommonObjLRUCache prune stale 0 entries, 0 bytes, cost 1222, 1 times prune
+I20260528 09:19:19.026944 752 lru_cache_policy.h:191] [MemoryGC] AnnIndexResultCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026950 752 lru_cache_policy.h:197] [MemoryGC] PointQueryLookupConnectionCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:19:19.026959 752 lru_cache_policy.h:191] [MemoryGC] QueryCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026969 752 lru_cache_policy.h:191] [MemoryGC] InvertedIndexSearcherCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026974 752 lru_cache_policy.h:191] [MemoryGC] InvertedIndexQueryCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026981 752 lru_cache_policy.h:191] [MemoryGC] ConditionCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:19:19.026959 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:19.027361 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:19.027369 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:19.128289 752 workload_group_manager.cpp:964] 
+Query Memory Summary: 
+I20260528 09:19:19.784937 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9474967142 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9474967142 Bytes.];
+W20260528 09:19:20.920295 752 olap_server.cpp:785] Have not get FE Master heartbeat yet
+I20260528 09:19:29.027460 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:29.027462 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:29.799209 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9472744652 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9472744652 Bytes.];
+I20260528 09:19:38.920397 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:19:39.027556 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:39.027570 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:39.811838 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9469110272 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9469110272 Bytes.];
+I20260528 09:19:48.917564 752 storage_engine.cpp:1304] start to delete unused rowset, size: 0, unused delete bitmap size: 0
+I20260528 09:19:48.917625 752 storage_engine.cpp:1362] collected 0 unused rowsets to remove, skipped 0 rowsets due to use count > 1, skipped 0 rowsets due to don't need to delete file, skipped 0 rowsets due to delayed expired timestamp. left 0 unused delete bitmap.
+I20260528 09:19:48.917635 752 storage_engine.cpp:1387] removed all collected unused rowsets
+I20260528 09:19:49.027074 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:49.027673 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:49.027673 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:49.824275 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9467276083 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9467276083 Bytes.];
+I20260528 09:19:58.920493 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:19:59.027783 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:59.027791 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:19:59.836181 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9465006080 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9465006080 Bytes.];
+I20260528 09:20:09.027868 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:09.027868 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:09.848469 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9462060236 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9462060236 Bytes.];
+I20260528 09:20:18.707743 752 load_channel_mgr.cpp:257] cleaning timed out load channels
+I20260528 09:20:18.917702 752 storage_engine.cpp:1304] start to delete unused rowset, size: 0, unused delete bitmap size: 0
+I20260528 09:20:18.917760 752 storage_engine.cpp:1362] collected 0 unused rowsets to remove, skipped 0 rowsets due to use count > 1, skipped 0 rowsets due to don't need to delete file, skipped 0 rowsets due to delayed expired timestamp. left 0 unused delete bitmap.
+I20260528 09:20:18.917768 752 storage_engine.cpp:1387] removed all collected unused rowsets
+I20260528 09:20:18.920590 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:20:19.026962 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:19.027055 752 lru_cache_policy.h:197] [MemoryGC] CreateTabletRRIdxCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:20:19.027077 752 lru_cache_policy.h:197] [MemoryGC] TabletColumnObjectPool not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:20:19.027086 752 lru_cache_policy.h:197] [MemoryGC] TabletSchemaCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:20:19.027093 752 lru_cache_policy.h:191] [MemoryGC] MowDeleteBitmapAggCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027100 752 lru_cache_policy.h:191] [MemoryGC] DataPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027107 752 lru_cache_policy.h:191] [MemoryGC] IndexPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027112 752 lru_cache_policy.h:191] [MemoryGC] PKIndexPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027120 752 lru_cache_policy.h:191] [MemoryGC] AnnIndexIVFListCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027127 752 lru_cache_policy.h:191] [MemoryGC] PointQueryRowCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027133 752 lru_cache_policy.h:174] [MemoryGC] CommonObjLRUCache prune stale start, consumption 0, usage 0
+I20260528 09:20:19.027143 752 lru_cache_policy.h:184] [MemoryGC] CommonObjLRUCache prune stale 0 entries, 0 bytes, cost 1753, 2 times prune
+I20260528 09:20:19.027148 752 lru_cache_policy.h:191] [MemoryGC] AnnIndexResultCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027155 752 lru_cache_policy.h:197] [MemoryGC] PointQueryLookupConnectionCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:20:19.027164 752 lru_cache_policy.h:191] [MemoryGC] QueryCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027168 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:19.027172 752 lru_cache_policy.h:191] [MemoryGC] InvertedIndexSearcherCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027201 752 lru_cache_policy.h:191] [MemoryGC] InvertedIndexQueryCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027207 752 lru_cache_policy.h:191] [MemoryGC] ConditionCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:20:19.027977 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:19.027980 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:19.168654 752 workload_group_manager.cpp:964] 
+Query Memory Summary: 
+I20260528 09:20:19.861892 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9459004211 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9459004211 Bytes.];
+W20260528 09:20:22.920722 752 olap_server.cpp:785] Have not get FE Master heartbeat yet
+I20260528 09:20:29.028098 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:29.028110 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:29.874485 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9456616243 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9456616243 Bytes.];
+I20260528 09:20:38.920672 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:20:39.028201 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:39.028205 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:39.887017 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9078276915 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9078276915 Bytes.];
+I20260528 09:20:48.917842 752 storage_engine.cpp:1304] start to delete unused rowset, size: 0, unused delete bitmap size: 0
+I20260528 09:20:48.917897 752 storage_engine.cpp:1362] collected 0 unused rowsets to remove, skipped 0 rowsets due to use count > 1, skipped 0 rowsets due to don't need to delete file, skipped 0 rowsets due to delayed expired timestamp. left 0 unused delete bitmap.
+I20260528 09:20:48.917903 752 storage_engine.cpp:1387] removed all collected unused rowsets
+I20260528 09:20:49.027256 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:49.028303 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:49.028303 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:49.898425 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9072898048 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9072898048 Bytes.];
+I20260528 09:20:58.920778 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:20:59.028404 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:59.028411 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:20:59.910004 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9072210739 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9072210739 Bytes.];
+I20260528 09:21:09.028501 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:09.028501 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:09.921887 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9071750758 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9071750758 Bytes.];
+I20260528 09:21:18.707847 752 load_channel_mgr.cpp:257] cleaning timed out load channels
+I20260528 09:21:18.917975 752 storage_engine.cpp:1304] start to delete unused rowset, size: 0, unused delete bitmap size: 0
+I20260528 09:21:18.918037 752 storage_engine.cpp:1362] collected 0 unused rowsets to remove, skipped 0 rowsets due to use count > 1, skipped 0 rowsets due to don't need to delete file, skipped 0 rowsets due to delayed expired timestamp. left 0 unused delete bitmap.
+I20260528 09:21:18.918045 752 storage_engine.cpp:1387] removed all collected unused rowsets
+I20260528 09:21:18.920871 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:21:18.921229 752 storage_engine.cpp:851] start trash and snapshot sweep. is_clean=0
+I20260528 09:21:18.921272 752 storage_engine.cpp:473] get root path info cost: 0 ms. tablet counter: 0
+I20260528 09:21:18.921283 752 storage_engine.cpp:875] Start to sweep path /workspace/project/phase2/ck-phdr-unwind/be/output/storage
+I20260528 09:21:18.921329 752 storage_engine.cpp:1058] remove 0 invalid rowset meta from dir: /workspace/project/phase2/ck-phdr-unwind/be/output/storage
+I20260528 09:21:18.921335 752 storage_engine.cpp:1068] remove 0 invalid binlog<row> meta from dir: /workspace/project/phase2/ck-phdr-unwind/be/output/storage
+I20260528 09:21:18.921341 752 storage_engine.cpp:1104] remove 0 invalid binlog meta from dir: /workspace/project/phase2/ck-phdr-unwind/be/output/storage
+I20260528 09:21:18.921347 752 storage_engine.cpp:1131] removed invalid delete bitmap from dir: /workspace/project/phase2/ck-phdr-unwind/be/output/storage, deleted tablets size: 0
+I20260528 09:21:18.921353 752 storage_engine.cpp:1156] removed invalid pending publish info from dir: /workspace/project/phase2/ck-phdr-unwind/be/output/storage, deleted pending publish info size: 0
+I20260528 09:21:18.925105 752 data_dir.cpp:1028] path: /workspace/project/phase2/ck-phdr-unwind/be/output/storage trash capacity: 0
+I20260528 09:21:19.027065 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:19.028602 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:19.028609 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:19.029950 752 lru_cache_policy.h:197] [MemoryGC] CreateTabletRRIdxCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:21:19.029973 752 lru_cache_policy.h:197] [MemoryGC] TabletColumnObjectPool not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:21:19.029982 752 lru_cache_policy.h:197] [MemoryGC] TabletSchemaCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:21:19.029992 752 lru_cache_policy.h:191] [MemoryGC] MowDeleteBitmapAggCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.029999 752 lru_cache_policy.h:191] [MemoryGC] DataPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030009 752 lru_cache_policy.h:191] [MemoryGC] IndexPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030015 752 lru_cache_policy.h:191] [MemoryGC] PKIndexPageCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030021 752 lru_cache_policy.h:191] [MemoryGC] AnnIndexIVFListCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030027 752 lru_cache_policy.h:191] [MemoryGC] PointQueryRowCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030056 752 lru_cache_policy.h:174] [MemoryGC] CommonObjLRUCache prune stale start, consumption 0, usage 0
+I20260528 09:21:19.030068 752 lru_cache_policy.h:184] [MemoryGC] CommonObjLRUCache prune stale 0 entries, 0 bytes, cost 1532, 3 times prune
+I20260528 09:21:19.030077 752 lru_cache_policy.h:191] [MemoryGC] AnnIndexResultCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030083 752 lru_cache_policy.h:197] [MemoryGC] PointQueryLookupConnectionCache not need prune stale, LRUCacheType::NUMBER usage 0 less than CACHE_MIN_PRUNE_NUMBER 1024
+I20260528 09:21:19.030095 752 lru_cache_policy.h:191] [MemoryGC] QueryCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030105 752 lru_cache_policy.h:191] [MemoryGC] InvertedIndexSearcherCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030113 752 lru_cache_policy.h:191] [MemoryGC] InvertedIndexQueryCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.030123 752 lru_cache_policy.h:191] [MemoryGC] ConditionCache not need prune stale, LRUCacheType::SIZE consumption 0 less than CACHE_MIN_PRUNE_SIZE 67108864
+I20260528 09:21:19.040870 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:19.187448 752 workload_group_manager.cpp:964] 
+Query Memory Summary: 
+I20260528 09:21:19.934638 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9071378432 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9071378432 Bytes.];
+W20260528 09:21:22.865497 752 doris_main.cpp:133] thrift internal message: TServerSocket::acceptImpl() THRIFT_POLL() : Interrupted system call
+W20260528 09:21:22.866467 752 doris_main.cpp:133] thrift internal message: TServerTransport died: Unknown: Interrupted system call
+I20260528 09:21:22.866514 752 thrift_server.cpp:213] ThriftServer backend exited
+W20260528 09:21:22.873490 752 doris_main.cpp:133] thrift internal message: TServerSocket::acceptImpl() THRIFT_POLL() : Interrupted system call
+W20260528 09:21:22.873533 752 doris_main.cpp:133] thrift internal message: TServerTransport died: Unknown: Interrupted system call
+I20260528 09:21:22.873564 752 thrift_server.cpp:213] ThriftServer heartbeat exited
+W20260528 09:21:24.920881 752 olap_server.cpp:785] Have not get FE Master heartbeat yet
+I20260528 09:21:29.028692 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:29.028693 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:29.971603 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9077416345 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9077416345 Bytes.];
+I20260528 09:21:38.920660 752 adaptive_thread_pool_controller.cpp:220] Adaptive[flush]: adjusting threads from 128 to 126 (min=16, max=128) reason=[cpu_busy -> target=126; ]
+I20260528 09:21:38.920959 752 olap_server.cpp:1376] cooldown producer get tablet num: 0
+I20260528 09:21:38.927919 752 adaptive_thread_pool_controller.cpp:220] Adaptive[flush_wg_1]: adjusting threads from 128 to 126 (min=16, max=128) reason=[cpu_busy -> target=126; ]
+I20260528 09:21:39.028790 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:39.028801 752 task_worker_pool.cpp:750] waiting to receive first heartbeat from frontend before doing report
+I20260528 09:21:39.982929 752 wal_manager.cpp:496] Scheduled(every 10s) WAL info: [/workspace/project/phase2/ck-phdr-unwind/be/output/storage/wal: limit 9076642201 Bytes, used 0 Bytes, estimated wal bytes 0 Bytes, available 9076642201 Bytes.];

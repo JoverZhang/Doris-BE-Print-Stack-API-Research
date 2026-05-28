@@ -1,0 +1,15 @@
+status: pass
+
+Checked from temporary Doris worktree at base commit
+`c24d454f15cee2d937ef4749270a3ecb449eafe6`.
+
+Steps:
+
+1. Applied `patches/common/*.patch`.
+2. Ran `git apply --check patches/<variant>/*.patch` for:
+   - `fp-walk`
+   - `ck-phdr-unwind`
+   - `ob-kill60`
+   - `snapshot-remote-unwind`
+
+All checks exited 0.

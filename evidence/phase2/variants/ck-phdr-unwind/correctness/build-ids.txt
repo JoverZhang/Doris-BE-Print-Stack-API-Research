@@ -1,0 +1,12 @@
+== be/output/lib/doris_be
+be/output/lib/doris_be: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked (uses shared libs), for GNU/Linux 3.2.0, not stripped
+Build ID: <none found by readelf -n>
+
+== /usr/lib/jvm/jdk-17.0.2/lib/server/libjvm.so
+/usr/lib/jvm/jdk-17.0.2/lib/server/libjvm.so: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, not stripped
+Build ID: <none found by readelf -n>
+
+== /usr/lib64/libc-2.17.so
+/usr/lib64/libc-2.17.so: ELF 64-bit LSB shared object, x86-64, version 1 (GNU/Linux), dynamically linked (uses shared libs), BuildID[sha1]=1a8fb61bb4614a483833d5334202ab50edda2a25, for GNU/Linux 2.6.32, not stripped
+Build ID: 1a8fb61bb4614a483833d5334202ab50edda2a25
+

@@ -1,0 +1,1 @@
+sha256:7b449a709746b22a4ea8dc7d7fa4a0939fb2f65f3a57e88b9006b97b834a8381 [docker.io/apache/doris:build-env-ldb-toolchain-latest]

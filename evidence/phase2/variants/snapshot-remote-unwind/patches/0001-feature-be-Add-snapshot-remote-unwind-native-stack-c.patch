@@ -1,0 +1,1080 @@
+From 054789ee2cf9af3d4c483e93fe2b814f96031d41 Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 28 May 2026 17:32:04 +0800
+Subject: [PATCH] [feature](be) Add snapshot remote unwind native stack
+ collector
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ .../http/action/native_stack_action.cpp       | 976 +++++++++++++++++-
+ 1 file changed, 962 insertions(+), 14 deletions(-)
+
+diff --git a/be/src/service/http/action/native_stack_action.cpp b/be/src/service/http/action/native_stack_action.cpp
+index 1a7cd4a2ce1..cf19aa598b4 100644
+--- a/be/src/service/http/action/native_stack_action.cpp
++++ b/be/src/service/http/action/native_stack_action.cpp
+@@ -18,16 +18,33 @@
+ #include "service/http/action/native_stack_action.h"
+ 
+ #include <glog/logging.h>
++#ifndef UNW_LOCAL_ONLY
++#define UNW_LOCAL_ONLY 1
++#endif
++#include <libunwind.h>
++#include <signal.h>
++#include <sys/syscall.h>
++#include <sys/types.h>
++#include <ucontext.h>
++#include <unistd.h>
+ 
+ #include <algorithm>
+ #include <atomic>
+ #include <chrono>
+ #include <cstdint>
++#include <cstring>
+ #include <exception>
+ #include <filesystem>
++#include <fstream>
++#include <limits>
++#include <memory>
++#include <mutex>
++#include <new>
+ #include <optional>
++#include <sstream>
+ #include <string>
+ #include <thread>
++#include <utility>
+ #include <vector>
+ 
+ #include "service/http/http_channel.h"
+@@ -40,12 +57,99 @@ namespace doris {
+ namespace {
+ 
+ constexpr char kJsonContentType[] = "application/json";
++constexpr char kCollectorName[] = "snapshot-remote-unwind";
+ constexpr int64_t kDefaultTimeoutMs = 100;
+ constexpr int64_t kDefaultMaxFrames = 64;
+ constexpr int64_t kDefaultMaxStackBytes = 8192;
++constexpr int kNativeStackSignalOffset = 7;
+ 
+ std::atomic<bool> s_dump_running {false};
+ 
++enum SlotState : int {
++    SLOT_PENDING = 0,
++    SLOT_COPYING = 1,
++    SLOT_SNAPSHOT_DONE = 2,
++    SLOT_SIGNAL_FAILED = 3,
++    SLOT_TIMEOUT = 4,
++    SLOT_UNSUPPORTED = 5,
++    SLOT_SIGNAL_BLOCKED = 6,
++};
++
++enum SignalMethod : int {
++    SIGNAL_METHOD_NONE = 0,
++    SIGNAL_METHOD_RT_TGSIGQUEUEINFO = 1,
++    SIGNAL_METHOD_TGKILL = 2,
++};
++
++struct CapturedRegisters {
++    uintptr_t rax = 0;
++    uintptr_t rdx = 0;
++    uintptr_t rcx = 0;
++    uintptr_t rbx = 0;
++    uintptr_t rsi = 0;
++    uintptr_t rdi = 0;
++    uintptr_t rbp = 0;
++    uintptr_t rsp = 0;
++    uintptr_t r8 = 0;
++    uintptr_t r9 = 0;
++    uintptr_t r10 = 0;
++    uintptr_t r11 = 0;
++    uintptr_t r12 = 0;
++    uintptr_t r13 = 0;
++    uintptr_t r14 = 0;
++    uintptr_t r15 = 0;
++    uintptr_t rip = 0;
++};
++
++struct ThreadCaptureSlot {
++    int64_t tid = 0;
++    std::atomic<int> state {SLOT_PENDING};
++    std::atomic<int> signal_method {SIGNAL_METHOD_NONE};
++    int signal_errno = 0;
++    bool stack_bounds_valid = false;
++    uintptr_t stack_low = 0;
++    uintptr_t stack_high = 0;
++    uintptr_t copied_stack_base = 0;
++    size_t copied_stack_bytes = 0;
++    size_t stack_capacity = 0;
++    bool stack_truncated = false;
++    uint8_t* stack_copy = nullptr;
++    CapturedRegisters registers;
++};
++
++struct DumpSession {
++    ThreadCaptureSlot* slots = nullptr;
++    size_t slot_count = 0;
++    std::atomic<int> active_handlers {0};
++};
++
++struct MemoryMap {
++    uintptr_t start = 0;
++    uintptr_t end = 0;
++    uintptr_t offset = 0;
++    bool readable = false;
++    std::string path;
++};
++
++struct UnwindResult {
++    std::vector<uintptr_t> frames;
++    bool truncated = false;
++    int unwind_rc = 0;
++    std::string error_reason;
++    std::string method;
++};
++
++struct RemoteUnwindContext {
++    const ThreadCaptureSlot* slot = nullptr;
++    const std::vector<MemoryMap>* maps = nullptr;
++    const unw_accessors_t* local_accessors = nullptr;
++};
++
++std::atomic<DumpSession*> s_active_session {nullptr};
++std::atomic<ThreadCaptureSlot*> s_tgkill_fallback_slot {nullptr};
++std::once_flag s_signal_install_once;
++std::atomic<bool> s_signal_installed {false};
++
+ class ScopedDumpSlot {
+ public:
+     ScopedDumpSlot() {
+@@ -73,6 +177,10 @@ struct RequestOptions {
+     std::optional<int64_t> target_tid;
+ };
+ 
++int native_stack_signal_number() {
++    return SIGRTMIN + kNativeStackSignalOffset;
++}
++
+ int64_t elapsed_ms(std::chrono::steady_clock::time_point start) {
+     return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         std::chrono::steady_clock::now() - start)
+@@ -93,6 +201,35 @@ bool parse_i64(const std::string& value, int64_t* parsed) {
+     }
+ }
+ 
++bool parse_hex_uintptr(const std::string& value, uintptr_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size() ||
++            result > static_cast<unsigned long long>(std::numeric_limits<uintptr_t>::max())) {
++            return false;
++        }
++        *parsed = static_cast<uintptr_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
++bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size()) {
++            return false;
++        }
++        *parsed = static_cast<uint64_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
+ bool parse_optional_i64(const HttpRequest* req, const std::string& key, int64_t default_value,
+                         int64_t min_value, int64_t max_value, int64_t* parsed,
+                         std::string* error_reason) {
+@@ -157,10 +294,129 @@ std::vector<int64_t> list_thread_ids() {
+     return tids;
+ }
+ 
++std::string trim_left_spaces(std::string value) {
++    const size_t first = value.find_first_not_of(' ');
++    if (first == std::string::npos) {
++        return "";
++    }
++    return value.substr(first);
++}
++
++std::vector<MemoryMap> load_memory_maps_for(const std::string& path) {
++    std::vector<MemoryMap> maps;
++    std::ifstream input(path);
++    std::string line;
++    while (std::getline(input, line)) {
++        std::istringstream iss(line);
++        std::string range;
++        std::string perms;
++        std::string offset_hex;
++        std::string dev;
++        std::string inode;
++        if (!(iss >> range >> perms >> offset_hex >> dev >> inode)) {
++            continue;
++        }
++        const size_t dash = range.find('-');
++        if (dash == std::string::npos) {
++            continue;
++        }
++
++        MemoryMap map;
++        if (!parse_hex_uintptr(range.substr(0, dash), &map.start) ||
++            !parse_hex_uintptr(range.substr(dash + 1), &map.end) ||
++            !parse_hex_uintptr(offset_hex, &map.offset) || map.start >= map.end) {
++            continue;
++        }
++
++        map.readable = !perms.empty() && perms[0] == 'r';
++        std::string map_path;
++        std::getline(iss, map_path);
++        map.path = trim_left_spaces(map_path);
++        maps.emplace_back(std::move(map));
++    }
++    return maps;
++}
++
++std::vector<MemoryMap> load_memory_maps() {
++    return load_memory_maps_for("/proc/self/maps");
++}
++
++bool load_thread_stack_bounds(int64_t tid, uintptr_t* stack_low, uintptr_t* stack_high) {
++    const std::vector<MemoryMap> maps =
++            load_memory_maps_for("/proc/self/task/" + std::to_string(tid) + "/maps");
++    for (const MemoryMap& map : maps) {
++        if (map.path == "[stack]" && map.readable) {
++            *stack_low = map.start;
++            *stack_high = map.end;
++            return true;
++        }
++    }
++    return false;
++}
++
++bool is_signal_blocked(int64_t tid, int signal_number) {
++    if (signal_number <= 0 || signal_number > 64) {
++        return false;
++    }
++
++    std::ifstream status("/proc/self/task/" + std::to_string(tid) + "/status");
++    std::string line;
++    while (std::getline(status, line)) {
++        constexpr char kSigBlkPrefix[] = "SigBlk:";
++        if (line.rfind(kSigBlkPrefix, 0) != 0) {
++            continue;
++        }
++
++        std::istringstream iss(line.substr(sizeof(kSigBlkPrefix) - 1));
++        std::string hex_mask;
++        if (!(iss >> hex_mask)) {
++            return false;
++        }
++        uint64_t mask = 0;
++        if (!parse_hex_u64(hex_mask, &mask)) {
++            return false;
++        }
++        return (mask & (uint64_t {1} << (signal_number - 1))) != 0;
++    }
++    return false;
++}
++
++const MemoryMap* find_map_for_pc(const std::vector<MemoryMap>& maps, uintptr_t pc) {
++    for (const MemoryMap& map : maps) {
++        if (pc >= map.start && pc < map.end) {
++            return &map;
++        }
++    }
++    return nullptr;
++}
++
++bool range_in_map(const MemoryMap& map, uintptr_t address, size_t size) {
++    if (size == 0 || address < map.start || address >= map.end) {
++        return false;
++    }
++    const uintptr_t bytes_left = map.end - address;
++    return bytes_left >= size;
++}
++
++bool address_is_readable(const std::vector<MemoryMap>& maps, uintptr_t address, size_t size) {
++    for (const MemoryMap& map : maps) {
++        if (map.readable && range_in_map(map, address, size)) {
++            return true;
++        }
++    }
++    return false;
++}
++
++std::string hex_uintptr(uintptr_t value) {
++    std::ostringstream out;
++    out << "0x" << std::hex << value;
++    return out.str();
++}
++
+ void fill_common_fields(EasyJson* root, const std::string& status, const RequestOptions& options,
+                         int64_t elapsed) {
+     (*root)["status"] = status;
+-    (*root)["collector"] = "stub";
++    (*root)["collector"] = kCollectorName;
+     (*root)["timeout_ms"] = options.timeout_ms;
+     (*root)["max_frames_per_thread"] = options.max_frames;
+     (*root)["max_copied_stack_bytes"] = options.max_stack_bytes;
+@@ -171,8 +427,23 @@ void fill_common_fields(EasyJson* root, const std::string& status, const Request
+     root->Set("threads", EasyJson::kArray);
+ }
+ 
+-void append_stub_thread(EasyJson* threads, int64_t tid, const std::string& status,
+-                        const std::string& error_reason) {
++void append_frame(EasyJson* frames, uintptr_t pc, const std::vector<MemoryMap>& maps) {
++    EasyJson frame = frames->PushBack(EasyJson::kObject);
++    frame["pc"] = hex_uintptr(pc);
++
++    const MemoryMap* map = find_map_for_pc(maps, pc);
++    if (map == nullptr) {
++        frame["dso"] = "";
++        frame["dso_offset"] = "";
++        return;
++    }
++
++    frame["dso"] = map->path;
++    frame["dso_offset"] = hex_uintptr(map->offset + (pc - map->start));
++}
++
++void append_status_thread(EasyJson* threads, int64_t tid, const std::string& status,
++                          const std::string& error_reason) {
+     EasyJson thread = threads->PushBack(EasyJson::kObject);
+     thread["tid"] = tid;
+     thread["status"] = status;
+@@ -191,27 +462,694 @@ EasyJson make_error_response(const std::string& status, const RequestOptions& op
+     return root;
+ }
+ 
+-EasyJson collect_stub_stacks(const RequestOptions& options, int64_t elapsed) {
++bool slot_contains_copied_stack_word(const ThreadCaptureSlot& slot, uintptr_t address) {
++    if (slot.copied_stack_bytes < sizeof(unw_word_t) || address < slot.copied_stack_base) {
++        return false;
++    }
++    const uintptr_t offset = address - slot.copied_stack_base;
++    return offset <= slot.copied_stack_bytes - sizeof(unw_word_t);
++}
++
++bool read_copied_stack_uintptr(const ThreadCaptureSlot& slot, uintptr_t address, uintptr_t* value) {
++    if (value == nullptr || !slot_contains_copied_stack_word(slot, address)) {
++        return false;
++    }
++    const uintptr_t offset = address - slot.copied_stack_base;
++    std::memcpy(value, slot.stack_copy + offset, sizeof(*value));
++    return true;
++}
++
++bool slot_stack_mapping_contains(const ThreadCaptureSlot& slot, uintptr_t address, size_t size) {
++    if (!slot.stack_bounds_valid || size == 0 || address < slot.stack_low ||
++        address >= slot.stack_high) {
++        return false;
++    }
++    return slot.stack_high - address >= size;
++}
++
++ThreadCaptureSlot* slot_from_signal_info(siginfo_t* info, DumpSession* session) {
++    if (info != nullptr && info->si_code == SI_QUEUE && info->si_value.sival_ptr != nullptr) {
++        auto* slot = static_cast<ThreadCaptureSlot*>(info->si_value.sival_ptr);
++        if (slot >= session->slots && slot < session->slots + session->slot_count) {
++            return slot;
++        }
++    }
++
++    ThreadCaptureSlot* fallback = s_tgkill_fallback_slot.load(std::memory_order_acquire);
++    if (fallback == nullptr || fallback < session->slots ||
++        fallback >= session->slots + session->slot_count) {
++        return nullptr;
++    }
++    const int64_t tid = static_cast<int64_t>(syscall(SYS_gettid));
++    if (fallback->tid != tid) {
++        return nullptr;
++    }
++    return fallback;
++}
++
++void copy_interrupted_stack(ThreadCaptureSlot* slot) {
++    slot->copied_stack_base = slot->registers.rsp;
++    slot->copied_stack_bytes = 0;
++    slot->stack_truncated = false;
++
++    if (slot->stack_copy == nullptr || slot->stack_capacity == 0 || !slot->stack_bounds_valid ||
++        slot->registers.rsp < slot->stack_low || slot->registers.rsp >= slot->stack_high) {
++        return;
++    }
++
++    const uintptr_t available = slot->stack_high - slot->registers.rsp;
++    const size_t bytes_to_copy = static_cast<size_t>(
++            std::min<uintptr_t>(available, static_cast<uintptr_t>(slot->stack_capacity)));
++    const auto* src = reinterpret_cast<const uint8_t*>(slot->registers.rsp);
++    for (size_t i = 0; i < bytes_to_copy; ++i) {
++        slot->stack_copy[i] = src[i];
++    }
++    slot->copied_stack_bytes = bytes_to_copy;
++    slot->stack_truncated = available > bytes_to_copy;
++}
++
++void native_stack_signal_handler(int, siginfo_t* info, void* raw_context) {
++    DumpSession* session = s_active_session.load(std::memory_order_acquire);
++    if (session == nullptr) {
++        return;
++    }
++
++    ThreadCaptureSlot* slot = slot_from_signal_info(info, session);
++    if (slot == nullptr) {
++        return;
++    }
++
++    session->active_handlers.fetch_add(1, std::memory_order_acq_rel);
++    int expected = SLOT_PENDING;
++    if (!slot->state.compare_exchange_strong(expected, SLOT_COPYING, std::memory_order_acq_rel)) {
++        session->active_handlers.fetch_sub(1, std::memory_order_acq_rel);
++        return;
++    }
++
++#if defined(__x86_64__)
++    auto* context = static_cast<ucontext_t*>(raw_context);
++    slot->registers.rax = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RAX]);
++    slot->registers.rdx = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RDX]);
++    slot->registers.rcx = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RCX]);
++    slot->registers.rbx = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RBX]);
++    slot->registers.rsi = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RSI]);
++    slot->registers.rdi = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RDI]);
++    slot->registers.rbp = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RBP]);
++    slot->registers.rsp = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RSP]);
++    slot->registers.r8 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R8]);
++    slot->registers.r9 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R9]);
++    slot->registers.r10 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R10]);
++    slot->registers.r11 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R11]);
++    slot->registers.r12 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R12]);
++    slot->registers.r13 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R13]);
++    slot->registers.r14 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R14]);
++    slot->registers.r15 = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_R15]);
++    slot->registers.rip = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RIP]);
++    copy_interrupted_stack(slot);
++    slot->state.store(SLOT_SNAPSHOT_DONE, std::memory_order_release);
++#else
++    slot->state.store(SLOT_UNSUPPORTED, std::memory_order_release);
++#endif
++
++    session->active_handlers.fetch_sub(1, std::memory_order_acq_rel);
++}
++
++void install_signal_handler_once() {
++    std::call_once(s_signal_install_once, [] {
++        struct sigaction action {};
++        sigemptyset(&action.sa_mask);
++        action.sa_sigaction = native_stack_signal_handler;
++        action.sa_flags = SA_SIGINFO | SA_RESTART;
++        if (sigaction(native_stack_signal_number(), &action, nullptr) == 0) {
++            s_signal_installed.store(true, std::memory_order_release);
++        } else {
++            LOG(ERROR) << "failed to install native stack snapshot signal handler: "
++                       << std::strerror(errno);
++        }
++    });
++}
++
++void mark_signal_failure(ThreadCaptureSlot* slot, int error_number) {
++    slot->signal_errno = error_number;
++    slot->state.store(SLOT_SIGNAL_FAILED, std::memory_order_release);
++}
++
++bool send_realtime_signal(pid_t pid, ThreadCaptureSlot* slot, int signal_number,
++                          int* error_number) {
++#ifdef SYS_rt_tgsigqueueinfo
++    siginfo_t info {};
++    info.si_signo = signal_number;
++    info.si_code = SI_QUEUE;
++    info.si_pid = pid;
++    info.si_uid = geteuid();
++    info.si_value.sival_ptr = slot;
++    if (syscall(SYS_rt_tgsigqueueinfo, pid, static_cast<pid_t>(slot->tid), signal_number, &info) ==
++        0) {
++        slot->signal_method.store(SIGNAL_METHOD_RT_TGSIGQUEUEINFO, std::memory_order_release);
++        return true;
++    }
++    *error_number = errno;
++    return false;
++#else
++    *error_number = ENOSYS;
++    return false;
++#endif
++}
++
++bool send_tgkill_signal(pid_t pid, ThreadCaptureSlot* slot, int signal_number, int* error_number) {
++    s_tgkill_fallback_slot.store(slot, std::memory_order_release);
++    if (syscall(SYS_tgkill, pid, static_cast<pid_t>(slot->tid), signal_number) == 0) {
++        slot->signal_method.store(SIGNAL_METHOD_TGKILL, std::memory_order_release);
++        return true;
++    }
++    *error_number = errno;
++    s_tgkill_fallback_slot.store(nullptr, std::memory_order_release);
++    return false;
++}
++
++void wait_for_slot(ThreadCaptureSlot* slot, std::chrono::steady_clock::time_point deadline) {
++    while (std::chrono::steady_clock::now() < deadline) {
++        const int state = slot->state.load(std::memory_order_acquire);
++        if (state != SLOT_PENDING && state != SLOT_COPYING) {
++            return;
++        }
++        std::this_thread::sleep_for(std::chrono::milliseconds(1));
++    }
++}
++
++void collect_thread_snapshots(ThreadCaptureSlot* slots, size_t slot_count,
++                              const RequestOptions& options,
++                              std::chrono::steady_clock::time_point start) {
++    DumpSession session;
++    session.slots = slots;
++    session.slot_count = slot_count;
++
++    s_active_session.store(&session, std::memory_order_release);
++    const pid_t pid = getpid();
++    const int signal_number = native_stack_signal_number();
++    const auto deadline = start + std::chrono::milliseconds(options.timeout_ms);
++
++    for (size_t i = 0; i < slot_count; ++i) {
++        if (slots[i].state.load(std::memory_order_acquire) != SLOT_PENDING) {
++            continue;
++        }
++
++        int rt_errno = 0;
++        if (send_realtime_signal(pid, &slots[i], signal_number, &rt_errno)) {
++            continue;
++        }
++
++        int tgkill_errno = 0;
++        if (!send_tgkill_signal(pid, &slots[i], signal_number, &tgkill_errno)) {
++            mark_signal_failure(&slots[i], tgkill_errno != 0 ? tgkill_errno : rt_errno);
++            continue;
++        }
++        wait_for_slot(&slots[i], deadline);
++        s_tgkill_fallback_slot.store(nullptr, std::memory_order_release);
++    }
++
++    while (std::chrono::steady_clock::now() < deadline) {
++        bool all_done = true;
++        for (size_t i = 0; i < slot_count; ++i) {
++            const int state = slots[i].state.load(std::memory_order_acquire);
++            if (state == SLOT_PENDING || state == SLOT_COPYING) {
++                all_done = false;
++                break;
++            }
++        }
++        if (all_done) {
++            break;
++        }
++        std::this_thread::sleep_for(std::chrono::milliseconds(1));
++    }
++
++    s_active_session.store(nullptr, std::memory_order_release);
++    s_tgkill_fallback_slot.store(nullptr, std::memory_order_release);
++    const auto handler_grace_deadline =
++            std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
++    while (session.active_handlers.load(std::memory_order_acquire) > 0 &&
++           std::chrono::steady_clock::now() < handler_grace_deadline) {
++        std::this_thread::sleep_for(std::chrono::milliseconds(1));
++    }
++
++    for (size_t i = 0; i < slot_count; ++i) {
++        int expected = SLOT_PENDING;
++        if (slots[i].state.compare_exchange_strong(expected, SLOT_TIMEOUT,
++                                                   std::memory_order_acq_rel)) {
++            continue;
++        }
++        expected = SLOT_COPYING;
++        slots[i].state.compare_exchange_strong(expected, SLOT_TIMEOUT, std::memory_order_acq_rel);
++    }
++}
++
++int remote_find_proc_info(unw_addr_space_t, unw_word_t ip, unw_proc_info_t* proc_info,
++                          int need_unwind_info, void* arg) {
++    auto* context = static_cast<RemoteUnwindContext*>(arg);
++    if (context == nullptr || context->local_accessors == nullptr ||
++        context->local_accessors->find_proc_info == nullptr) {
++        return -UNW_EINVAL;
++    }
++    return context->local_accessors->find_proc_info(unw_local_addr_space, ip, proc_info,
++                                                    need_unwind_info, nullptr);
++}
++
++void remote_put_unwind_info(unw_addr_space_t, unw_proc_info_t* proc_info, void* arg) {
++    auto* context = static_cast<RemoteUnwindContext*>(arg);
++    if (context == nullptr || context->local_accessors == nullptr ||
++        context->local_accessors->put_unwind_info == nullptr) {
++        return;
++    }
++    context->local_accessors->put_unwind_info(unw_local_addr_space, proc_info, nullptr);
++}
++
++int remote_get_dyn_info_list_addr(unw_addr_space_t, unw_word_t* address, void* arg) {
++    auto* context = static_cast<RemoteUnwindContext*>(arg);
++    if (context == nullptr || context->local_accessors == nullptr ||
++        context->local_accessors->get_dyn_info_list_addr == nullptr) {
++        return -UNW_EINVAL;
++    }
++    return context->local_accessors->get_dyn_info_list_addr(unw_local_addr_space, address, nullptr);
++}
++
++int remote_access_mem(unw_addr_space_t, unw_word_t address, unw_word_t* value, int write,
++                      void* arg) {
++    if (write != 0 || value == nullptr) {
++        return -UNW_EINVAL;
++    }
++    auto* context = static_cast<RemoteUnwindContext*>(arg);
++    if (context == nullptr || context->slot == nullptr || context->maps == nullptr) {
++        return -UNW_EINVAL;
++    }
++
++    const uintptr_t target = static_cast<uintptr_t>(address);
++    if (slot_contains_copied_stack_word(*context->slot, target)) {
++        const uintptr_t offset = target - context->slot->copied_stack_base;
++        std::memcpy(value, context->slot->stack_copy + offset, sizeof(*value));
++        return 0;
++    }
++    if (slot_stack_mapping_contains(*context->slot, target, sizeof(*value))) {
++        return -UNW_EBADFRAME;
++    }
++    if (!address_is_readable(*context->maps, target, sizeof(*value))) {
++        return -UNW_EBADFRAME;
++    }
++    std::memcpy(value, reinterpret_cast<const void*>(target), sizeof(*value));
++    return 0;
++}
++
++int remote_access_reg(unw_addr_space_t, unw_regnum_t reg, unw_word_t* value, int write, void* arg) {
++    if (write != 0 || value == nullptr) {
++        return -UNW_EINVAL;
++    }
++    auto* context = static_cast<RemoteUnwindContext*>(arg);
++    if (context == nullptr || context->slot == nullptr) {
++        return -UNW_EINVAL;
++    }
++    const CapturedRegisters& regs = context->slot->registers;
++    switch (reg) {
++    case UNW_X86_64_RAX:
++        *value = regs.rax;
++        return 0;
++    case UNW_X86_64_RDX:
++        *value = regs.rdx;
++        return 0;
++    case UNW_X86_64_RCX:
++        *value = regs.rcx;
++        return 0;
++    case UNW_X86_64_RBX:
++        *value = regs.rbx;
++        return 0;
++    case UNW_X86_64_RSI:
++        *value = regs.rsi;
++        return 0;
++    case UNW_X86_64_RDI:
++        *value = regs.rdi;
++        return 0;
++    case UNW_X86_64_RBP:
++        *value = regs.rbp;
++        return 0;
++    case UNW_X86_64_RSP:
++    case UNW_X86_64_CFA:
++        *value = regs.rsp;
++        return 0;
++    case UNW_X86_64_R8:
++        *value = regs.r8;
++        return 0;
++    case UNW_X86_64_R9:
++        *value = regs.r9;
++        return 0;
++    case UNW_X86_64_R10:
++        *value = regs.r10;
++        return 0;
++    case UNW_X86_64_R11:
++        *value = regs.r11;
++        return 0;
++    case UNW_X86_64_R12:
++        *value = regs.r12;
++        return 0;
++    case UNW_X86_64_R13:
++        *value = regs.r13;
++        return 0;
++    case UNW_X86_64_R14:
++        *value = regs.r14;
++        return 0;
++    case UNW_X86_64_R15:
++        *value = regs.r15;
++        return 0;
++    case UNW_X86_64_RIP:
++        *value = regs.rip;
++        return 0;
++    default:
++        return -UNW_EBADREG;
++    }
++}
++
++int remote_access_fpreg(unw_addr_space_t, unw_regnum_t, unw_fpreg_t*, int, void*) {
++    return -UNW_EBADREG;
++}
++
++UnwindResult unwind_snapshot_frame_pointer(const ThreadCaptureSlot& slot, int max_frames,
++                                           const std::vector<MemoryMap>& maps) {
++    UnwindResult result;
++    result.method = "snapshot-frame-pointer";
++    if (slot.state.load(std::memory_order_acquire) != SLOT_SNAPSHOT_DONE) {
++        return result;
++    }
++    if (max_frames <= 0) {
++        return result;
++    }
++
++    if (slot.registers.rip != 0) {
++        result.frames.emplace_back(slot.registers.rip);
++    }
++    if (static_cast<int>(result.frames.size()) >= max_frames) {
++        result.truncated = true;
++        return result;
++    }
++
++    uintptr_t rbp = slot.registers.rbp;
++    if (rbp == 0) {
++        result.error_reason = "captured frame pointer is zero";
++        return result;
++    }
++    if ((rbp & (sizeof(uintptr_t) - 1)) != 0) {
++        result.error_reason = "captured frame pointer is unaligned";
++        return result;
++    }
++
++    while (static_cast<int>(result.frames.size()) < max_frames) {
++        uintptr_t next_rbp = 0;
++        uintptr_t return_address = 0;
++        if (!read_copied_stack_uintptr(slot, rbp, &next_rbp) ||
++            !read_copied_stack_uintptr(slot, rbp + sizeof(uintptr_t), &return_address)) {
++            result.error_reason = "frame pointer chain left copied stack snapshot";
++            break;
++        }
++        if (return_address == 0) {
++            break;
++        }
++        if (find_map_for_pc(maps, return_address) == nullptr) {
++            result.error_reason = "frame pointer return address is outside mapped objects";
++            break;
++        }
++        if (!result.frames.empty() && result.frames.back() == return_address) {
++            result.error_reason = "frame pointer unwind stopped on repeated PC";
++            break;
++        }
++        result.frames.emplace_back(return_address);
++
++        if (next_rbp == 0) {
++            break;
++        }
++        if (next_rbp <= rbp) {
++            result.error_reason = "frame pointer chain is not monotonic";
++            break;
++        }
++        if ((next_rbp & (sizeof(uintptr_t) - 1)) != 0) {
++            result.error_reason = "next frame pointer is unaligned";
++            break;
++        }
++        rbp = next_rbp;
++    }
++
++    result.truncated = static_cast<int>(result.frames.size()) >= max_frames;
++    if (result.error_reason.empty() && result.frames.size() == 1) {
++        result.error_reason = "frame pointer unwind stopped after the interrupted PC";
++    }
++    return result;
++}
++
++UnwindResult unwind_snapshot(unw_addr_space_t address_space, const unw_accessors_t* local_accessors,
++                             const ThreadCaptureSlot& slot, int max_frames,
++                             const std::vector<MemoryMap>& maps) {
++    UnwindResult result;
++    result.method = "libunwind-remote";
++    if (slot.state.load(std::memory_order_acquire) != SLOT_SNAPSHOT_DONE) {
++        return result;
++    }
++    if (max_frames <= 0) {
++        return result;
++    }
++
++    RemoteUnwindContext context;
++    context.slot = &slot;
++    context.maps = &maps;
++    context.local_accessors = local_accessors;
++
++    unw_cursor_t cursor;
++    int rc = unw_init_remote(&cursor, address_space, &context);
++    if (rc < 0) {
++        result.unwind_rc = rc;
++        result.error_reason = std::string("unw_init_remote failed: ") + unw_strerror(rc);
++        if (slot.registers.rip != 0) {
++            result.frames.emplace_back(slot.registers.rip);
++        }
++        return result;
++    }
++
++    uintptr_t previous_ip = 0;
++    uintptr_t previous_sp = 0;
++    while (static_cast<int64_t>(result.frames.size()) < max_frames) {
++        unw_word_t ip = 0;
++        rc = unw_get_reg(&cursor, UNW_REG_IP, &ip);
++        if (rc < 0) {
++            result.unwind_rc = rc;
++            result.error_reason = std::string("unw_get_reg(IP) failed: ") + unw_strerror(rc);
++            break;
++        }
++        if (ip == 0) {
++            break;
++        }
++
++        unw_word_t sp = 0;
++        const int sp_rc = unw_get_reg(&cursor, UNW_REG_SP, &sp);
++        if (ip == previous_ip && sp_rc >= 0 && sp == previous_sp) {
++            result.error_reason = "remote unwind stopped on repeated IP/SP";
++            break;
++        }
++        previous_ip = static_cast<uintptr_t>(ip);
++        previous_sp = sp_rc >= 0 ? static_cast<uintptr_t>(sp) : 0;
++        result.frames.emplace_back(static_cast<uintptr_t>(ip));
++
++        rc = unw_step(&cursor);
++        if (rc > 0) {
++            continue;
++        }
++        if (rc < 0) {
++            result.unwind_rc = rc;
++            if (result.error_reason.empty()) {
++                result.error_reason = std::string("unw_step failed: ") + unw_strerror(rc);
++            }
++        }
++        break;
++    }
++
++    result.truncated = static_cast<int64_t>(result.frames.size()) >= max_frames;
++    if (result.error_reason.empty() && result.frames.size() == 1) {
++        result.error_reason = "remote unwind stopped after the interrupted PC";
++    }
++    return result;
++}
++
++std::string slot_signal_method_name(const ThreadCaptureSlot& slot) {
++    switch (slot.signal_method.load(std::memory_order_acquire)) {
++    case SIGNAL_METHOD_RT_TGSIGQUEUEINFO:
++        return "rt_tgsigqueueinfo";
++    case SIGNAL_METHOD_TGKILL:
++        return "tgkill";
++    default:
++        return "";
++    }
++}
++
++std::string slot_status(const ThreadCaptureSlot& slot, const UnwindResult& unwind) {
++    switch (slot.state.load(std::memory_order_acquire)) {
++    case SLOT_SNAPSHOT_DONE:
++        return unwind.frames.empty() ? "unwind_failed" : "ok";
++    case SLOT_SIGNAL_FAILED:
++        return slot.signal_errno == ESRCH ? "exited_thread" : "signal_failed";
++    case SLOT_TIMEOUT:
++        return "timeout";
++    case SLOT_UNSUPPORTED:
++        return "unsupported_arch";
++    case SLOT_SIGNAL_BLOCKED:
++        return "signal_blocked";
++    default:
++        return "pending";
++    }
++}
++
++std::string slot_error_reason(const ThreadCaptureSlot& slot, const UnwindResult& unwind) {
++    switch (slot.state.load(std::memory_order_acquire)) {
++    case SLOT_SNAPSHOT_DONE:
++        if (!unwind.error_reason.empty()) {
++            return unwind.error_reason;
++        }
++        if (!slot.stack_bounds_valid) {
++            return "thread stack bounds unavailable; copied no stack bytes";
++        }
++        if (slot.copied_stack_bytes == 0 && slot.stack_capacity > 0) {
++            return "interrupted stack pointer was outside discovered stack bounds";
++        }
++        return "";
++    case SLOT_SIGNAL_FAILED:
++        return std::string("signal delivery failed: ") + std::strerror(slot.signal_errno);
++    case SLOT_TIMEOUT:
++        return "thread did not run native stack snapshot handler before timeout";
++    case SLOT_UNSUPPORTED:
++        return "snapshot remote unwind collector supports Linux x86_64 only";
++    case SLOT_SIGNAL_BLOCKED:
++        return "thread blocks the native stack signal";
++    default:
++        return "unexpected pending state";
++    }
++}
++
++EasyJson make_allocation_error_response(const RequestOptions& options,
++                                        std::chrono::steady_clock::time_point start,
++                                        const std::string& reason) {
++    return make_error_response("allocation_failed", options, elapsed_ms(start), reason);
++}
++
++EasyJson collect_snapshot_remote_unwind_stacks(const RequestOptions& options,
++                                               std::chrono::steady_clock::time_point start) {
+     std::vector<int64_t> tids = list_thread_ids();
+     EasyJson root;
+     if (options.target_tid.has_value() &&
+         !std::binary_search(tids.begin(), tids.end(), options.target_tid.value())) {
+-        fill_common_fields(&root, "missing_tid", options, elapsed);
++        fill_common_fields(&root, "missing_tid", options, elapsed_ms(start));
+         EasyJson threads = root.Get("threads");
+-        append_stub_thread(&threads, options.target_tid.value(), "missing_tid",
+-                           "target tid is not present in /proc/self/task");
++        append_status_thread(&threads, options.target_tid.value(), "missing_tid",
++                             "target tid is not present in /proc/self/task");
+         return root;
+     }
+ 
+-    fill_common_fields(&root, "ok", options, elapsed);
+-    EasyJson threads = root.Get("threads");
+     if (options.target_tid.has_value()) {
+-        append_stub_thread(&threads, options.target_tid.value(), "ok", "stub collector has no PCs");
+-        return root;
++        tids = {options.target_tid.value()};
++    }
++
++    const size_t stack_capacity = static_cast<size_t>(options.max_stack_bytes);
++    if (stack_capacity > 0 && !tids.empty() &&
++        stack_capacity > std::numeric_limits<size_t>::max() / tids.size()) {
++        return make_allocation_error_response(options, start,
++                                              "requested stack snapshot bytes overflow");
++    }
++    const size_t total_stack_bytes = stack_capacity * tids.size();
++
++    std::unique_ptr<ThreadCaptureSlot[]> slots;
++    std::unique_ptr<uint8_t[]> stack_storage;
++    try {
++        slots.reset(new ThreadCaptureSlot[tids.size()]);
++        if (total_stack_bytes > 0) {
++            stack_storage.reset(new uint8_t[total_stack_bytes]);
++        }
++    } catch (const std::bad_alloc&) {
++        return make_allocation_error_response(options, start,
++                                              "could not allocate stack snapshot buffers");
++    }
++
++    const int signal_number = native_stack_signal_number();
++    for (size_t i = 0; i < tids.size(); ++i) {
++        ThreadCaptureSlot& slot = slots[i];
++        slot.tid = tids[i];
++        slot.stack_capacity = stack_capacity;
++        slot.stack_copy =
++                stack_capacity == 0 ? nullptr : stack_storage.get() + (i * stack_capacity);
++        slot.stack_bounds_valid =
++                load_thread_stack_bounds(tids[i], &slot.stack_low, &slot.stack_high);
++        if (is_signal_blocked(tids[i], signal_number)) {
++            slot.state.store(SLOT_SIGNAL_BLOCKED, std::memory_order_release);
++        }
++    }
++
++    collect_thread_snapshots(slots.get(), tids.size(), options, start);
++    const std::vector<MemoryMap> maps = load_memory_maps();
++
++    unw_accessors_t accessors = *unw_get_accessors(unw_local_addr_space);
++    const unw_accessors_t* local_accessors = unw_get_accessors(unw_local_addr_space);
++    accessors.find_proc_info = remote_find_proc_info;
++    accessors.put_unwind_info = remote_put_unwind_info;
++    accessors.get_dyn_info_list_addr = remote_get_dyn_info_list_addr;
++    accessors.access_mem = remote_access_mem;
++    accessors.access_reg = remote_access_reg;
++    accessors.access_fpreg = remote_access_fpreg;
++    accessors.resume = nullptr;
++    accessors.get_proc_name = nullptr;
++    unw_addr_space_t address_space = unw_create_addr_space(&accessors, 0);
++    if (address_space != nullptr) {
++        unw_set_caching_policy(address_space, UNW_CACHE_NONE);
+     }
+ 
+-    for (int64_t tid : tids) {
+-        append_stub_thread(&threads, tid, "ok", "stub collector has no PCs");
++    std::vector<UnwindResult> unwinds(tids.size());
++    const int max_frames = static_cast<int>(std::min<int64_t>(options.max_frames, 1024));
++    for (size_t i = 0; i < tids.size(); ++i) {
++        if (address_space == nullptr) {
++            unwinds[i] = unwind_snapshot_frame_pointer(slots[i], max_frames, maps);
++            continue;
++        }
++        unwinds[i] = unwind_snapshot(address_space, local_accessors, slots[i], max_frames, maps);
++    }
++    if (address_space != nullptr) {
++        unw_destroy_addr_space(address_space);
++    }
++
++    bool any_timeout = false;
++    for (size_t i = 0; i < tids.size(); ++i) {
++        any_timeout = any_timeout || slots[i].state.load(std::memory_order_acquire) == SLOT_TIMEOUT;
++    }
++
++    fill_common_fields(&root, any_timeout ? "timeout" : "ok", options, elapsed_ms(start));
++    root["signal"] = std::string("SIGRTMIN+") + std::to_string(kNativeStackSignalOffset);
++    root["unwinder"] = address_space == nullptr ? "snapshot-frame-pointer" : "libunwind-remote";
++    root["libunwind_remote"] = address_space == nullptr ? "create_addr_space returned null" : "ok";
++
++    EasyJson threads = root.Get("threads");
++    for (size_t i = 0; i < tids.size(); ++i) {
++        ThreadCaptureSlot& slot = slots[i];
++        UnwindResult& unwind = unwinds[i];
++        EasyJson thread = threads.PushBack(EasyJson::kObject);
++        thread["tid"] = slot.tid;
++        thread["status"] = slot_status(slot, unwind);
++        thread["truncated"] = slot.stack_truncated || unwind.truncated;
++        thread["copied_stack_bytes"] = static_cast<int64_t>(slot.copied_stack_bytes);
++        thread["stack_base"] = hex_uintptr(slot.copied_stack_base);
++        const std::string signal_method = slot_signal_method_name(slot);
++        if (!signal_method.empty()) {
++            thread["signal_method"] = signal_method;
++        }
++        if (!unwind.method.empty()) {
++            thread["unwind_method"] = unwind.method;
++        }
++        const std::string error_reason = slot_error_reason(slot, unwind);
++        if (!error_reason.empty()) {
++            thread["error_reason"] = error_reason;
++        }
++        thread.Set("frames", EasyJson::kArray);
++        EasyJson frames = thread.Get("frames");
++        for (uintptr_t pc : unwind.frames) {
++            append_frame(&frames, pc, maps);
++        }
+     }
+     return root;
+ }
+@@ -257,7 +1195,17 @@ void NativeStackAction::handle(HttpRequest* req) {
+         }
+     }
+ 
+-    EasyJson response = collect_stub_stacks(options, elapsed_ms(start));
++    install_signal_handler_once();
++    if (!s_signal_installed.load(std::memory_order_acquire)) {
++        HttpChannel::send_reply(
++                req, HttpStatus::OK,
++                make_error_response("signal_handler_unavailable", options, elapsed_ms(start),
++                                    "failed to install native stack snapshot signal handler")
++                        .ToString());
++        return;
++    }
++
++    EasyJson response = collect_snapshot_remote_unwind_stacks(options, start);
+     HttpChannel::send_reply(req, HttpStatus::OK, response.ToString());
+ }
+ 
+-- 
+2.53.0
+

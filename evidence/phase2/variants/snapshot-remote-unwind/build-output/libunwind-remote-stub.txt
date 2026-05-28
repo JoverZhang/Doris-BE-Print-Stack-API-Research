@@ -1,0 +1,15 @@
+0000000000000000 D _ULx86_64_local_addr_space
+0000000000000000 T _ULx86_64_create_addr_space
+0000000000000000 T _ULx86_64_destroy_addr_space
+0000000000000000 T _ULx86_64_get_reg
+0000000000000000 T _ULx86_64_init_remote
+0000000000000000 T _ULx86_64_set_caching_policy
+0000000000000070 T _ULx86_64_step
+0000000000000560 T _ULx86_64_local_addr_space_init
+
+0000000000000000 <_ULx86_64_create_addr_space>:
+   0:	31 c0                	xor    %eax,%eax
+   2:	c3                   	retq   
+
+Lget_save_loc.o:     file format elf64-x86-64
+
