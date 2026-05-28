@@ -1,4 +1,4 @@
-From ecb5574e7a3fc400cb504fa9a846f811bf652678 Mon Sep 17 00:00:00 2001
+From 10f03cbac68fadf2027961f2b0d0389cd1bbe62a Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Thu, 28 May 2026 22:36:46 +0800
 Subject: [PATCH 1/4] [feature](be) Enable lock-free dl_iterate_phdr override
@@ -19,14 +19,32 @@ comment so reviewers can map every block back to its ClickHouse source.
 
 Reference: <ck>/base/base/phdr_cache.cpp:1-127
 ---
- be/src/common/phdr_cache.cpp | 38 ++++++++++++++++++++++++++----------
- 1 file changed, 28 insertions(+), 10 deletions(-)
+ be/src/common/phdr_cache.cpp | 49 ++++++++++++++++++++++++++++--------
+ 1 file changed, 38 insertions(+), 11 deletions(-)
 
 diff --git a/be/src/common/phdr_cache.cpp b/be/src/common/phdr_cache.cpp
-index e0f5ff43fed..b47aa7b36c2 100644
+index e0f5ff43fed..91853e70e91 100644
 --- a/be/src/common/phdr_cache.cpp
 +++ b/be/src/common/phdr_cache.cpp
-@@ -58,6 +58,9 @@ namespace {
+@@ -16,7 +16,16 @@
+ // under the License.
+ // This file is copied from
+ // https://github.com/ClickHouse/ClickHouse/blob/master/src/base/phdr_cache.cpp
+-// and modified by Doris
++// and modified by Doris.
++//
++// Reason: this is the SAME upstream-mirrored file that Doris already vendors
++// at `be/src/common/phdr_cache.{h,cpp}` (added upstream in commit
++// `96a46302e8c` -- "[fix](stacktrace) Fix Jemalloc enable profile fail to run
++// BE after rewrites dl_iterate_phdr (#22549)"). The Phase 2 ck-phdr-unwind
++// variant only re-enables the override block below; it deliberately does NOT
++// create a duplicate at `be/src/util/phdr_cache.{h,cpp}` to avoid divergence
++// with upstream Doris and with the ClickHouse source (`<ck>/base/base/phdr_cache.cpp`)
++// that both this file and the upstream Doris file already mirror.
+ 
+ #if defined(__clang__)
+ #pragma clang diagnostic ignored "-Wreserved-identifier"
+@@ -58,6 +67,9 @@ namespace {
  // https://github.com/scylladb/seastar/blob/master/core/exception_hacks.hh
  // https://github.com/scylladb/seastar/blob/master/core/exception_hacks.cc
  
@@ -36,7 +54,7 @@ index e0f5ff43fed..b47aa7b36c2 100644
  using DLIterateFunction = int (*)(int (*callback)(dl_phdr_info* info, size_t size, void* data),
                                    void* data);
  
-@@ -74,15 +77,17 @@ std::atomic<PHDRCache*> phdr_cache {};
+@@ -74,15 +86,17 @@ std::atomic<PHDRCache*> phdr_cache {};
  
  } // namespace
  
@@ -63,7 +81,7 @@ index e0f5ff43fed..b47aa7b36c2 100644
  extern "C"
  #ifndef __clang__
          [[gnu::visibility("default")]] [[gnu::externally_visible]]
-@@ -104,8 +109,10 @@ extern "C"
+@@ -104,8 +118,10 @@ extern "C"
      }
      return result;
  }
@@ -75,7 +93,7 @@ index e0f5ff43fed..b47aa7b36c2 100644
  extern "C" {
  #ifdef ADDRESS_SANITIZER
  void __lsan_ignore_object(const void*);
-@@ -114,6 +121,9 @@ void __lsan_ignore_object(const void*) {} // NOLINT
+@@ -114,6 +130,9 @@ void __lsan_ignore_object(const void*) {} // NOLINT
  #endif
  }
  
@@ -85,7 +103,7 @@ index e0f5ff43fed..b47aa7b36c2 100644
  void updatePHDRCache() {
      // Fill out ELF header cache for access without locking.
      // This assumes no dynamic object loading/unloading after this point
-@@ -135,20 +145,28 @@ void updatePHDRCache() {
+@@ -135,20 +154,28 @@ void updatePHDRCache() {
      __lsan_ignore_object(new_phdr_cache);
  }
  
