@@ -1,9 +1,0 @@
-# API symbol field check
-Files checked: api/*.json
-
-Forbidden JSON keys: function, file, line, symbol, demangled, symbol_name, function_name, file_name, line_number
-
-PASS: no forbidden symbol/function/file/line keys were found.
-
-Representative frame keys:
-["pc","dso","dso_offset"]

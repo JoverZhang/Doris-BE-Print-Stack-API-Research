@@ -6,6 +6,28 @@ Read [README.md](README.md) first. It describes the current project state.
 
 Do not read Phase 1 materials during Phase 2 work unless the user asks.
 
+## Spec and Ownership
+
+The Phase 2 spec is split by owner:
+
+- [docs/phase2-charter.md](docs/phase2-charter.md): goal and constraints.
+  Human-owned.
+- [docs/phase2-acceptance.md](docs/phase2-acceptance.md): pass/fail gates.
+  Human-owned.
+- [docs/phase2-design.md](docs/phase2-design.md): API and variant mechanics.
+  Agent-owned. Keep it in sync with the patches.
+
+Do not edit the human-owned files. If a human-owned file seems wrong, stop and
+report instead of changing it.
+
+The current goal is to prove `fp-walk` first, as the baseline. See the charter.
+
+Acceptance is by command, not by document. A variant is accepted only when its
+tests pass under the acceptance doc. The first `fp-walk` task is to add
+`be/test/service/http/native_stack_action_test.cpp` as a `tests-` patch in
+`patches/common/`, plus a `just phase2-test <target>` recipe that builds and
+runs it.
+
 ## Phase 2 Workflow
 
 Keep `patches/` as the source of truth.

@@ -27,9 +27,10 @@ the variant worktree.
 - Build image: `docker.io/apache/doris:build-env-ldb-toolchain-latest`.
 - Thirdparty dependencies are already downloaded and compiled. Do not rebuild
   thirdparty.
-- Common API patch is fixed. Do not change the route, JSON contract, auth
-  contract, busy behavior, timeout semantics, or response field names.
-- Use `evidence/phase2/evaluation-protocol.md` as the acceptance contract.
+- Common API patch is fixed. Do not change the route, JSON contract, busy
+  behavior, timeout semantics, or response field names.
+- Use [docs/phase2-acceptance.md](../../docs/phase2-acceptance.md) as the
+  acceptance contract.
 - Use `scripts/phase2_patches.sh` or the `just phase2-*` recipes for patch
   apply/diff/export operations.
 
@@ -39,7 +40,8 @@ the variant worktree.
 - `patches/<variant>/`.
 - `evidence/phase2/variants/<variant>/`.
 
-Do not edit other variants, shared API files, root decision files, or reviews.
+Do not edit other variants, shared API files, or the human-owned spec
+(`docs/phase2-charter.md` and `docs/phase2-acceptance.md`).
 If a shared issue blocks you, stop and report the exact error plus the smallest
 proposed shared fix.
 
@@ -58,6 +60,8 @@ proposed shared fix.
 
 Tracked:
 
+- the `tests-` patch in `patches/common/` and a green `just phase2-test
+  <variant>` run. This is the baseline gate.
 - `manifest.yaml`: commit SHA, patch path, image ID, build command, runtime
   command, variant-specific assumptions.
 - `commands.sh`: exact commands to reproduce build, run, and tests.

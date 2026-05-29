@@ -1,8 +1,0 @@
-# Offline Symbolization
-
-Input offsets are API dso_offset values from frames whose dso is be/output/lib/doris_be. The API response itself contains only pc/dso/dso_offset.
-
-=== 0x158e2015
-__syscall
-./be/build_Release/./be/src/glibc-compatibility/musl/x86_64/syscall.s:14:0
-

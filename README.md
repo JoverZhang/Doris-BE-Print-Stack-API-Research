@@ -15,14 +15,16 @@ Phase 2 compares four stack collection designs inside Doris:
 - Snapshot plus remote unwind from copied stack bytes.
 - Frame-pointer walking with Doris Release build flags.
 
-The current Phase 2 decision is exploratory. `fp-walk` is the lead candidate,
-but the full production matrix is not complete.
+The current goal is to prove `fp-walk` first, as the baseline, gated by tests
+that ship in the patches. The other three designs are compared only after the
+baseline passes.
 
 ## Key Files
 
 - [`AGENTS.md`](AGENTS.md): project instructions
-- [`docs/phase2-plan.md`](docs/phase2-plan.md): original Phase 2 plan
+- [`docs/phase2-charter.md`](docs/phase2-charter.md): goal and constraints (human-owned)
+- [`docs/phase2-acceptance.md`](docs/phase2-acceptance.md): pass/fail gates (human-owned)
+- [`docs/phase2-design.md`](docs/phase2-design.md): API and variant mechanics (agent-owned)
 - [`docs/writing-guidelines.md`](docs/writing-guidelines.md): project writing style
 - [`docs/patch-guidelines.md`](docs/patch-guidelines.md): patch layout rules
-- [`evidence/phase2/evaluation-protocol.md`](evidence/phase2/evaluation-protocol.md): next-run gates
-- [`evidence/phase2/decision.md`](evidence/phase2/decision.md): attempt-1 decision
+- [`evidence/phase2/subagent-brief-template.md`](evidence/phase2/subagent-brief-template.md): per-variant dispatch brief

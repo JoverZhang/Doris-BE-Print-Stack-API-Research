@@ -1,4 +1,0 @@
-# Patch check
-Base: phase2/common-api @ 055bb465015fa6bcd61f9e33f352de78475fcc2e
-055bb465015fa6bcd61f9e33f352de78475fcc2e
-PASS: patch applies cleanly to common API worktree.
