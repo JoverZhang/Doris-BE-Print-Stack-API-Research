@@ -80,7 +80,7 @@ Examples:
 If there is no reference source, explain the local reason:
 
 ```cpp
-// Reason: tracks one in-flight dump so concurrent HTTP requests return busy.
+// Reason: a timed_mutex allows one in-flight dump; a contended request returns timeout.
 ```
 
 If a function has several core steps, add a numbered comment before each step.

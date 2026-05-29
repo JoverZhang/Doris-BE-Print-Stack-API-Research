@@ -25,6 +25,7 @@ baseline passes.
 - [`docs/phase2-charter.md`](docs/phase2-charter.md): goal and constraints (human-owned)
 - [`docs/phase2-acceptance.md`](docs/phase2-acceptance.md): pass/fail gates (human-owned)
 - [`docs/phase2-design.md`](docs/phase2-design.md): API and variant mechanics (agent-owned)
+- [`docs/phase2-test-plan.md`](docs/phase2-test-plan.md): acceptance checks as concrete tests (agent-owned)
 - [`docs/writing-guidelines.md`](docs/writing-guidelines.md): project writing style
 - [`docs/patch-guidelines.md`](docs/patch-guidelines.md): patch layout rules
 - [`evidence/phase2/subagent-brief-template.md`](evidence/phase2/subagent-brief-template.md): per-variant dispatch brief

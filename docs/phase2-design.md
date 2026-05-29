@@ -4,7 +4,8 @@
 > Follow [writing-guidelines.md](writing-guidelines.md) when you edit this file.
 > This file explains how the API and the variants work. The goal and the gates
 > live in [phase2-charter.md](phase2-charter.md) and
-> [phase2-acceptance.md](phase2-acceptance.md).
+> [phase2-acceptance.md](phase2-acceptance.md). The concrete tests live in
+> [phase2-test-plan.md](phase2-test-plan.md).
 
 ## Design Space
 
@@ -68,28 +69,47 @@ Response shape:
   failure.
 - Per frame: raw `pc`, `dso`, and `dso_offset`. No symbol fields.
 
-Statuses: `ok`, `busy`, `timeout`, `missing_tid`, `bad_request`, plus
-variant-specific states such as `signal_blocked`.
+Statuses: `ok`, `partial`, `timeout`, `missing_tid`, `bad_request`, plus
+variant-specific states such as `signal_blocked`. `partial` means some threads
+returned frames and others did not; per-thread status carries the detail.
 
 Mechanics:
 
-- `ScopedDumpSlot` tracks one in-flight dump, so a second request returns `busy`.
+- A `std::timed_mutex` allows one in-flight dump. A second request waits up to
+  its `timeout_ms`; if it cannot acquire the lock in time, it returns `timeout`.
+  Charter: "one active dump at a time". CK blocks, OB spins; we bound the wait.
 - Thread ids come from `/proc/self/task`. The collector works in-process, so a
   test binary can dump its own threads.
-- Collection is a free function, separate from the HTTP handler, so tests call
-  it directly without forging an `HttpRequest`.
+- Collection is a free function in three steps: `collect()` returns raw PCs,
+  `resolve_dsos()` adds `dso` and `dso_offset` from `/proc/self/maps`, and
+  `serialize()` writes the JSON. `collect()` is the only per-variant step. Tests
+  call all three directly, without forging an `HttpRequest`.
 
-The common patch ships a stub collector that returns the JSON shape with no PCs.
-Its timeout is faked by a test-only sleep hook. Real collection lives in each
-variant patch.
+The common patch ships a stub `collect()` that returns the shape with no PCs.
+Real collection lives in each variant patch. A test-only hook marks a target tid
+unresponsive, so the timeout and partial paths are testable without real
+signaling.
 
 ## Variant Mechanics
 
 ### fp-walk
 
-- Signal: `SIGRTMIN + 6`.
-- The handler reads RIP and RBP from `ucontext_t`, then walks the frame chain
-  into preallocated per-thread storage. Bounded by `max_frames`.
+- Signal: `SIGRTMIN + 6`, queued with `SI_QUEUE` so the handler can read the
+  request token.
+- Collection is sequential. The coordinator signals one thread, waits for it on
+  a single global capture slot, then moves to the next. This bounds queued
+  signals and keeps the slot model simple.
+  Reference: CK signals one thread at a time for the same reason,
+  `<ck>/src/Storages/System/StorageSystemStackTrace.cpp:381-384`.
+- A monotonic sequence number rides in the signal payload. The handler writes to
+  the slot only if the payload matches the current request, so a late handler
+  from a finished dump drops its result. This closes the late-responder window.
+  Reference: `<ck>/src/Storages/System/StorageSystemStackTrace.cpp:131-134,499-506`.
+- The handler reads RIP and RBP from `ucontext_t`, walks the frame chain into the
+  global slot, bounded by `max_frames`, then restores `errno`. It ignores any
+  signal whose sender is not this process.
+  Reference: errno save/restore and the `si_pid` sender check,
+  `<ck>/src/Storages/System/StorageSystemStackTrace.cpp:123,128-129,180`.
 - Threads that block the signal are reported as `signal_blocked`, not as
   timeouts.
 - Needs `-fno-omit-frame-pointer`. The research summary finds Doris already
@@ -112,6 +132,13 @@ variant patch.
 
 - OceanBase-style two-phase flow: the request thread signals targets, then a
   coordinator collects the results.
+- In OceanBase the target thread hangs in its handler while the coordinator
+  runs, then is told to exit. A per-request `req_id` rides in the signal payload.
+  Reference: `<ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:280-347`.
+- Optimization to evaluate: a single-phase flow. The handler captures and returns
+  at once; the coordinator reads the slot after the handler exits, so the worker
+  never hangs. OceanBase's two-phase ack is the reference; single-phase is the
+  variant we test.
 - Patch citations: `<ob>/deps/oblib/src/lib/signal/ob_signal_*.cpp`.
 - Open risk: the coordinator may pause workers while it resolves DSO offsets.
 

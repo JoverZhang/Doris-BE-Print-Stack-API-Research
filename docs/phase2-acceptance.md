@@ -42,8 +42,11 @@ Contract checks:
 
 - All-thread dump returns the agreed JSON shape.
 - One-TID dump returns only the target TID.
-- A second concurrent dump returns `busy`.
-- A low timeout returns the `timeout` status; the process stays healthy.
+- Two concurrent dumps serialize: the second waits, then both finish, and
+  neither corrupts the other. A dump that cannot start within its `timeout_ms`
+  returns `timeout`.
+- A low timeout returns best-effort partial results: the threads that responded
+  carry frames, the rest are marked `timeout`, and the process stays healthy.
 - A missing TID returns the `missing_tid` status.
 - Every frame has raw `pc`, `dso`, and `dso_offset`.
 - No response has a function name, file name, line number, or demangled name.
@@ -58,6 +61,8 @@ Correctness checks, in-process:
 Stability check:
 
 - A dump loop of N iterations causes no crash, no deadlock, and no stuck thread.
+- A thread that runs the handler after the deadline does not corrupt a later
+  dump. The stale response is dropped.
 
 ## Tier 2: Compatibility
 

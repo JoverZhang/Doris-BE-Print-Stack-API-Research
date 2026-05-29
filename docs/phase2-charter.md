@@ -59,10 +59,22 @@ The debug API is the same for every variant.
 - Returns raw PCs and DSO offsets only.
 - Returns no function names, file names, line numbers, or demangled names.
 - Supports all threads by default, or one thread by TID.
-- Allows one active dump at a time; returns `busy` otherwise.
+- Allows one active dump at a time. A second request waits up to its
+  `timeout_ms` for the active dump to finish. If it cannot start in time, it
+  returns `timeout`.
 - Targets Linux x86_64 Release builds.
 
 Defaults: timeout `100ms`, max frames `64`, max copied stack bytes `8KiB`.
+
+`timeout_ms` is the budget for the whole request, not for one thread. Collection
+is sequential, so an all-thread dump may not reach every thread inside the
+budget. The dump returns best effort: it reports the threads it collected, marks
+the rest `timeout`, and keeps the process healthy. One slow thread does not fail
+the whole dump.
+
+For each frame, `dso_offset` is the value offline tools resolve. The raw `pc` is
+a runtime address for in-process correlation only; it does not survive across
+runs.
 
 Only offline tools may add symbols, file names, and line numbers.
 
