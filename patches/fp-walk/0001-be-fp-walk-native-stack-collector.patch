@@ -1,4 +1,4 @@
-From 5ef3d2e749cf0c220d662e49f7807f00cac5ae7f Mon Sep 17 00:00:00 2001
+From d58102c3ae5bcb938e336d087e9d78ad41e3921a Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 13:38:42 +0800
 Subject: [PATCH] (be) fp-walk native stack collector
@@ -18,14 +18,14 @@ dl_iterate_phdr, so it never collides with the jemalloc allocator path.
 Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk";
 <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
 ---
- .../http/action/native_stack_collect.cpp      | 512 +++++++++++++++++-
- 1 file changed, 493 insertions(+), 19 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 546 +++++++++++++++++-
+ 1 file changed, 522 insertions(+), 24 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index 5fd53e33b4f..af680b9cdad 100644
+index d8cc72ae33b..dec4c63f17a 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,41 +15,515 @@
+@@ -15,48 +15,546 @@
  // specific language governing permissions and limitations
  // under the License.
  
@@ -179,6 +179,15 @@ index 5fd53e33b4f..af680b9cdad 100644
 +// Local: fp-walk-specific cache for the junk-RBP guard.
 +std::atomic<long> g_page_size {0};
 +
++// Reason: test-only hook. When the handler enters and the running
++// thread's tid matches this value, the handler busy-waits in WALKING
++// until the value is cleared. The
++// LateHandlerCannotCorruptNextDumpUnderLoad case uses this to hold one
++// slot in WALKING deterministically, so the per-sequence ring's CAS
++// rejection is exercised by subsequent arms.
++// Local: test hook; cleared by `pause_handler_for_tid_for_test(0)`.
++std::atomic<int64_t> g_pause_handler_for_tid {0};
++
 +CaptureSlot& slot_for_seq(uint64_t seq) {
 +    return g_slots[(seq - 1) % kSlotRingSize];
 +}
@@ -320,6 +329,21 @@ index 5fd53e33b4f..af680b9cdad 100644
 +                                            std::memory_order_acq_rel)) {
 +        errno = saved_errno;
 +        return;
++    }
++    // 3a. Test hook: pause this handler in WALKING if its tid matches
++    //     the requested pause-tid. Atomic load is signal-safe. The
++    //     LateHandlerCannotCorruptNextDumpUnderLoad case uses this to
++    //     hold the slot so subsequent arms exercise the ring's CAS
++    //     rejection. The check costs one atomic load when no test is
++    //     pausing; the cost is acceptable for the safety it unlocks.
++    const int64_t pause_tid = g_pause_handler_for_tid.load(std::memory_order_acquire);
++    if (pause_tid != 0) {
++        const int64_t self_tid = static_cast<int64_t>(syscall(SYS_gettid));
++        if (self_tid == pause_tid) {
++            while (g_pause_handler_for_tid.load(std::memory_order_acquire) == pause_tid) {
++                // Busy-wait; the test clears the flag from another thread.
++            }
++        }
 +    }
 +
 +    const int64_t start_ns = monotonic_ns();
@@ -558,6 +582,18 @@ index 5fd53e33b4f..af680b9cdad 100644
 +bool rbp_can_read_for_test(uintptr_t initial_rbp, uintptr_t rbp, uintptr_t max_stack_bytes) {
 +    return rbp_can_read(initial_rbp, rbp, max_stack_bytes);
  }
+ 
+-// Reason: stub side of the fp-walk handler-pause hook. The stub has no
+-// signal handler to pause; the late-handler corruption test gates on
+-// `collector_is_stub()` and skips, so this no-op only exists to keep
+-// the test file linkable on the common build.
++// Reason: fp-walk side of the handler-pause hook. Sets the tid the
++// handler matches against in its busy-wait loop. Pass 0 to release.
+ // Local: test hook.
+-void pause_handler_for_tid_for_test(int64_t /*tid*/) {}
++void pause_handler_for_tid_for_test(int64_t tid) {
++    g_pause_handler_for_tid.store(tid, std::memory_order_release);
++}
  
  } // namespace doris::native_stack
 -- 

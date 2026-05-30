@@ -1,4 +1,4 @@
-From 9d216232c3c62865e200227d6d61d791d71518bd Mon Sep 17 00:00:00 2001
+From 9929ae3e951ca0aea350a0349e2c803deff66ffb Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:05 +0800
 Subject: [PATCH 1/5] (be) add native stack collector API and orchestration
@@ -12,8 +12,8 @@ hooks. The per-variant collect step lives in a separate file.
 Reference: docs/phase2-design.md "Common API".
 ---
  be/src/service/http/action/native_stack.cpp | 436 ++++++++++++++++++++
- be/src/service/http/action/native_stack.h   | 153 +++++++
- 2 files changed, 589 insertions(+)
+ be/src/service/http/action/native_stack.h   | 162 ++++++++
+ 2 files changed, 598 insertions(+)
  create mode 100644 be/src/service/http/action/native_stack.cpp
  create mode 100644 be/src/service/http/action/native_stack.h
 
@@ -461,10 +461,10 @@ index 00000000000..a6a0cae3920
 +} // namespace doris::native_stack
 diff --git a/be/src/service/http/action/native_stack.h b/be/src/service/http/action/native_stack.h
 new file mode 100644
-index 00000000000..094dd248e73
+index 00000000000..a3764713987
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack.h
-@@ -0,0 +1,153 @@
+@@ -0,0 +1,162 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -616,6 +616,15 @@ index 00000000000..094dd248e73
 +// clear.
 +// Spec: docs/phase2-test-plan.md "Test-only hooks in common".
 +void consume_deadline_budget_for_test(int64_t ms);
++
++// Reason: any fp-walk signal handler whose self tid equals `tid`
++// busy-waits in WALKING after claiming its slot, until the flag is
++// cleared. Lets a test deterministically hold one slot in WALKING to
++// exercise the per-sequence ring's CAS rejection
++// (LateHandlerCannotCorruptNextDumpUnderLoad). Pass 0 to clear. The
++// common stub implements this as a no-op.
++// Spec: docs/phase2-test-plan.md "Test-only hooks in common".
++void pause_handler_for_tid_for_test(int64_t tid);
 +
 +} // namespace doris::native_stack
 -- 

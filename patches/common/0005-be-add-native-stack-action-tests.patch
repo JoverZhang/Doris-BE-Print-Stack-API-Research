@@ -1,4 +1,4 @@
-From 79bd2c5df3a362d5d9537e5536419de2ea559c54 Mon Sep 17 00:00:00 2001
+From d4872c5927fd5cc83de6b88ef3a601b6a016cde9 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
 Subject: [PATCH 5/5] (be) add native stack action tests
@@ -9,16 +9,16 @@ cases (Schema, ShapeOneTid, MissingTid, BadRequest, ContendedDumpReturnsTimeout,
 Timeout, DumpLoopNoCrashNoStuck) run on the stub; correctness and boundary cases
 skip unless a real collector is linked.
 ---
- .../service/http/native_stack_action_test.cpp | 1100 +++++++++++++++++
- 1 file changed, 1100 insertions(+)
+ .../service/http/native_stack_action_test.cpp | 1064 +++++++++++++++++
+ 1 file changed, 1064 insertions(+)
  create mode 100644 be/test/service/http/native_stack_action_test.cpp
 
 diff --git a/be/test/service/http/native_stack_action_test.cpp b/be/test/service/http/native_stack_action_test.cpp
 new file mode 100644
-index 00000000000..84526d6b2f8
+index 00000000000..9f117361650
 --- /dev/null
 +++ b/be/test/service/http/native_stack_action_test.cpp
-@@ -0,0 +1,1100 @@
+@@ -0,0 +1,1064 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -368,7 +368,11 @@ index 00000000000..84526d6b2f8
 +
 +class NativeStackActionTest : public ::testing::Test {
 +protected:
-+    void TearDown() override { set_unresponsive_tid_for_test(0); }
++    void TearDown() override {
++        set_unresponsive_tid_for_test(0);
++        consume_deadline_budget_for_test(0);
++        pause_handler_for_tid_for_test(0);
++    }
 +};
 +
 +// Reason: [case 1] catches drift in the JSON contract. Required root and
@@ -814,75 +818,6 @@ index 00000000000..84526d6b2f8
 +    EXPECT_LT(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), 60);
 +}
 +
-+namespace {
-+
-+// Reason: a worker that starts with the collector signal blocked, exposes
-+// `release()` to unblock the mask, and lingers briefly so any signal
-+// already queued during the blocked window is delivered while the thread
-+// still exists. Case 15 uses this to bait a real late handler.
-+// Local: test-only fixture for case 15.
-+class BlockedReleasable {
-+public:
-+    BlockedReleasable() {
-+        _thread = std::thread([this] {
-+            sigset_t set;
-+            sigemptyset(&set);
-+            sigaddset(&set, native_stack_signal());
-+            pthread_sigmask(SIG_BLOCK, &set, nullptr);
-+            _tid.store(self_tid(), std::memory_order_release);
-+            {
-+                std::unique_lock<std::mutex> lock(_mutex);
-+                _cv.wait(lock, [this] { return _release; });
-+            }
-+            pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
-+            // Linger so a queued late signal is delivered to this tid
-+            // before the thread exits.
-+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-+            {
-+                std::unique_lock<std::mutex> lock(_mutex);
-+                _cv.wait(lock, [this] { return _stop; });
-+            }
-+        });
-+        while (_tid.load(std::memory_order_acquire) == 0) {
-+            std::this_thread::yield();
-+        }
-+    }
-+    BlockedReleasable(const BlockedReleasable&) = delete;
-+    BlockedReleasable& operator=(const BlockedReleasable&) = delete;
-+    ~BlockedReleasable() {
-+        {
-+            std::lock_guard<std::mutex> lock(_mutex);
-+            _release = true;
-+            _stop = true;
-+        }
-+        _cv.notify_all();
-+        if (_thread.joinable()) {
-+            _thread.join();
-+        }
-+    }
-+    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
-+    void release() {
-+        {
-+            std::lock_guard<std::mutex> lock(_mutex);
-+            _release = true;
-+        }
-+        _cv.notify_all();
-+        // Wait for the worker to unblock its mask before returning, so the
-+        // caller knows the queued signal can now be delivered.
-+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-+    }
-+
-+private:
-+    std::thread _thread;
-+    std::atomic<int64_t> _tid {0};
-+    std::mutex _mutex;
-+    std::condition_variable _cv;
-+    bool _release = false;
-+    bool _stop = false;
-+};
-+
-+} // namespace
-+
 +// Reason: [case 14] the RBP safety check refuses to dereference an RBP
 +// that lies outside the `[initial_rbp, initial_rbp + max_stack_bytes)`
 +// window or is misaligned. This is the precondition that stops the
@@ -919,52 +854,54 @@ index 00000000000..84526d6b2f8
 +    EXPECT_TRUE(rbp_can_read_for_test(kAnchor, kAnchor, kCap));
 +}
 +
-+// Reason: [case 15] under load, a delayed handler from a finished dump
-+// must not corrupt the frames returned by subsequent dumps. The
-+// per-sequence slot ring is what closes this hazard. Tier 1 is
-+// best-effort: the race is timing-dependent, so the test loops many
-+// dumps and asserts every iteration's frames match the marker chain's
-+// recorded return addresses. `slot_busy` outcomes are allowed (they
-+// mean the safety check refused to reuse a slot still held by a late
-+// handler); corrupted frames are not. Deterministic detection of the
-+// underlying race is the TSan deepening under Tier 2.
++// Reason: [case 15] the per-sequence slot ring rejects a coordinator
++// arming a slot whose handler is still mid-walk. The test hook
++// `pause_handler_for_tid_for_test(bait.tid())` pins one handler in
++// WALKING; subsequent arms that map to the same ring slot must report
++// `slot_busy`, arms that map to other ring slots must succeed and
++// produce uncorrupted frames. Releasing the pause must drain the slot
++// so every ring entry is reusable. Deterministic detection of the
++// underlying data race (without the pause hook) is the TSan deepening
++// under Tier 2.
 +// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #15 LateHandlerCannotCorruptNextDumpUnderLoad.
 +TEST_F(NativeStackActionTest, LateHandlerCannotCorruptNextDumpUnderLoad) {
 +    if (collector_is_stub()) {
 +        GTEST_SKIP();
 +    }
 +
-+    // 1. Bait the late-handler path: dump a thread that blocks the
-+    //    collector signal with a short timeout, then unblock so the
-+    //    queued signal is delivered while we run subsequent dumps.
-+    BlockedReleasable bait;
++    // 1. A parked worker we can signal. After step 2 its handler will
++    //    sit in WALKING until step 5 clears the pause flag.
++    ParkedThread bait;
++    pause_handler_for_tid_for_test(bait.tid());
++
++    // 2. Dump bait. The handler enters, CASes its slot to WALKING, then
++    //    busy-waits on the pause flag. The coordinator times out after
++    //    `timeout_ms`, drains briefly, and reports `timeout`. The slot
++    //    is leaked to that paused handler.
 +    {
 +        CollectOptions opts;
 +        opts.target_tid = bait.tid();
 +        opts.timeout_ms = 50;
 +        NativeStackReport bait_report = collect_native_stacks(opts);
 +        ASSERT_EQ(bait_report.threads.size(), 1U);
-+        // The bait thread blocks the signal, so the per-thread status
-+        // is signal_blocked rather than timeout; either is acceptable
-+        // for setup, but signal_blocked is what fp-walk reports.
-+        EXPECT_TRUE(bait_report.threads[0].status == "signal_blocked" ||
-+                    bait_report.threads[0].status == "timeout")
-+                << "unexpected bait status: " << bait_report.threads[0].status;
++        ASSERT_EQ(bait_report.threads[0].status, "timeout")
++                << "expected the paused handler to time out the coordinator";
 +    }
-+    bait.release();
 +
-+    // 2. Drive many dumps of a known-PC marker chain. Each `ok` dump
-+    //    must contain the chain's recorded return addresses as a
-+    //    contiguous subsequence in caller order. If the late handler
-+    //    corrupts a slot, the subsequence will diverge or vanish.
++    // 3. Cycle a known-PC marker chain through enough arms to wrap the
++    //    ring at least once. With kSlotRingSize=4 every fourth arm
++    //    targets the same slot as the bait, which is still WALKING; the
++    //    coordinator's CAS IDLE->PENDING fails and the arm reports
++    //    `slot_busy`. Other arms hit free slots and complete normally;
++    //    those frames must match the marker chain unchanged.
 +    MarkerChain chain;
 +    const std::vector<uintptr_t>& returns = chain.returns();
 +    ASSERT_EQ(returns.size(), 4U);
-+    constexpr int kIterations = 64;
-+    int corrupted = 0;
++    constexpr int kArmsDuringPause = 12;
 +    int slot_busy = 0;
 +    int ok = 0;
-+    for (int i = 0; i < kIterations; ++i) {
++    int corrupted = 0;
++    for (int i = 0; i < kArmsDuringPause; ++i) {
 +        CollectOptions opts;
 +        opts.target_tid = chain.tid();
 +        NativeStackReport report = collect_native_stacks(opts);
@@ -975,8 +912,6 @@ index 00000000000..84526d6b2f8
 +            continue;
 +        }
 +        if (thread.status != "ok") {
-+            // Any other status (timeout, signal_failed) indicates a
-+            // setup problem, not corruption; tolerate but record.
 +            continue;
 +        }
 +        std::vector<uintptr_t> pcs;
@@ -1005,12 +940,41 @@ index 00000000000..84526d6b2f8
 +        }
 +    }
 +
-+    // 3. No iteration produced corrupted frames. slot_busy is acceptable
-+    //    (the safety check refused to reuse a slot still held by a late
-+    //    handler); corruption is not.
-+    EXPECT_EQ(corrupted, 0) << corrupted << "/" << kIterations
-+                            << " iterations had corrupted frames; " << slot_busy
-+                            << " slot_busy; " << ok << " ok";
++    // 4. The CAS rejection fired (proves the ring's safety contract)
++    //    and the free slots served clean dumps (proves no cross-slot
++    //    corruption). 12 arms wraps the 4-slot ring three times, so we
++    //    expect roughly 3 `slot_busy` and 9 `ok`.
++    EXPECT_GT(slot_busy, 0)
++            << "no `slot_busy` observed; the per-sequence ring's CAS "
++               "rejection never fired";
++    EXPECT_GT(ok, 0) << "no clean `ok` dumps; non-bait slots failed";
++    EXPECT_EQ(corrupted, 0) << corrupted << "/" << kArmsDuringPause
++                            << " iterations had corrupted frames";
++
++    // 5. Release the paused handler. It exits the busy-wait, walks (or
++    //    short-circuits if its initial RBP no longer validates), then
++    //    sees `seq != expected_seq` at the re-check and transitions
++    //    WALKING -> IDLE. Give it a small grace period to do so.
++    pause_handler_for_tid_for_test(0);
++    std::this_thread::sleep_for(std::chrono::milliseconds(20));
++
++    // 6. With every slot reclaimable, a follow-up loop of marker-chain
++    //    dumps must produce no `slot_busy` results.
++    int after_busy = 0;
++    int after_ok = 0;
++    for (int i = 0; i < 8; ++i) {
++        CollectOptions opts;
++        opts.target_tid = chain.tid();
++        NativeStackReport report = collect_native_stacks(opts);
++        ASSERT_EQ(report.threads.size(), 1U);
++        if (report.threads[0].status == "slot_busy") {
++            ++after_busy;
++        } else if (report.threads[0].status == "ok") {
++            ++after_ok;
++        }
++    }
++    EXPECT_EQ(after_busy, 0) << "slot remained busy after the paused handler was released";
++    EXPECT_GT(after_ok, 0) << "no `ok` dumps after release";
 +}
 +
 +// Reason: [case 16] when `run_collection` enters its per-thread loop
