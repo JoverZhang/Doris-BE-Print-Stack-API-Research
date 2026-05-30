@@ -1,0 +1,330 @@
+From 88bfc2896eec5e5b62139eb5e7d906e88d03efbf Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Sat, 30 May 2026 13:38:42 +0800
+Subject: [PATCH] [feature](be) fp-walk native stack collector
+
+Rewrite the stub collect step as the real frame-pointer walk: interrupt each
+target thread with SIGRTMIN+6 queued via SI_QUEUE carrying a per-request
+sequence token, walk RIP/RBP from the ucontext into a single never-freed global
+slot bounded by max_frames and max_stack_bytes, then let the shared
+run_collection resolve DSOs and report signal_blocked / timeout / partial.
+
+The handler validates the sender (si_pid) and the token on entry and re-checks
+the token before publishing, so a late handler from a finished dump drops its
+result. The single global slot plus the token close attempt-1's use-after-free
+and late-responder windows. fp-walk uses no libunwind and overrides no
+dl_iterate_phdr, so it never collides with the jemalloc allocator path.
+
+Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk";
+<ck>/src/Storages/System/StorageSystemStackTrace.cpp.
+---
+ .../http/action/native_stack_collect.cpp      | 281 +++++++++++++++++-
+ 1 file changed, 270 insertions(+), 11 deletions(-)
+
+diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
+index deb904498ee..6b757699710 100644
+--- a/be/src/service/http/action/native_stack_collect.cpp
++++ b/be/src/service/http/action/native_stack_collect.cpp
+@@ -15,29 +15,288 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++#include <glog/logging.h>
++#include <signal.h>
++#include <sys/syscall.h>
++#include <sys/types.h>
++#include <time.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <atomic>
++#include <cerrno>
+ #include <chrono>
++#include <cstdint>
++#include <cstring>
++#include <fstream>
++#include <mutex>
++#include <sstream>
++#include <string>
++#include <thread>
+ 
+ #include "service/http/action/native_stack.h"
+ 
+-// The per-variant collect step. The common build ships this stub; each variant
+-// patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file with its real
+-// collector, while every other file in the seam stays put.
+-// Reference: docs/phase2-design.md "Common API" -> stub collect().
++// The fp-walk collect step: interrupt each target thread with a realtime signal
++// and walk its RBP chain in the handler. fp-walk runs no libunwind and overrides
++// no dl_iterate_phdr, so the allocator path never collides with the handler.
++// This file is the only one the fp-walk patch rewrites; the rest of the seam is
++// shared with every variant.
++// Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk".
+ namespace doris::native_stack {
+ namespace {
+ 
+-// Reason: the stub proves the response shape and the single-dump gate without
+-// real signaling -- every live thread reports `ok` with no frames. run_collection
+-// owns the gate, tid selection, and aggregation, so the stub only fills status.
+-void stub_capture(int64_t /*tid*/, const CollectOptions& /*opts*/,
+-                  std::chrono::steady_clock::time_point /*deadline*/, ThreadStack* out) {
+-    out->status = "ok";
++constexpr int kMaxSignalFrames = 1024;
++
++// Reason: SIGRTMIN+6 is queued with SI_QUEUE so the handler can read a request
++// token; realtime signals queue rather than coalesce.
++// Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk".
++int native_stack_signal_number() {
++    return SIGRTMIN + 6;
++}
++
++// Reason: async-signal-safe monotonic clock for per-thread handler timing.
++int64_t monotonic_ns() {
++    timespec ts {};
++    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
++        return 0;
++    }
++    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + static_cast<int64_t>(ts.tv_nsec);
++}
++
++enum SlotState : int { SLOT_IDLE = 0, SLOT_PENDING = 1, SLOT_DONE = 2 };
++
++// Reason: a single never-freed global capture slot. Collection is sequential --
++// run_collection drives one capture (hence one in-flight signal) at a time -- so
++// one slot suffices and there is no lifetime hazard: the slot outlives every
++// handler, unlike a stack-local session pointer.
++// Reference: CK signals one thread at a time,
++// <ck>/src/Storages/System/StorageSystemStackTrace.cpp:381-384.
++struct CaptureSlot {
++    std::atomic<uint64_t> expected_seq {0}; // a handler writes only on a token match
++    std::atomic<int> state {SLOT_IDLE};
++    int max_frames = 0;
++    uintptr_t max_stack_bytes = 0;
++    uintptr_t frames[kMaxSignalFrames] {};
++    int frame_count = 0;
++    bool truncated = false;
++    std::atomic<int64_t> handler_ns {0};
++};
++
++CaptureSlot g_slot;
++std::atomic<uint64_t> g_seq {0};
++std::once_flag g_install_once;
++std::atomic<bool> g_installed {false};
++
++bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size()) {
++            return false;
++        }
++        *parsed = static_cast<uint64_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
++// Reason: a thread that blocks the collector signal is reported as
++// `signal_blocked`, not as a timeout. Read its SigBlk mask from /proc.
++bool is_signal_blocked(int64_t tid, int signal_number) {
++    if (signal_number <= 0 || signal_number > 64) {
++        return false;
++    }
++    std::ifstream status("/proc/self/task/" + std::to_string(tid) + "/status");
++    std::string line;
++    while (std::getline(status, line)) {
++        constexpr char kSigBlkPrefix[] = "SigBlk:";
++        if (line.rfind(kSigBlkPrefix, 0) != 0) {
++            continue;
++        }
++        std::istringstream iss(line.substr(sizeof(kSigBlkPrefix) - 1));
++        std::string hex_mask;
++        if (!(iss >> hex_mask)) {
++            return false;
++        }
++        uint64_t mask = 0;
++        if (!parse_hex_u64(hex_mask, &mask)) {
++            return false;
++        }
++        return (mask & (uint64_t {1} << (signal_number - 1))) != 0;
++    }
++    return false;
++}
++
++// Reason: bound every RBP read to the interrupted thread's own stack window and
++// keep it aligned, so a corrupt or hostile chain cannot read arbitrary memory.
++bool rbp_can_read(uintptr_t initial_rbp, uintptr_t rbp, uintptr_t max_stack_bytes) {
++    constexpr uintptr_t kReadBytes = static_cast<uintptr_t>(2U * sizeof(uintptr_t));
++    if (initial_rbp == 0 || rbp < initial_rbp || max_stack_bytes < kReadBytes) {
++        return false;
++    }
++    if (rbp - initial_rbp > max_stack_bytes - kReadBytes) {
++        return false;
++    }
++    return rbp % alignof(uintptr_t) == 0;
++}
++
++// Reason: the realtime-signal handler. It validates the sender and the request
++// token, walks the RBP chain into the global slot, records handler time, and
++// restores errno. A late handler from a finished dump fails the token check and
++// drops its result, which closes the late-responder window.
++// Reference: errno save/restore, si_pid sender check, and the request token,
++// <ck>/src/Storages/System/StorageSystemStackTrace.cpp:123,128-129,131-134,180,499-506.
++void native_stack_signal_handler(int /*sig*/, siginfo_t* info, void* raw_context) {
++    const int saved_errno = errno;
++
++    // 1. Ignore any signal this process did not queue for a dump.
++    if (info == nullptr || info->si_code != SI_QUEUE || info->si_pid != getpid()) {
++        errno = saved_errno;
++        return;
++    }
++    // 2. Drop a handler whose request token no longer matches the live dump.
++    const uint64_t seq = reinterpret_cast<uintptr_t>(info->si_value.sival_ptr);
++    if (seq != g_slot.expected_seq.load(std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++
++    const int64_t start_ns = monotonic_ns();
++#if defined(__x86_64__)
++    auto* context = static_cast<ucontext_t*>(raw_context);
++    uintptr_t pc = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RIP]);
++    uintptr_t rbp = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RBP]);
++    const uintptr_t initial_rbp = rbp;
++    const int max_frames = g_slot.max_frames;
++    const uintptr_t max_stack_bytes = g_slot.max_stack_bytes;
++
++    int n = 0;
++    // 3. The interrupted instruction pointer is frame 0.
++    if (pc != 0 && n < max_frames) {
++        g_slot.frames[n++] = pc;
++    }
++    // 4. Walk the saved-RBP chain: [rbp] is the caller's rbp, [rbp+8] its return pc.
++    while (n < max_frames && rbp_can_read(initial_rbp, rbp, max_stack_bytes)) {
++        const uintptr_t next_rbp = *reinterpret_cast<const uintptr_t*>(rbp);
++        const uintptr_t ret = *reinterpret_cast<const uintptr_t*>(rbp + sizeof(uintptr_t));
++        if (ret != 0) {
++            g_slot.frames[n++] = ret;
++        }
++        if (next_rbp <= rbp || !rbp_can_read(initial_rbp, next_rbp, max_stack_bytes)) {
++            break;
++        }
++        rbp = next_rbp;
++    }
++    g_slot.frame_count = n;
++    g_slot.truncated = n >= max_frames && rbp_can_read(initial_rbp, rbp, max_stack_bytes);
++#else
++    g_slot.frame_count = 0;
++#endif
++    const int64_t end_ns = monotonic_ns();
++    if (start_ns > 0 && end_ns >= start_ns) {
++        g_slot.handler_ns.store(end_ns - start_ns, std::memory_order_relaxed);
++    }
++
++    // 5. Re-check the token before publishing: if the dump moved on while we
++    //    walked, drop the result so it never lands in the next dump's slot.
++    if (seq == g_slot.expected_seq.load(std::memory_order_acquire)) {
++        g_slot.state.store(SLOT_DONE, std::memory_order_release);
++    }
++    errno = saved_errno;
++}
++
++void install_handler_once() {
++    std::call_once(g_install_once, [] {
++        struct sigaction action {};
++        sigemptyset(&action.sa_mask);
++        action.sa_sigaction = native_stack_signal_handler;
++        action.sa_flags = SA_SIGINFO | SA_RESTART;
++        if (sigaction(native_stack_signal_number(), &action, nullptr) == 0) {
++            g_installed.store(true, std::memory_order_release);
++        } else {
++            LOG(ERROR) << "failed to install native stack signal handler: " << std::strerror(errno);
++        }
++    });
++}
++
++// Reason: the per-thread CaptureFn run_collection drives. It arms the global slot
++// with a fresh token, queues the signal, waits for the handler up to the dump
++// deadline, and copies the frames out. Sequential by construction: one signal is
++// ever in flight, so the single slot is race-free.
++void fp_walk_capture(int64_t tid, const CollectOptions& opts,
++                     std::chrono::steady_clock::time_point deadline, ThreadStack* out) {
++    // 1. A thread that blocks the signal is reported as such, not as a timeout.
++    if (is_signal_blocked(tid, native_stack_signal_number())) {
++        out->status = "signal_blocked";
++        out->error_reason = "thread blocks the native stack signal";
++        return;
++    }
++    install_handler_once();
++    if (!g_installed.load(std::memory_order_acquire)) {
++        out->status = "signal_failed";
++        out->error_reason = "native stack signal handler is unavailable";
++        return;
++    }
++
++    // 2. Arm the slot with a fresh request token before signaling.
++    const uint64_t seq = g_seq.fetch_add(1, std::memory_order_relaxed) + 1;
++    g_slot.max_frames = static_cast<int>(std::min<int64_t>(opts.max_frames, kMaxSignalFrames));
++    g_slot.max_stack_bytes = static_cast<uintptr_t>(opts.max_stack_bytes);
++    g_slot.frame_count = 0;
++    g_slot.truncated = false;
++    g_slot.handler_ns.store(0, std::memory_order_relaxed);
++    g_slot.state.store(SLOT_PENDING, std::memory_order_release);
++    g_slot.expected_seq.store(seq, std::memory_order_release);
++
++    // 3. Queue the signal with the token in si_value (SI_QUEUE, this process).
++    siginfo_t info {};
++    info.si_signo = native_stack_signal_number();
++    info.si_code = SI_QUEUE;
++    info.si_pid = getpid();
++    info.si_uid = getuid();
++    info.si_value.sival_ptr = reinterpret_cast<void*>(static_cast<uintptr_t>(seq));
++    const long rc = syscall(SYS_rt_tgsigqueueinfo, getpid(), static_cast<pid_t>(tid),
++                            native_stack_signal_number(), &info);
++    if (rc != 0) {
++        const int err = errno;
++        g_slot.expected_seq.store(0, std::memory_order_release);
++        out->status = err == ESRCH ? "exited_thread" : "signal_failed";
++        out->error_reason = std::string("rt_tgsigqueueinfo failed: ") + std::strerror(err);
++        return;
++    }
++
++    // 4. Wait for the handler to publish, or for the dump deadline.
++    while (std::chrono::steady_clock::now() < deadline) {
++        if (g_slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
++            break;
++        }
++        std::this_thread::sleep_for(std::chrono::microseconds(200));
++    }
++
++    // 5. Read the frames, or disarm the token so a late handler drops.
++    if (g_slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
++        out->frames.reserve(static_cast<size_t>(g_slot.frame_count));
++        for (int i = 0; i < g_slot.frame_count; ++i) {
++            Frame frame;
++            frame.pc = g_slot.frames[i];
++            out->frames.push_back(frame);
++        }
++        out->truncated = g_slot.truncated;
++        out->handler_time_ns = g_slot.handler_ns.load(std::memory_order_relaxed);
++        out->status = "ok";
++    } else {
++        g_slot.expected_seq.store(0, std::memory_order_release);
++        out->status = "timeout";
++        out->error_reason = "thread did not run the native stack handler before the deadline";
++    }
+ }
+ 
+ } // namespace
+ 
+ NativeStackReport collect_native_stacks(const CollectOptions& opts) {
+-    return run_collection(opts, "stub", stub_capture);
++    return run_collection(opts, "fp-walk", fp_walk_capture);
+ }
+ 
+ } // namespace doris::native_stack
+-- 
+2.53.0
+
