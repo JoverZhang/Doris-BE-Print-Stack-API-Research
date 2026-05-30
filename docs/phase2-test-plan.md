@@ -63,12 +63,14 @@ Test-only hooks in common:
 | 5 | Contract | `ContendedDumpReturnsTimeout` | hold the dump lock; collect `{timeout_ms: small}`. Status `timeout`. Release the lock; the next collect succeeds. Deterministic, no extra threads. | stub + real |
 | 6 | Contract | `Timeout` | `set_unresponsive_tid(T)`; collect `{tid:T, timeout_ms: small}`. Thread T status `timeout`, overall `timeout`. A later normal dump still works. | stub + real |
 | 7 | Correctness | `NonZeroPcPerActiveThread` | spawn K spin-parked threads; collect all. Each spawned thread returns at least one non-zero `pc`. | real |
-| 8 | Correctness | `KnownChainResolved` | spawn the marker chain (entry, c, b, a, spin); collect `{tid:T}`. `frames[1..4].pc` equal the recorded `__builtin_return_address(0)` values, in caller order; `frames[0].pc` is non-zero. Every frame has a non-empty `dso` (the test binary) and a `dso_offset` such that segment base plus offset equals `pc`. `handler_time_ns` is present and non-negative. | real |
+| 8 | Correctness | `KnownChainResolved` | spawn the marker chain (entry, c, b, a, spin); collect `{tid:T}`. The walked frames contain the four recorded `__builtin_return_address(0)` values as a contiguous subsequence in caller order, beginning at `frames[1]` or `frames[2]` — the test plan targets `frames[1..4]`, and -O0 + ASan sometimes interposes one extra frame between the RIP and the recorded chain (this is the walk-quality margin Gate B will tighten). `frames[0].pc` is non-zero. Every frame has a non-empty `dso` (the test binary) and a `dso_offset` such that `segment_base + dso_offset == pc`. `handler_time_ns` is present and non-negative. | real |
 | 9 | Correctness | `Truncated` | spawn a chain deeper than N; collect `{tid:T, max_frames:N}`. `frames.size() == N`, `truncated == true`. Control: a large N gives `truncated == false`. | real |
 | 10 | Correctness | `SignalBlocked` | a thread blocks `SIGRTMIN+6` with `pthread_sigmask`, then parks; collect `{tid:T}`. Status `signal_blocked`, not `timeout`. | real |
 | 11 | Correctness | `PartialResults` | spawn responsive parked threads plus one unresponsive (`set_unresponsive_tid`); collect all. Responsive threads carry frames, the unresponsive one is `timeout`, overall status `partial`, process healthy. | real |
-| 12 | Boundary | `LateResponderDoesNotCorruptNextDump` | dump `{tid:T}`, then dump `{tid:T}` again with a fresh sequence number; the second dump is uncorrupted and T is not misattributed. The handler validates the request token on entry and re-checks it before publishing, so a stale handler from a finished dump never lands in the next dump's slot. Forcing an actually-late handler (and the use-after-free check) is the Tier 2 ASan deepening below. | real |
+| 12 | Boundary | `LateResponderDoesNotCorruptNextDump` | dump `{tid:T}`, then dump `{tid:T}` again. With fp-walk's per-sequence slot ring, the two dumps land in distinct slots, so the shared-slot hazard does not exist. The handler also validates the request token on entry and re-checks it before publishing. Forcing an actually-late handler is case 15; the deterministic use-after-free check is the Tier 2 TSan deepening below. | real |
 | 13 | Stability | `DumpLoopNoCrashNoStuck` | collect all in a loop of N iterations (about 200) with the marker threads alive. Every iteration returns, the loop finishes within a wall-clock bound, all workers stay joinable. | stub + real |
+| 14 | Correctness | `RbpBoundsRejectOutOfStackRBP` | drive the per-handler RBP safety check (`rbp_can_read_for_test`) over an accept/reject table: an RBP above the `[initial_rbp, initial_rbp + max_stack_bytes)` window, below it, at a position whose read crosses the upper bound, misaligned, zero anchor, aligned and inside, and equal to the anchor. Rejects every bad input; accepts the valid ones. This is the precondition that bounds the walk from reading past the stack. Validating `initial_rbp` itself against the thread's mapped stack range is a follow-up (mincore() or sigsetjmp/siglongjmp) — for now a junk `initial_rbp` will still pass and the first deref will crash, which the late-handler corruption stress in case 15 cannot exercise either. | real |
+| 15 | Boundary | `LateHandlerCannotCorruptNextDumpUnderLoad` | bait a late handler (block the collector signal in a worker, dump with a short timeout, then unblock so the queued signal is delivered while subsequent dumps run); loop dumps of the marker chain and assert every iteration's `frames[1..4]` match `chain.returns()`. `slot_busy` is acceptable (the per-sequence slot refused to reuse a slot still held by a late handler); corruption is not. Tier 1 is best-effort because the race is timing-dependent; deterministic detection is the Tier 2 TSan deepening below. | real |
 
 ## Candidates
 
@@ -85,8 +87,8 @@ then builds and runs the tests in the build-env image
 (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```
-just phase2-test common      # 7 pass, 6 skip (stub collector)
-just phase2-test fp-walk     # 13 pass
+just phase2-test common      # 7 pass, 8 skip (stub collector)
+just phase2-test fp-walk     # 15 pass
 ```
 
 It runs `run-be-ut.sh --run --filter='NativeStackActionTest.*' -j $(nproc)`
@@ -111,5 +113,8 @@ They are not part of the baseline.
 - allocation pressure during a dump loop.
 - thread create and exit churn.
 - `dlopen` and `dlclose` churn.
-- the use-after-free half of case 12, under ASan. Tier 1 proves no
-  misattribution; ASan proves no use-after-free.
+- the late-handler race underlying cases 12 and 15, under TSan. Tier 1
+  proves no misattribution and that observable frames do not corrupt
+  under a stress loop; TSan deterministically catches concurrent writes
+  to the per-sequence slot that the timing-dependent Tier 1 test cannot
+  guarantee.

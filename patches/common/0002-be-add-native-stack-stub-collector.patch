@@ -1,4 +1,4 @@
-From f95d1ed4236b4833c48017823120ff7b9227c9a5 Mon Sep 17 00:00:00 2001
+From ad589d46ad53949433416f33734c0a470aa7473f Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
 Subject: [PATCH 2/5] (be) add native stack stub collector
@@ -9,16 +9,16 @@ stub that returns the response shape with no PCs, and each variant patch
 
 Reference: docs/phase2-design.md "Common API" -> stub collect().
 ---
- .../http/action/native_stack_collect.cpp      | 44 +++++++++++++++++++
- 1 file changed, 44 insertions(+)
+ .../http/action/native_stack_collect.cpp      | 55 +++++++++++++++++++
+ 1 file changed, 55 insertions(+)
  create mode 100644 be/src/service/http/action/native_stack_collect.cpp
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
 new file mode 100644
-index 00000000000..2c9e8bce4de
+index 00000000000..5fd53e33b4f
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,55 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -37,6 +37,7 @@ index 00000000000..2c9e8bce4de
 +// under the License.
 +
 +#include <chrono>
++#include <cstdint>
 +
 +#include "service/http/action/native_stack.h"
 +
@@ -49,8 +50,8 @@ index 00000000000..2c9e8bce4de
 +
 +// Reason: the stub proves the response shape and the single-dump gate
 +// without real signaling — every live thread reports `ok` with no frames.
-+// run_collection owns the gate, tid selection, and aggregation, so the stub
-+// only fills status.
++// `run_collection` owns the gate, tid selection, and aggregation, so the
++// stub only fills status.
 +void stub_capture(int64_t /*tid*/, const CollectOptions& /*opts*/,
 +                  std::chrono::steady_clock::time_point /*deadline*/, ThreadStack* out) {
 +    out->status = "ok";
@@ -60,6 +61,16 @@ index 00000000000..2c9e8bce4de
 +
 +NativeStackReport collect_native_stacks(const CollectOptions& opts) {
 +    return run_collection(opts, "stub", stub_capture);
++}
++
++// Reason: stub side of the fp-walk RBP-safety test hook. The test gates
++// every call on `collector_is_stub()` and skips, so the stub's return
++// value is never inspected. Defining it here keeps the test file
++// linkable on the common build, where no fp-walk-specific code exists.
++// Local: test hook.
++bool rbp_can_read_for_test(uintptr_t /*initial_rbp*/, uintptr_t /*rbp*/,
++                           uintptr_t /*max_stack_bytes*/) {
++    return false;
 +}
 +
 +} // namespace doris::native_stack

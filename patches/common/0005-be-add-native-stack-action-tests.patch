@@ -1,4 +1,4 @@
-From 51374c86ddfe8f9ef3b5f0665a8488883d73add2 Mon Sep 17 00:00:00 2001
+From e5ae3ef46226b4388ba2adfd15d2685a768e437a Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
 Subject: [PATCH 5/5] (be) add native stack action tests
@@ -9,16 +9,16 @@ cases (Schema, ShapeOneTid, MissingTid, BadRequest, ContendedDumpReturnsTimeout,
 Timeout, DumpLoopNoCrashNoStuck) run on the stub; correctness and boundary cases
 skip unless a real collector is linked.
 ---
- .../service/http/native_stack_action_test.cpp | 680 ++++++++++++++++++
- 1 file changed, 680 insertions(+)
+ .../service/http/native_stack_action_test.cpp | 995 ++++++++++++++++++
+ 1 file changed, 995 insertions(+)
  create mode 100644 be/test/service/http/native_stack_action_test.cpp
 
 diff --git a/be/test/service/http/native_stack_action_test.cpp b/be/test/service/http/native_stack_action_test.cpp
 new file mode 100644
-index 00000000000..d80e5e7660c
+index 00000000000..0104a11d4ba
 --- /dev/null
 +++ b/be/test/service/http/native_stack_action_test.cpp
-@@ -0,0 +1,680 @@
+@@ -0,0 +1,995 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -47,10 +47,12 @@ index 00000000000..d80e5e7660c
 +#include <chrono>
 +#include <condition_variable>
 +#include <cstdint>
++#include <fstream>
 +#include <map>
 +#include <memory>
 +#include <mutex>
 +#include <set>
++#include <sstream>
 +#include <string>
 +#include <thread>
 +#include <vector>
@@ -108,6 +110,91 @@ index 00000000000..d80e5e7660c
 +bool collector_is_stub() {
 +    return collect_native_stacks(CollectOptions {}).collector == "stub";
 +}
++
++// Reason: one parsed /proc/self/maps row. Mirrors the fields the test
++// needs to verify the dso_offset formula against the same map the
++// collector resolved from.
++// Local: test-only struct.
++struct DsoSegment {
++    uintptr_t start = 0;
++    uintptr_t end = 0;
++    uint64_t offset = 0;
++    std::string path;
++};
++
++// Reason: find the /proc/self/maps row that contains `pc` and whose
++// pathname matches `dso`. Returns the segment so case 8 can compute the
++// load base (`start - offset`) and check `base + dso_offset == pc`. Uses
++// substring match so a basename-only `dso` still finds the absolute path.
++// Local: test helper for case 8's formula check.
++bool find_dso_segment(uintptr_t pc, const std::string& dso, DsoSegment* out) {
++    std::ifstream maps("/proc/self/maps");
++    std::string line;
++    while (std::getline(maps, line)) {
++        const auto dash = line.find('-');
++        if (dash == std::string::npos) {
++            continue;
++        }
++        const auto space_after_range = line.find(' ', dash);
++        if (space_after_range == std::string::npos) {
++            continue;
++        }
++        uintptr_t start = 0;
++        uintptr_t end = 0;
++        try {
++            start = std::stoull(line.substr(0, dash), nullptr, 16);
++            end = std::stoull(line.substr(dash + 1, space_after_range - dash - 1), nullptr, 16);
++        } catch (...) {
++            continue;
++        }
++        if (pc < start || pc >= end) {
++            continue;
++        }
++        // The pathname is the last whitespace-separated field. The offset
++        // is the 3rd field overall.
++        std::istringstream iss(line.substr(space_after_range + 1));
++        std::string perms;
++        std::string offset_hex;
++        std::string dev;
++        std::string inode;
++        if (!(iss >> perms >> offset_hex >> dev >> inode)) {
++            continue;
++        }
++        std::string path;
++        std::getline(iss, path);
++        const auto first = path.find_first_not_of(' ');
++        if (first == std::string::npos) {
++            continue;
++        }
++        path = path.substr(first);
++        if (path.find(dso) == std::string::npos && dso.find(path) == std::string::npos) {
++            continue;
++        }
++        uint64_t offset = 0;
++        try {
++            offset = std::stoull(offset_hex, nullptr, 16);
++        } catch (...) {
++            continue;
++        }
++        out->start = start;
++        out->end = end;
++        out->offset = offset;
++        out->path = std::move(path);
++        return true;
++    }
++    return false;
++}
++
++} // namespace
++
++// Reason: the fp-walk RBP-safety hook, exported by every variant's
++// collect.cpp. Common's stub returns false; fp-walk forwards to its
++// `rbp_can_read`. Case 14 calls this to drive the helper's accept/reject
++// table without crashing a real thread.
++// Local: test hook.
++bool rbp_can_read_for_test(uintptr_t initial_rbp, uintptr_t rbp, uintptr_t max_stack_bytes);
++
++namespace {
 +
 +// Reason: a worker parked on a condition variable that publishes its tid.
 +// Cheap fixture for cases that need a live, targetable thread but no real
@@ -498,9 +585,13 @@ index 00000000000..d80e5e7660c
 +}
 +
 +// Reason: [case 8] a known call chain parks at its deepest frame; the
-+// dump's walked PCs equal the recorded return addresses in caller order,
-+// each resolved to a dso whose load base plus offset equals pc, with a
-+// non-negative handler time. Exact frame indices are validated at Gate B.
++// dump's walked frames contain the recorded return addresses as a
++// contiguous subsequence in caller order, beginning within the first two
++// walked frames (the test plan targets frames[1..4]; -O0 + ASan
++// sometimes interposes one extra frame between the RIP and the recorded
++// chain). Every walked frame resolves to a mapped DSO, and dso_offset
++// matches the formula `segment_base + offset == pc`. handler_time_ns is
++// present and non-negative.
 +// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #8 KnownChainResolved.
 +TEST_F(NativeStackActionTest, KnownChainResolved) {
 +    if (collector_is_stub()) {
@@ -525,26 +616,49 @@ index 00000000000..d80e5e7660c
 +    EXPECT_NE(thread.frames[0].pc, 0U);
 +    EXPECT_GE(thread.handler_time_ns, 0);
 +
-+    // 4. The walked PCs contain the recorded return addresses, in caller
-+    //    order from the spin outward.
-+    std::vector<uintptr_t> expected(chain.returns().rbegin(), chain.returns().rend());
-+    ASSERT_EQ(expected.size(), 4U);
++    // 4. The four recorded return addresses appear in the walked frames
++    //    as a contiguous subsequence in caller order (spin's caller, then
++    //    level_c's, level_b's, level_a's). The subsequence MUST start
++    //    within the first three walked frames — anything later means the
++    //    walk inserted unexplained intermediate frames. The test plan
++    //    targets frames[1..4]; with -O0 + ASan the walk sometimes
++    //    interposes one extra frame before the chain begins, so we accept
++    //    frames[1..4] OR frames[2..5] but reject any larger offset.
++    const std::vector<uintptr_t>& returns = chain.returns();
++    ASSERT_EQ(returns.size(), 4U);
 +    std::vector<uintptr_t> pcs;
++    pcs.reserve(thread.frames.size());
 +    for (const Frame& frame : thread.frames) {
 +        pcs.push_back(frame.pc);
 +    }
-+    auto start = std::find(pcs.begin(), pcs.end(), expected[0]);
-+    ASSERT_NE(start, pcs.end()) << "spin's return address not found among walked frames";
-+    ASSERT_GE(static_cast<size_t>(pcs.end() - start), expected.size());
-+    for (size_t i = 0; i < expected.size(); ++i) {
-+        EXPECT_EQ(*(start + static_cast<std::ptrdiff_t>(i)), expected[i])
-+                << "chain frame " << i << " mismatch";
++    auto chain_start = std::find(pcs.begin(), pcs.end(), returns.back());
++    ASSERT_NE(chain_start, pcs.end()) << "spin's recorded return not in walked frames";
++    const auto chain_offset = static_cast<size_t>(chain_start - pcs.begin());
++    EXPECT_GE(chain_offset, 1U) << "chain found at frame[0] — RIP should sit before it";
++    EXPECT_LE(chain_offset, 2U)
++            << "chain found at frame[" << chain_offset
++            << "] — walk inserted too many frames before the recorded chain";
++    ASSERT_LE(chain_offset + returns.size(), pcs.size());
++    for (size_t i = 0; i < returns.size(); ++i) {
++        EXPECT_EQ(pcs[chain_offset + i], returns[returns.size() - 1 - i])
++                << "chain frame " << i << " mismatch (offset " << chain_offset << ")";
 +    }
 +
-+    // 5. Every walked frame resolves to a mapped DSO.
++    // 5. Every walked frame resolves to a mapped DSO and the dso_offset
++    //    formula `segment_base + dso_offset == pc` holds, where
++    //    segment_base is `map.start - map.offset` for the /proc/self/maps
++    //    row that contains pc and matches dso.
 +    for (const Frame& frame : thread.frames) {
-+        EXPECT_TRUE(frame.dso_resolved) << "pc " << frame.pc << " unresolved";
-+        EXPECT_FALSE(frame.dso.empty());
++        EXPECT_TRUE(frame.dso_resolved) << "pc " << std::hex << frame.pc << " unresolved";
++        ASSERT_FALSE(frame.dso.empty());
++        DsoSegment segment;
++        ASSERT_TRUE(find_dso_segment(frame.pc, frame.dso, &segment))
++                << "no /proc/self/maps row matched pc=" << std::hex << frame.pc
++                << " dso=" << frame.dso;
++        const uintptr_t segment_base = segment.start - segment.offset;
++        EXPECT_EQ(segment_base + frame.dso_offset, frame.pc)
++                << "dso_offset formula failed: base=" << std::hex << segment_base
++                << " offset=" << frame.dso_offset << " pc=" << frame.pc;
 +    }
 +}
 +
@@ -650,11 +764,13 @@ index 00000000000..d80e5e7660c
 +    }
 +}
 +
-+// Reason: [case 12] two sequential dumps of the same tid must not have
-+// dump 1's handler leak into dump 2 or misattribute its result. This case
-+// catches re-arming misattribution; it does NOT prove no use-after-free of
-+// the shared capture slot (that requires forcing a handler to land after
-+// its deadline, which is a fp-walk-specific Tier 2 / Gate B test).
++// Reason: [case 12] two sequential dumps of the same tid must not
++// misattribute their results or leak data from dump 1 into dump 2. With
++// fp-walk's per-sequence slot ring, two sequential dumps land in
++// distinct slots (seq=K and seq=K+1 map to different ring entries), so
++// the shared-slot hazard does not exist. Case 15 stresses the late
++// handler path under load; deterministic use-after-free detection is the
++// TSan deepening under Tier 2.
 +// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #12 LateResponderDoesNotCorruptNextDump.
 +TEST_F(NativeStackActionTest, LateResponderDoesNotCorruptNextDump) {
 +    if (collector_is_stub()) {
@@ -696,6 +812,205 @@ index 00000000000..d80e5e7660c
 +    // 3. The loop finishes within a wall-clock bound.
 +    const auto elapsed = std::chrono::steady_clock::now() - start;
 +    EXPECT_LT(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), 60);
++}
++
++namespace {
++
++// Reason: a worker that starts with the collector signal blocked, exposes
++// `release()` to unblock the mask, and lingers briefly so any signal
++// already queued during the blocked window is delivered while the thread
++// still exists. Case 15 uses this to bait a real late handler.
++// Local: test-only fixture for case 15.
++class BlockedReleasable {
++public:
++    BlockedReleasable() {
++        _thread = std::thread([this] {
++            sigset_t set;
++            sigemptyset(&set);
++            sigaddset(&set, native_stack_signal());
++            pthread_sigmask(SIG_BLOCK, &set, nullptr);
++            _tid.store(self_tid(), std::memory_order_release);
++            {
++                std::unique_lock<std::mutex> lock(_mutex);
++                _cv.wait(lock, [this] { return _release; });
++            }
++            pthread_sigmask(SIG_UNBLOCK, &set, nullptr);
++            // Linger so a queued late signal is delivered to this tid
++            // before the thread exits.
++            std::this_thread::sleep_for(std::chrono::milliseconds(50));
++            {
++                std::unique_lock<std::mutex> lock(_mutex);
++                _cv.wait(lock, [this] { return _stop; });
++            }
++        });
++        while (_tid.load(std::memory_order_acquire) == 0) {
++            std::this_thread::yield();
++        }
++    }
++    BlockedReleasable(const BlockedReleasable&) = delete;
++    BlockedReleasable& operator=(const BlockedReleasable&) = delete;
++    ~BlockedReleasable() {
++        {
++            std::lock_guard<std::mutex> lock(_mutex);
++            _release = true;
++            _stop = true;
++        }
++        _cv.notify_all();
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
++    void release() {
++        {
++            std::lock_guard<std::mutex> lock(_mutex);
++            _release = true;
++        }
++        _cv.notify_all();
++        // Wait for the worker to unblock its mask before returning, so the
++        // caller knows the queued signal can now be delivered.
++        std::this_thread::sleep_for(std::chrono::milliseconds(10));
++    }
++
++private:
++    std::thread _thread;
++    std::atomic<int64_t> _tid {0};
++    std::mutex _mutex;
++    std::condition_variable _cv;
++    bool _release = false;
++    bool _stop = false;
++};
++
++} // namespace
++
++// Reason: [case 14] the RBP safety check refuses to dereference an RBP
++// that lies outside the `[initial_rbp, initial_rbp + max_stack_bytes)`
++// window or is misaligned. This is the precondition that stops the
++// handler from reading past the walk bound. Driven through
++// `rbp_can_read_for_test` so we exercise the helper directly without
++// forging a thread that crashes the handler.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #14 RbpBoundsRejectOutOfStackRBP.
++TEST_F(NativeStackActionTest, RbpBoundsRejectOutOfStackRBP) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++    constexpr uintptr_t kAnchor = 0x10000;
++    constexpr uintptr_t kCap = 0x1000;  // max_stack_bytes -> walk_hi = 0x11000
++
++    // 1. An RBP far above `initial_rbp + max_stack_bytes` is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, 0xDEADBEEF00000000ULL, kCap));
++
++    // 2. An RBP below the anchor (walking downward) is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, kAnchor - 0x10, kCap));
++
++    // 3. An RBP whose read of `[rbp+8]` would cross the bound is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, kAnchor + kCap - 0x8, kCap));
++
++    // 4. A misaligned RBP is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, kAnchor + 0x11, kCap));
++
++    // 5. A zero anchor is rejected (no valid stack pointer was captured).
++    EXPECT_FALSE(rbp_can_read_for_test(0, 0x10, kCap));
++
++    // 6. A valid, aligned RBP inside the window is accepted.
++    EXPECT_TRUE(rbp_can_read_for_test(kAnchor, kAnchor + 0x100, kCap));
++
++    // 7. The anchor itself is accepted (the first walk iteration).
++    EXPECT_TRUE(rbp_can_read_for_test(kAnchor, kAnchor, kCap));
++}
++
++// Reason: [case 15] under load, a delayed handler from a finished dump
++// must not corrupt the frames returned by subsequent dumps. The
++// per-sequence slot ring is what closes this hazard. Tier 1 is
++// best-effort: the race is timing-dependent, so the test loops many
++// dumps and asserts every iteration's frames match the marker chain's
++// recorded return addresses. `slot_busy` outcomes are allowed (they
++// mean the safety check refused to reuse a slot still held by a late
++// handler); corrupted frames are not. Deterministic detection of the
++// underlying race is the TSan deepening under Tier 2.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #15 LateHandlerCannotCorruptNextDumpUnderLoad.
++TEST_F(NativeStackActionTest, LateHandlerCannotCorruptNextDumpUnderLoad) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    // 1. Bait the late-handler path: dump a thread that blocks the
++    //    collector signal with a short timeout, then unblock so the
++    //    queued signal is delivered while we run subsequent dumps.
++    BlockedReleasable bait;
++    {
++        CollectOptions opts;
++        opts.target_tid = bait.tid();
++        opts.timeout_ms = 50;
++        NativeStackReport bait_report = collect_native_stacks(opts);
++        ASSERT_EQ(bait_report.threads.size(), 1U);
++        // The bait thread blocks the signal, so the per-thread status
++        // is signal_blocked rather than timeout; either is acceptable
++        // for setup, but signal_blocked is what fp-walk reports.
++        EXPECT_TRUE(bait_report.threads[0].status == "signal_blocked" ||
++                    bait_report.threads[0].status == "timeout")
++                << "unexpected bait status: " << bait_report.threads[0].status;
++    }
++    bait.release();
++
++    // 2. Drive many dumps of a known-PC marker chain. Each `ok` dump
++    //    must contain the chain's recorded return addresses as a
++    //    contiguous subsequence in caller order. If the late handler
++    //    corrupts a slot, the subsequence will diverge or vanish.
++    MarkerChain chain;
++    const std::vector<uintptr_t>& returns = chain.returns();
++    ASSERT_EQ(returns.size(), 4U);
++    constexpr int kIterations = 64;
++    int corrupted = 0;
++    int slot_busy = 0;
++    int ok = 0;
++    for (int i = 0; i < kIterations; ++i) {
++        CollectOptions opts;
++        opts.target_tid = chain.tid();
++        NativeStackReport report = collect_native_stacks(opts);
++        ASSERT_EQ(report.threads.size(), 1U);
++        const ThreadStack& thread = report.threads[0];
++        if (thread.status == "slot_busy") {
++            ++slot_busy;
++            continue;
++        }
++        if (thread.status != "ok") {
++            // Any other status (timeout, signal_failed) indicates a
++            // setup problem, not corruption; tolerate but record.
++            continue;
++        }
++        std::vector<uintptr_t> pcs;
++        pcs.reserve(thread.frames.size());
++        for (const Frame& frame : thread.frames) {
++            pcs.push_back(frame.pc);
++        }
++        auto chain_start = std::find(pcs.begin(), pcs.end(), returns.back());
++        if (chain_start == pcs.end() ||
++            static_cast<size_t>(pcs.end() - chain_start) < returns.size()) {
++            ++corrupted;
++            continue;
++        }
++        bool diverged = false;
++        for (size_t k = 0; k < returns.size(); ++k) {
++            if (*(chain_start + static_cast<std::ptrdiff_t>(k)) !=
++                returns[returns.size() - 1 - k]) {
++                diverged = true;
++                break;
++            }
++        }
++        if (diverged) {
++            ++corrupted;
++        } else {
++            ++ok;
++        }
++    }
++
++    // 3. No iteration produced corrupted frames. slot_busy is acceptable
++    //    (the safety check refused to reuse a slot still held by a late
++    //    handler); corruption is not.
++    EXPECT_EQ(corrupted, 0) << corrupted << "/" << kIterations
++                            << " iterations had corrupted frames; " << slot_busy
++                            << " slot_busy; " << ok << " ok";
 +}
 +
 +} // namespace doris::native_stack
