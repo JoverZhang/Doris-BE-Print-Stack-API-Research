@@ -1,9 +1,8 @@
 # Coding Guidelines
 
 This file defines what to write and how to comment it, for the patches
-under `patches/` and the code they introduce. Patch layout, naming, and
-split rules live in [patch-guidelines.md](patch-guidelines.md). Prose style
-follows [writing-guidelines.md](writing-guidelines.md).
+under `patches/` and the code they introduce. Prose style follows
+[writing-guidelines.md](writing-guidelines.md).
 
 ## Scope
 
@@ -244,3 +243,9 @@ private:
 
 A name earns a `Reason:` when `name + type + body` alone do not show why it
 exists or what invariant it carries. Otherwise it stays silent.
+
+## Review rule
+
+A reviewer should understand each patch without reading unrelated files. In the
+harness, this means one commit per logical change: `git format-patch` emits one
+file per commit, so commit hygiene is patch hygiene.

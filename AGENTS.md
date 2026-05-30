@@ -27,32 +27,38 @@ tests pass under the acceptance doc.
 
 ## Phase 2 Workflow
 
-Keep `patches/` as the source of truth.
-Use `phase2/*` as reproducible worktrees with build caches.
+`patches/` is the source of truth for review. The single worktree
+`.worktree/phase2` holds the applied state on branches `phase2/base`,
+`phase2/common`, and `phase2/<variant>`. All git and build operations run
+inside the build container; never invoke them on the host.
 
 Do this:
 
-- Run `just phase2-apply <target>` before building a target.
-- Run `just phase2-clean-apply <target>` only when the user explicitly asks
-  for a clean re-apply. It deletes untracked and ignored files under
-  `phase2/<target>`, including build caches.
-- Run `just phase2-status [target]` to see what is applied.
-- Run `just phase2-diff <target>` to inspect temporary worktree changes.
-- Run `just phase2-export <target>` only when you intentionally move committed
-  worktree changes back into `patches/`.
-- Run `just phase2-test <variant>` to apply, build, and run the
-  NativeStackActionTest suite in the build image.
+- Run `just phase2-bootstrap` on first setup to create `.worktree/phase2` and
+  the branch stack from `patches/`. Cold cost: a few minutes for submodule init.
+- Run `just phase2-test <variant>` to switch, build, and run the
+  NativeStackActionTest suite. `<variant>` is `common`, `fp-walk`, etc.
+- Run `just phase2-verify <variant>` to confirm `patches/<variant>`
+  round-trips against the branch.
+- Run `just phase2-export [variant]` after committing on a branch to
+  regenerate `patches/`. Filenames derive from commit subjects.
+- Run `just phase2-status` to see current branch and per-scope commit/patch
+  counts.
+- Run `just phase2-shell` to drop into an interactive container for diagnostics.
+- Run `just phase2-rebase-all` after committing to `phase2/common` to rebase
+  every variant on the new common.
+- Run `just phase2-teardown` to remove the worktree and every `phase2/*`
+  branch (rebuild via `phase2-bootstrap`).
 
 Do not do this:
 
-- Do not run `git clean -xfd` in `phase2/*` unless the user asks.
+- Do not run `git`, `cmake`, `ninja`, `be/build.sh`, or `run-be-ut.sh`
+  directly. Always go through `just phase2-*`.
 - Do not commit full all-thread JSON, full build logs, BE logs,
   `/proc/<pid>/maps`, binaries, or dumps.
 - Do not rebuild thirdparty dependencies unless the user asks.
 
-Use this build image:
-
-- `docker.io/apache/doris:build-env-ldb-toolchain-latest`
+Build image: `docker.io/apache/doris:build-env-ldb-toolchain-latest`.
 
 ## Reference Source Trees
 
@@ -61,7 +67,6 @@ Source-alias paths (`<ck>`, `<ob>`) live in
 
 - For `ck-phdr-unwind`, check the ClickHouse source before implementation.
 - For `ob-kill60`, check the OceanBase source before implementation.
-- Record the source files or symbols you used in the variant notes.
 
 ## Project Guidelines
 
@@ -69,5 +74,3 @@ Source-alias paths (`<ck>`, `<ob>`) live in
   or editing docs.
 - Follow [docs/coding-guidelines.md](docs/coding-guidelines.md) when writing
   or commenting code in patches.
-- Follow [docs/patch-guidelines.md](docs/patch-guidelines.md) when creating,
-  editing, or exporting patch files.

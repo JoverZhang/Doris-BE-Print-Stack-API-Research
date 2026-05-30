@@ -27,5 +27,5 @@ baseline passes.
 - [`docs/phase2-design.md`](docs/phase2-design.md): API and variant mechanics (agent-owned)
 - [`docs/phase2-test-plan.md`](docs/phase2-test-plan.md): acceptance checks as concrete tests (agent-owned)
 - [`docs/writing-guidelines.md`](docs/writing-guidelines.md): project writing style
-- [`docs/patch-guidelines.md`](docs/patch-guidelines.md): patch layout rules
+- [`docs/coding-guidelines.md`](docs/coding-guidelines.md): code and comment conventions
 - [`evidence/phase2/subagent-brief-template.md`](evidence/phase2/subagent-brief-template.md): per-variant dispatch brief

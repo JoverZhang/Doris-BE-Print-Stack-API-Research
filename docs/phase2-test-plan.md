@@ -35,14 +35,14 @@ Test-only hooks in common:
 
 ## File and partition
 
-- One file: `be/test/service/http/native_stack_action_test.cpp`. It ships as a
-  `tests-` patch in `patches/common/`, so it is present for every variant
-  (`phase2_patches.sh` applies common first, then the variant).
+- One file: `be/test/service/http/native_stack_action_test.cpp`. It lives on
+  `phase2/common`, so every variant branch (which descends from
+  `phase2/common`) carries it.
 - Fixture: `NativeStackActionTest`.
 - A case that needs a real collector starts with
-  `if (report.collector == "stub") GTEST_SKIP();`. So `just phase2-test
-  common-api` runs the contract subset green, and `just phase2-test fp-walk`
-  runs everything.
+  `if (report.collector == "stub") GTEST_SKIP();`. So `just phase2-test common`
+  runs the contract subset green, and `just phase2-test fp-walk` runs
+  everything.
 
 ## Categories
 
@@ -80,27 +80,24 @@ Cases worth adding once the baseline is green:
 
 ## The recipe
 
-`just phase2-test <variant>` applies the patches and builds+runs the tests in the
-build-env image (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
+`just phase2-test <variant>` switches `.worktree/phase2` to `phase2/<variant>`
+and builds+runs the tests in the build-env image
+(`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```
-just phase2-test common-api   # 7 pass, 6 skip (stub collector)
-just phase2-test fp-walk      # 13 pass
+just phase2-test common      # 7 pass, 6 skip (stub collector)
+just phase2-test fp-walk     # 13 pass
 ```
 
-It runs `scripts/phase2_patches.sh apply <variant>` (common first, then the
-variant), then `run-be-ut.sh --run --filter='NativeStackActionTest.*' -j $(nproc)`
+It runs `run-be-ut.sh --run --filter='NativeStackActionTest.*' -j $(nproc)`
 inside the image (test binary `doris_be_test`, build dir `be/ut_build_ASAN`).
-Both source and test files are auto-discovered by the existing `GLOB_RECURSE`, so
-no CMake patch is needed. Three build details:
+Source and test files are auto-discovered by the existing `GLOB_RECURSE`, so no
+CMake patch is needed.
 
-- The project root is mapped into the container at its host path so the worktree's
-  `.git` pointer resolves.
-- `DORIS_THIRDPARTY=/var/local/thirdparty` reuses the image's prebuilt thirdparty;
-  it is never rebuilt.
-- `scripts/podman-git-shim` is prepended to `PATH` so `run-be-ut.sh`'s
-  `git submodule update` is a no-op (the submodules are already checked out, and
-  the container cannot reach the host gitdir the worktree points at).
+The harness mounts the project root at its host path inside the container, so
+git's `.git` pointers (worktree and submodules) resolve the same way on both
+sides — no PATH shim is needed. `DORIS_THIRDPARTY=/var/local/thirdparty` reuses
+the image's prebuilt thirdparty; it is never rebuilt.
 
 The ASan UT build already enables `-fno-omit-frame-pointer`, so fp-walk needs no
 build-flag patch.
