@@ -6,7 +6,11 @@
 DORIS_BASE="${DORIS_BASE:-c24d454f15cee2d937ef4749270a3ecb449eafe6}"
 
 # Variants known to the harness. common is implicit.
-VARIANTS="fp-walk ck-phdr-unwind ob-kill60 snapshot-remote-unwind"
+# Reason: ck-phdr-unwind, ob-kill60, and snapshot-remote-unwind are
+# spec-defined but their patch series are not yet healthy against the current
+# phase2/common. Add them back here once patches/<v>/ contains a series that
+# applies cleanly.
+VARIANTS="fp-walk"
 
 # Resolve the project root: prefer the PROJECT_ROOT exported by in-container;
 # fall back to git when sourced from the host.
