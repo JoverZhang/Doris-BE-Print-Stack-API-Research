@@ -8,6 +8,8 @@ archive/phase1/vm/ubuntu-24.04/vm.log
 archive/phase1/vm/ubuntu-24.04/vm.pid
 build/
 /phase2/
+/.worktree/
+/.tmp/
 archive/phase1/schemes/*/build/
 archive/phase1/schemes/*/.cache/
 archive/phase1/schemes/*/commands/*.raw

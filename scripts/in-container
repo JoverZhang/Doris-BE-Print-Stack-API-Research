@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Reason: a single env for every git and build op against the phase2 worktree.
+# Mounting the project root at its host path inside the container keeps git's
+# .git pointers resolving the same way on both sides, so no shim is needed.
+# Local: thin wrapper around podman run; passes its args to bash inside the
+# container (script path + optional script args).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+exec podman run --rm \
+    -v "${ROOT}:${ROOT}" \
+    -w "${ROOT}" \
+    -e DORIS_THIRDPARTY=/var/local/thirdparty \
+    -e PROJECT_ROOT="${ROOT}" \
+    docker.io/apache/doris:build-env-ldb-toolchain-latest \
+    bash "$@"

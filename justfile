@@ -10,42 +10,42 @@ repos-sync:
 repos-check:
     ./scripts/validate_repos.sh
 
-phase2-apply target:
-    @./scripts/phase2_patches.sh apply "{{target}}"
+# Bootstrap the .worktree/phase2 stack from patches/.
+phase2-bootstrap:
+    @./scripts/in-container ./scripts/phase2/bootstrap.sh
 
-phase2-clean-apply target:
-    @./scripts/phase2_patches.sh clean-apply "{{target}}"
+# Remove the worktree and every phase2/* branch.
+phase2-teardown:
+    @./scripts/in-container ./scripts/phase2/teardown.sh
 
-phase2-diff target:
-    @./scripts/phase2_patches.sh diff "{{target}}"
-
-phase2-export target:
-    @./scripts/phase2_patches.sh export "{{target}}"
-
-phase2-status target="":
-    @if [[ -n "{{target}}" ]]; then \
-        ./scripts/phase2_patches.sh status "{{target}}"; \
-    else \
-        ./scripts/phase2_patches.sh status; \
-    fi
-
-# Apply <variant> patches (common first, then the variant) and build+run the
-# native-stack unit tests in the build-env image. <variant> is a worktree name:
-# common-api or fp-walk.
-#
-# The project root is mapped into the container at its host path so the worktree's
-# .git pointer resolves; DORIS_THIRDPARTY points at the image's prebuilt
-# thirdparty so the build never recompiles it; and scripts/podman-git-shim is
-# prepended to PATH so run-be-ut.sh's `git submodule update` is a no-op (the
-# submodules are already checked out -- see that script for why).
+# Switch to phase2/<variant> and run NativeStackActionTest in the container.
 phase2-test variant:
-    ./scripts/phase2_patches.sh apply "{{variant}}"
-    podman run --rm \
-        -e DORIS_THIRDPARTY=/var/local/thirdparty \
+    @./scripts/in-container ./scripts/phase2/test.sh "{{variant}}"
+
+# Round-trip verify: tree(phase2/<variant>) == tree(re-apply patches at DORIS_BASE).
+phase2-verify variant:
+    @./scripts/in-container ./scripts/phase2/verify.sh "{{variant}}"
+
+# Regenerate patches/ from the branches. With no arg, exports common and all variants.
+phase2-export variant='':
+    @./scripts/in-container ./scripts/phase2/export.sh "{{variant}}"
+
+# Rebase every variant on phase2/common; abort the loop on conflict.
+phase2-rebase-all:
+    @./scripts/in-container ./scripts/phase2/rebase-all.sh
+
+# Show current branch and per-scope commit/patch counts.
+phase2-status:
+    @./scripts/in-container ./scripts/phase2/status.sh
+
+# Drop into bash inside the build container, cwd at the worktree.
+phase2-shell:
+    @podman run --rm -it \
         -v "{{justfile_directory()}}:{{justfile_directory()}}" \
-        -w "{{justfile_directory()}}/phase2/{{ if variant == "common" { "common-api" } else { variant } }}" \
+        -w "{{justfile_directory()}}/.worktree/phase2" \
+        -e DORIS_THIRDPARTY=/var/local/thirdparty \
         docker.io/apache/doris:build-env-ldb-toolchain-latest \
-        bash -lc 'export PATH="{{justfile_directory()}}/scripts/podman-git-shim:$PATH"; ./run-be-ut.sh --run --filter="NativeStackActionTest.*" -j "$(nproc)"'
+        bash
 
 validate:
     just repos-check
