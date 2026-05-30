@@ -1,0 +1,414 @@
+From 004adfa5aab3da0bfcbda6ec95a2cf255ebcbbc0 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Sun, 31 May 2026 07:14:39 +0800
+Subject: [PATCH 2/2] (be) fp-walk-specific tests (RBP bounds, slot-busy under
+ pause, junk RBP)
+
+Cases 14, 15, 17 from docs/phase2-test-plan.md ship in patches/fp-walk/ rather
+than patches/common/ because their fixtures are handler-state mechanics that
+only exist in fp-walk:
+
+- case 14 (RbpBoundsRejectOutOfStackRBP) drives `rbp_can_read_for_test`, which
+  the common stub does not export.
+- case 15 (LateHandlerCannotCorruptNextDumpUnderLoad) pins the handler in the
+  fp-walk WALKING state via `pause_handler_for_tid_for_test` and exercises the
+  per-sequence ring's CAS rejection; the pause hook is fp-walk-only.
+- case 17 (JunkRbpDoesNotCrashCollector) clobbers RBP to an unmapped address
+  and dumps, verifying the `mincore` walk guard does not deref it.
+
+Helpers (self_tid, collector_is_stub, ParkedThread, MarkerChain) are
+duplicated from native_stack_action_test.cpp because each variant's test file
+links independently; the variant write scope is patches/<variant>/ so each
+variant carries its own copies. A fresh `FpWalkNativeStackActionTest` fixture
+avoids colliding with the common fixture's class name.
+---
+ .../http/native_stack_action_test_fp_walk.cpp | 377 ++++++++++++++++++
+ 1 file changed, 377 insertions(+)
+ create mode 100644 be/test/service/http/native_stack_action_test_fp_walk.cpp
+
+diff --git a/be/test/service/http/native_stack_action_test_fp_walk.cpp b/be/test/service/http/native_stack_action_test_fp_walk.cpp
+new file mode 100644
+index 00000000000..9eb0fbca68d
+--- /dev/null
++++ b/be/test/service/http/native_stack_action_test_fp_walk.cpp
+@@ -0,0 +1,377 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include <gtest/gtest.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <condition_variable>
++#include <cstdint>
++#include <mutex>
++#include <thread>
++#include <vector>
++
++#include "service/http/action/native_stack.h"
++
++// Reason: cases 14, 15, 17 exercise fp-walk's handler-state mechanics
++// (RBP bounds, WALKING-state pause, junk-RBP mincore guard). They ship in
++// patches/fp-walk/ alongside the collector so common stays variant-agnostic.
++// Local helpers are duplicated from native_stack_action_test.cpp because
++// each variant's test file links independently; the duplication is small
++// (one struct, two helpers, two thread fixtures) and keeps the variant
++// patches' write scope to patches/<variant>/.
++// Spec: docs/phase2-test-plan.md cases 14, 15, 17.
++namespace doris::native_stack {
++namespace {
++
++int64_t self_tid() {
++    return static_cast<int64_t>(syscall(SYS_gettid));
++}
++
++// Reason: true on the common build's stub collector. Cases 14/15/17 need
++// the real fp-walk collector linked; on a stub build they GTEST_SKIP.
++bool collector_is_stub() {
++    return collect_native_stacks(CollectOptions {}).collector == "stub";
++}
++
++// Reason: a worker parked on a condition variable that publishes its tid.
++// Case 15 uses it as the bait whose handler will sit in WALKING.
++// Local: test-only fixture; duplicated from native_stack_action_test.cpp.
++class ParkedThread {
++public:
++    ParkedThread() {
++        _thread = std::thread([this] {
++            _tid.store(self_tid(), std::memory_order_release);
++            std::unique_lock<std::mutex> lock(_mutex);
++            _cv.wait(lock, [this] { return _release; });
++        });
++        while (_tid.load(std::memory_order_acquire) == 0) {
++            std::this_thread::yield();
++        }
++    }
++    ParkedThread(const ParkedThread&) = delete;
++    ParkedThread& operator=(const ParkedThread&) = delete;
++    ~ParkedThread() {
++        {
++            std::lock_guard<std::mutex> lock(_mutex);
++            _release = true;
++        }
++        _cv.notify_all();
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
++
++private:
++    std::thread _thread;
++    std::atomic<int64_t> _tid {0};
++    std::mutex _mutex;
++    std::condition_variable _cv;
++    bool _release = false;
++};
++
++// Reason: a worker that descends a known four-level call chain and busy-spins
++// at the bottom, recording each caller's return PC. Case 15 uses this so the
++// `ok` arms can verify the walked frames against the recorded chain to detect
++// cross-slot corruption.
++// Local: test-only fixture; duplicated from native_stack_action_test.cpp.
++class MarkerChain {
++public:
++    MarkerChain() {
++        _thread = std::thread([this] { level_a(); });
++        while (_tid.load(std::memory_order_acquire) == 0) {
++            std::this_thread::yield();
++        }
++    }
++    MarkerChain(const MarkerChain&) = delete;
++    MarkerChain& operator=(const MarkerChain&) = delete;
++    ~MarkerChain() {
++        _stop.store(true, std::memory_order_release);
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
++    const std::vector<uintptr_t>& returns() const { return _returns; }
++
++private:
++    __attribute__((noinline)) void spin() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        _tid.store(self_tid(), std::memory_order_release);
++        while (!_stop.load(std::memory_order_acquire)) {
++            volatile int sink = 0;
++            (void)sink;
++        }
++    }
++    __attribute__((noinline)) void level_c() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        spin();
++        asm volatile("");
++    }
++    __attribute__((noinline)) void level_b() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        level_c();
++        asm volatile("");
++    }
++    __attribute__((noinline)) void level_a() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        level_b();
++        asm volatile("");
++    }
++    std::thread _thread;
++    std::atomic<int64_t> _tid {0};
++    std::atomic<bool> _stop {false};
++    std::vector<uintptr_t> _returns;
++};
++
++} // namespace
++
++// Reason: the fp-walk RBP-safety hook, exported by fp-walk's collect.cpp.
++// Case 14 calls this to drive the helper's accept/reject table without
++// crashing a real thread.
++// Local: test hook.
++bool rbp_can_read_for_test(uintptr_t initial_rbp, uintptr_t rbp, uintptr_t max_stack_bytes);
++
++class FpWalkNativeStackActionTest : public ::testing::Test {
++protected:
++    void TearDown() override {
++        set_unresponsive_tid_for_test(0);
++        consume_deadline_budget_for_test(0);
++        pause_handler_for_tid_for_test(0);
++    }
++};
++
++// Reason: [case 14] the RBP safety check refuses to dereference an RBP
++// that lies outside the `[initial_rbp, initial_rbp + max_stack_bytes)`
++// window or is misaligned. This is the precondition that stops the
++// handler from reading past the walk bound. Driven through
++// `rbp_can_read_for_test` so we exercise the helper directly without
++// forging a thread that crashes the handler.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #14 RbpBoundsRejectOutOfStackRBP.
++TEST_F(FpWalkNativeStackActionTest, RbpBoundsRejectOutOfStackRBP) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++    constexpr uintptr_t kAnchor = 0x10000;
++    constexpr uintptr_t kCap = 0x1000;  // max_stack_bytes -> walk_hi = 0x11000
++
++    // 1. An RBP far above `initial_rbp + max_stack_bytes` is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, 0xDEADBEEF00000000ULL, kCap));
++
++    // 2. An RBP below the anchor (walking downward) is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, kAnchor - 0x10, kCap));
++
++    // 3. An RBP whose read of `[rbp+8]` would cross the bound is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, kAnchor + kCap - 0x8, kCap));
++
++    // 4. A misaligned RBP is rejected.
++    EXPECT_FALSE(rbp_can_read_for_test(kAnchor, kAnchor + 0x11, kCap));
++
++    // 5. A zero anchor is rejected (no valid stack pointer was captured).
++    EXPECT_FALSE(rbp_can_read_for_test(0, 0x10, kCap));
++
++    // 6. A valid, aligned RBP inside the window is accepted.
++    EXPECT_TRUE(rbp_can_read_for_test(kAnchor, kAnchor + 0x100, kCap));
++
++    // 7. The anchor itself is accepted (the first walk iteration).
++    EXPECT_TRUE(rbp_can_read_for_test(kAnchor, kAnchor, kCap));
++}
++
++// Reason: [case 15] the per-sequence slot ring rejects a coordinator
++// arming a slot whose handler is still mid-walk. The test hook
++// `pause_handler_for_tid_for_test(bait.tid())` pins one handler in
++// WALKING; subsequent arms that map to the same ring slot must report
++// `slot_busy`, arms that map to other ring slots must succeed and
++// produce uncorrupted frames. Releasing the pause must drain the slot
++// so every ring entry is reusable. Deterministic detection of the
++// underlying data race (without the pause hook) is the TSan deepening
++// under Tier 2.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #15 LateHandlerCannotCorruptNextDumpUnderLoad.
++TEST_F(FpWalkNativeStackActionTest, LateHandlerCannotCorruptNextDumpUnderLoad) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    // 1. A parked worker we can signal. After step 2 its handler will
++    //    sit in WALKING until step 5 clears the pause flag.
++    ParkedThread bait;
++    pause_handler_for_tid_for_test(bait.tid());
++
++    // 2. Dump bait. The handler enters, CASes its slot to WALKING, then
++    //    busy-waits on the pause flag. The coordinator times out after
++    //    `timeout_ms`, drains briefly, and reports `timeout`. The slot
++    //    is leaked to that paused handler.
++    {
++        CollectOptions opts;
++        opts.target_tid = bait.tid();
++        opts.timeout_ms = 50;
++        NativeStackReport bait_report = collect_native_stacks(opts);
++        ASSERT_EQ(bait_report.threads.size(), 1U);
++        ASSERT_EQ(bait_report.threads[0].status, "timeout")
++                << "expected the paused handler to time out the coordinator";
++    }
++
++    // 3. Cycle a known-PC marker chain through enough arms to wrap the
++    //    ring at least once. With kSlotRingSize=4 every fourth arm
++    //    targets the same slot as the bait, which is still WALKING; the
++    //    coordinator's CAS IDLE->PENDING fails and the arm reports
++    //    `slot_busy`. Other arms hit free slots and complete normally;
++    //    those frames must match the marker chain unchanged.
++    MarkerChain chain;
++    const std::vector<uintptr_t>& returns = chain.returns();
++    ASSERT_EQ(returns.size(), 4U);
++    constexpr int kArmsDuringPause = 12;
++    int slot_busy = 0;
++    int ok = 0;
++    int corrupted = 0;
++    for (int i = 0; i < kArmsDuringPause; ++i) {
++        CollectOptions opts;
++        opts.target_tid = chain.tid();
++        NativeStackReport report = collect_native_stacks(opts);
++        ASSERT_EQ(report.threads.size(), 1U);
++        const ThreadStack& thread = report.threads[0];
++        if (thread.status == "slot_busy") {
++            ++slot_busy;
++            continue;
++        }
++        if (thread.status != "ok") {
++            continue;
++        }
++        std::vector<uintptr_t> pcs;
++        pcs.reserve(thread.frames.size());
++        for (const Frame& frame : thread.frames) {
++            pcs.push_back(frame.pc);
++        }
++        auto chain_start = std::find(pcs.begin(), pcs.end(), returns.back());
++        if (chain_start == pcs.end() ||
++            static_cast<size_t>(pcs.end() - chain_start) < returns.size()) {
++            ++corrupted;
++            continue;
++        }
++        bool diverged = false;
++        for (size_t k = 0; k < returns.size(); ++k) {
++            if (*(chain_start + static_cast<std::ptrdiff_t>(k)) !=
++                returns[returns.size() - 1 - k]) {
++                diverged = true;
++                break;
++            }
++        }
++        if (diverged) {
++            ++corrupted;
++        } else {
++            ++ok;
++        }
++    }
++
++    // 4. The CAS rejection fired (proves the ring's safety contract)
++    //    and the free slots served clean dumps (proves no cross-slot
++    //    corruption). 12 arms wraps the 4-slot ring three times, so we
++    //    expect roughly 3 `slot_busy` and 9 `ok`.
++    EXPECT_GT(slot_busy, 0)
++            << "no `slot_busy` observed; the per-sequence ring's CAS "
++               "rejection never fired";
++    EXPECT_GT(ok, 0) << "no clean `ok` dumps; non-bait slots failed";
++    EXPECT_EQ(corrupted, 0) << corrupted << "/" << kArmsDuringPause
++                            << " iterations had corrupted frames";
++
++    // 5. Release the paused handler. It exits the busy-wait, walks (or
++    //    short-circuits if its initial RBP no longer validates), then
++    //    sees `seq != expected_seq` at the re-check and transitions
++    //    WALKING -> IDLE. Give it a small grace period to do so.
++    pause_handler_for_tid_for_test(0);
++    std::this_thread::sleep_for(std::chrono::milliseconds(20));
++
++    // 6. With every slot reclaimable, a follow-up loop of marker-chain
++    //    dumps must produce no `slot_busy` results.
++    int after_busy = 0;
++    int after_ok = 0;
++    for (int i = 0; i < 8; ++i) {
++        CollectOptions opts;
++        opts.target_tid = chain.tid();
++        NativeStackReport report = collect_native_stacks(opts);
++        ASSERT_EQ(report.threads.size(), 1U);
++        if (report.threads[0].status == "slot_busy") {
++            ++after_busy;
++        } else if (report.threads[0].status == "ok") {
++            ++after_ok;
++        }
++    }
++    EXPECT_EQ(after_busy, 0) << "slot remained busy after the paused handler was released";
++    EXPECT_GT(after_ok, 0) << "no `ok` dumps after release";
++}
++
++// Reason: [case 17] when the handler captures an RBP that points into
++// unmapped memory (a junk RBP from JIT, hand-written asm, prologue/
++// epilogue interrupt, or memory corruption), the walk's `mincore` guard
++// must refuse to dereference it. The BE must remain alive and report
++// the dump with at most one frame (the RIP). Without the guard, the
++// first `*rbp` deref inside the signal handler SIGSEGVs and kills the
++// BE — a HIGH-severity hazard codex flagged in the per-sequence-slot
++// review.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #17 JunkRbpDoesNotCrashCollector.
++TEST_F(FpWalkNativeStackActionTest, JunkRbpDoesNotCrashCollector) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++#if !defined(__x86_64__)
++    GTEST_SKIP();
++#else
++    // 1. Spin up a detached worker whose RBP is clobbered to a
++    //    likely-unmapped address before it enters an infinite pause
++    //    loop. The asm never returns, so the compiler-generated
++    //    epilogue (which would `leave` and crash on the junk RBP) never
++    //    runs. The thread is detached on purpose: there is no clean
++    //    join path, and process exit reaps it.
++    static std::atomic<int64_t> s_junk_tid {0};
++    std::thread worker([] {
++        s_junk_tid.store(self_tid(), std::memory_order_release);
++        asm volatile(
++                "movq %%rax, %%rbp\n\t"
++                "1: pause\n\t"
++                "   jmp 1b\n\t"
++                :
++                : "a"(static_cast<uintptr_t>(0xCAFEBABE00000000ULL))
++                : "rbp", "memory");
++    });
++    worker.detach();
++    while (s_junk_tid.load(std::memory_order_acquire) == 0) {
++        std::this_thread::yield();
++    }
++
++    // 2. Dump that tid. If the guard works, the handler captures the
++    //    RIP into frame[0], the walk loop sees `page_is_mapped` say no,
++    //    and the walk aborts. If the guard fails, the BE SIGSEGVs and
++    //    this test process dies.
++    CollectOptions opts;
++    opts.target_tid = s_junk_tid.load(std::memory_order_acquire);
++    NativeStackReport report = collect_native_stacks(opts);
++
++    // 3. We are still running, so the guard did its job. Frames is
++    //    at most one (the RIP from inside the asm loop); no chain was
++    //    walked because RBP was junk.
++    ASSERT_EQ(report.threads.size(), 1U);
++    EXPECT_LE(report.threads[0].frames.size(), 1U)
++            << "walk produced " << report.threads[0].frames.size()
++            << " frames from a junk RBP; the mincore guard did not stop the deref";
++#endif
++}
++
++} // namespace doris::native_stack
+-- 
+2.43.0
+

@@ -42,14 +42,22 @@ Test-only hooks in common:
 
 ## File and partition
 
-- One file: `be/test/service/http/native_stack_action_test.cpp`. It lives on
-  `phase2/common`, so every variant branch (which descends from
-  `phase2/common`) carries it.
-- Fixture: `NativeStackActionTest`.
+- Two files, partitioned by where the fixture mechanics live:
+  - `be/test/service/http/native_stack_action_test.cpp` ships in
+    `patches/common/`, holds the 14 variant-agnostic cases (1-13, 16),
+    fixture `NativeStackActionTest`.
+  - `be/test/service/http/native_stack_action_test_<variant>.cpp` ships in
+    `patches/<variant>/`, holds the cases whose fixtures only exist in that
+    variant (fp-walk: cases 14, 15, 17; fixture
+    `FpWalkNativeStackActionTest`). Variant-specific tests duplicate the
+    small helpers they need (`self_tid`, `collector_is_stub`, fixture
+    threads) because each variant's test file links independently.
 - A case that needs a real collector starts with
-  `if (report.collector == "stub") GTEST_SKIP();`. So `just phase2-test common`
-  runs the contract subset green, and `just phase2-test fp-walk` runs
-  everything.
+  `if (report.collector == "stub") GTEST_SKIP();` (variant-agnostic file) or
+  `if (collector_is_stub()) GTEST_SKIP();` (variant file). So
+  `just phase2-test common` runs the variant-agnostic subset (8 pass, 6
+  skip), and `just phase2-test fp-walk` runs everything (14 + 3 = 17 pass).
+  The harness filter is `*NativeStackActionTest.*` to catch both suites.
 
 ## Categories
 
@@ -96,12 +104,14 @@ then builds and runs the tests in the build-env image
 (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```
-just phase2-test common      # 8 pass, 9 skip (stub collector)
-just phase2-test fp-walk     # 17 pass
+just phase2-test common      # 8 pass, 6 skip (stub collector)
+just phase2-test fp-walk     # 17 pass (14 common + 3 fp-walk-specific)
 ```
 
-It runs `run-be-ut.sh --run --filter='NativeStackActionTest.*' -j $(nproc)`
+It runs `run-be-ut.sh --run --filter='*NativeStackActionTest.*' -j $(nproc)`
 inside the image (test binary `doris_be_test`, build dir `be/ut_build_ASAN`).
+The wildcard prefix is what makes `FpWalkNativeStackActionTest` (and future
+per-variant suites) match.
 Source and test files are auto-discovered by the existing `GLOB_RECURSE`, so no
 CMake patch is needed.
 

@@ -1,7 +1,7 @@
-From d58102c3ae5bcb938e336d087e9d78ad41e3921a Mon Sep 17 00:00:00 2001
+From fe3a3d86fedd5487b8b948b14aefd1d4ab4670a6 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 13:38:42 +0800
-Subject: [PATCH] (be) fp-walk native stack collector
+Subject: [PATCH 1/2] (be) fp-walk native stack collector
 
 Rewrite the stub collect step as the real frame-pointer walk: interrupt each
 target thread with SIGRTMIN+6 queued via SI_QUEUE carrying a per-request

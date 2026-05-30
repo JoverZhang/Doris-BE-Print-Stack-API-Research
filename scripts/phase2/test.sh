@@ -15,5 +15,8 @@ assert_clean_worktree "$WORKTREE"
 git -C "$WORKTREE" switch "phase2/$variant"
 
 # 3. Build and run the suite. run-be-ut.sh lives at the worktree root.
+# The filter catches both the common `NativeStackActionTest` suite and per-
+# variant suites named `<Variant>NativeStackActionTest` (e.g. `FpWalk…`),
+# whose fixtures cannot share a class with common's at file scope.
 cd "$WORKTREE"
-./run-be-ut.sh --run --filter="NativeStackActionTest.*" -j "$(nproc)"
+./run-be-ut.sh --run --filter="*NativeStackActionTest.*" -j "$(nproc)"
