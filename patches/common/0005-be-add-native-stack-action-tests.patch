@@ -1,7 +1,7 @@
-From 655e96830b3a309e2192cf9a3a9174aebcb29c8e Mon Sep 17 00:00:00 2001
+From f05c806fa6bb31a06bad7a31297e0821a186ceb4 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
-Subject: [PATCH 5/5] [test](be) add native stack action tests
+Subject: [PATCH 5/5] (be) add native stack action tests
 
 The 13 Tier-1 cases from docs/phase2-test-plan.md, calling the common free
 functions directly rather than forging an HttpRequest. Contract and stability
@@ -9,16 +9,16 @@ cases (Schema, ShapeOneTid, MissingTid, BadRequest, ContendedDumpReturnsTimeout,
 Timeout, DumpLoopNoCrashNoStuck) run on the stub; correctness and boundary cases
 skip unless a real collector is linked.
 ---
- .../service/http/native_stack_action_test.cpp | 595 ++++++++++++++++++
- 1 file changed, 595 insertions(+)
+ .../service/http/native_stack_action_test.cpp | 680 ++++++++++++++++++
+ 1 file changed, 680 insertions(+)
  create mode 100644 be/test/service/http/native_stack_action_test.cpp
 
 diff --git a/be/test/service/http/native_stack_action_test.cpp b/be/test/service/http/native_stack_action_test.cpp
 new file mode 100644
-index 00000000000..cfb1f24c817
+index 00000000000..d80e5e7660c
 --- /dev/null
 +++ b/be/test/service/http/native_stack_action_test.cpp
-@@ -0,0 +1,595 @@
+@@ -0,0 +1,680 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -57,12 +57,12 @@ index 00000000000..cfb1f24c817
 +
 +#include "service/http/action/native_stack.h"
 +
-+// Tests call the common free functions directly; they do not forge an
-+// HttpRequest. This one file ships as a tests- patch in patches/common/, so it
-+// is present for every variant. Contract and stability cases run on the stub and
-+// on a real collector; correctness and boundary cases start with
-+// `if (collector_is_stub()) GTEST_SKIP();` so they run only on a real collector.
-+// Reference: docs/phase2-test-plan.md.
++// Reason: tests call the common free functions directly, not through an
++// HttpRequest. This file ships in patches/common/, so every variant carries
++// it. Contract and stability cases run on the stub and on a real collector;
++// correctness and boundary cases start with `if (collector_is_stub())
++// GTEST_SKIP();` so they run only on a real collector.
++// Spec: docs/phase2-test-plan.md.
 +namespace doris::native_stack {
 +namespace {
 +
@@ -70,12 +70,14 @@ index 00000000000..cfb1f24c817
 +    return static_cast<int64_t>(syscall(SYS_gettid));
 +}
 +
-+// The realtime signal fp-walk uses; case SignalBlocked blocks it on a worker.
++// Reason: the realtime signal fp-walk uses. Centralized so the SignalBlocked
++// case blocks the same number the collector sends.
 +int native_stack_signal() {
 +    return SIGRTMIN + 6;
 +}
 +
-+// EasyJson builds JSON; tests parse it back with rapidjson for assertions.
++// Reason: round-trip helper. EasyJson builds; tests parse back with
++// rapidjson so the assertions don't depend on the builder's API.
 +rapidjson::Document parse_report(const NativeStackReport& report) {
 +    const std::string body = serialize(report);
 +    rapidjson::Document doc;
@@ -83,7 +85,8 @@ index 00000000000..cfb1f24c817
 +    return doc;
 +}
 +
-+// Assert no symbol-like key appears anywhere: the contract carries raw PCs only.
++// Reason: walks the JSON recursively and fails if any symbol-like key
++// appears. The contract carries raw PCs only — symbolization is offline.
 +void expect_no_symbol_keys(const rapidjson::Value& value) {
 +    static const std::set<std::string> kForbidden = {"function", "func",      "file", "line",
 +                                                     "symbol",   "demangled", "name"};
@@ -100,14 +103,16 @@ index 00000000000..cfb1f24c817
 +    }
 +}
 +
-+// True on the common build's stub collector. Correctness/boundary cases skip on
-+// it because they need real frames.
++// Reason: true on the common build's stub collector. Correctness and
++// boundary cases skip on it because they need real frames.
 +bool collector_is_stub() {
 +    return collect_native_stacks(CollectOptions {}).collector == "stub";
 +}
 +
-+// A worker parked on a condition variable that publishes its tid. Cheap; used by
-+// the contract cases that only need a live, targetable thread.
++// Reason: a worker parked on a condition variable that publishes its tid.
++// Cheap fixture for cases that need a live, targetable thread but no real
++// stack content.
++// Local: test-only fixture.
 +class ParkedThread {
 +public:
 +    ParkedThread() {
@@ -142,7 +147,9 @@ index 00000000000..cfb1f24c817
 +    bool _release = false;
 +};
 +
-+// A worker busy-spinning in a non-trivial frame; has a real walkable RBP chain.
++// Reason: a worker busy-spinning in a non-trivial frame, so it has a real
++// walkable RBP chain at the point the handler interrupts it.
++// Local: test-only fixture.
 +class SpinThread {
 +public:
 +    SpinThread() {
@@ -173,11 +180,12 @@ index 00000000000..cfb1f24c817
 +    std::atomic<bool> _stop {false};
 +};
 +
-+// A worker that descends a known four-level call chain and busy-spins at the
-+// bottom, recording the return address into each caller (in call order: the
-+// outermost caller first). The walked frames, from the spin outward, are those
-+// same addresses in reverse, so KnownChainResolved can check them. noinline and
-+// the trailing asm keep each frame distinct and on the stack at -O0.
++// Reason: a worker that descends a known four-level call chain and busy-spins
++// at the bottom, recording each caller's return PC. The walked frames, from
++// the spin outward, are those addresses in reverse, so KnownChainResolved
++// can check them in order. `noinline` and the trailing asm keep each frame
++// distinct and on the stack at -O0.
++// Local: test-only fixture.
 +class MarkerChain {
 +public:
 +    MarkerChain() {
@@ -195,7 +203,8 @@ index 00000000000..cfb1f24c817
 +        }
 +    }
 +    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
-+    // Return addresses in call order (level_a's caller first, spin's caller last).
++    // Reason: return addresses in call order — level_a's caller first,
++    // spin's caller last. KnownChainResolved walks them in reverse.
 +    const std::vector<uintptr_t>& returns() const { return _returns; }
 +
 +private:
@@ -228,8 +237,10 @@ index 00000000000..cfb1f24c817
 +    std::vector<uintptr_t> _returns;
 +};
 +
-+// A worker that recurses to a fixed depth and busy-spins at the bottom, leaving a
-+// deep walkable chain. Used to exercise the max_frames truncation bound.
++// Reason: a worker that recurses to a fixed depth and busy-spins at the
++// bottom, leaving a deep walkable chain. Used to exercise the max_frames
++// truncation bound.
++// Local: test-only fixture.
 +class RecursiveSpinThread {
 +public:
 +    explicit RecursiveSpinThread(int depth) {
@@ -273,18 +284,22 @@ index 00000000000..cfb1f24c817
 +    void TearDown() override { set_unresponsive_tid_for_test(0); }
 +};
 +
-+// 1 (Schema): collect all, resolve, serialize, parse. The required root and
-+// per-thread keys are present, an all-thread dump carries no target_tid, frame
-+// objects hold only pc/dso/dso_offset, and no symbol-like key appears anywhere.
++// Reason: [case 1] catches drift in the JSON contract. Required root and
++// per-thread keys are present. An all-thread dump carries no target_tid.
++// Frame objects hold only pc, dso, dso_offset. No symbol-like key leaks.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #1 Schema.
 +TEST_F(NativeStackActionTest, Schema) {
++    // 1. Run the full pipeline.
 +    CollectOptions opts;
 +    NativeStackReport report = collect_native_stacks(opts);
 +    resolve_dsos(&report);
 +    rapidjson::Document doc = parse_report(report);
 +
++    // 2. JSON parses to a root object.
 +    ASSERT_FALSE(doc.HasParseError());
 +    ASSERT_TRUE(doc.IsObject());
 +
++    // 3. Required root keys present; target_tid absent on an all-thread dump.
 +    for (const char* key : {"collector", "status", "timeout_ms", "max_frames_per_thread",
 +                            "max_copied_stack_bytes", "elapsed_ms", "threads"}) {
 +        ASSERT_TRUE(doc.HasMember(key)) << "missing root key: " << key;
@@ -294,6 +309,7 @@ index 00000000000..cfb1f24c817
 +    EXPECT_TRUE(doc["threads"].IsArray());
 +    EXPECT_FALSE(doc.HasMember("target_tid"));
 +
++    // 4. Each thread carries required keys; each frame carries only pc/dso/dso_offset.
 +    for (const auto& thread : doc["threads"].GetArray()) {
 +        ASSERT_TRUE(thread.IsObject());
 +        for (const char* key : {"tid", "status", "truncated", "frames"}) {
@@ -309,53 +325,71 @@ index 00000000000..cfb1f24c817
 +        }
 +    }
 +
++    // 5. No symbol-like key appears anywhere.
 +    expect_no_symbol_keys(doc);
 +}
 +
-+// 2 (ShapeOneTid): park one thread T; collect {tid:T}. Exactly one thread entry,
-+// tid == T, root target_tid == T.
++// Reason: [case 2] a targeted dump returns exactly one thread entry, with
++// tid matching the request and root target_tid carrying the same value.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #2 ShapeOneTid.
 +TEST_F(NativeStackActionTest, ShapeOneTid) {
++    // 1. Park a worker so its tid is live and targetable.
 +    ParkedThread worker;
 +    CollectOptions opts;
 +    opts.target_tid = worker.tid();
++
++    // 2. Collect targeting that one tid.
 +    NativeStackReport report = collect_native_stacks(opts);
 +    resolve_dsos(&report);
 +    rapidjson::Document doc = parse_report(report);
 +
++    // 3. Exactly one thread entry, with the requested tid.
 +    ASSERT_FALSE(doc.HasParseError());
 +    ASSERT_TRUE(doc["threads"].IsArray());
 +    ASSERT_EQ(doc["threads"].Size(), 1U);
 +    EXPECT_EQ(doc["threads"][0]["tid"].GetInt64(), worker.tid());
++
++    // 4. Root target_tid carries the requested tid.
 +    ASSERT_TRUE(doc.HasMember("target_tid"));
 +    EXPECT_EQ(doc["target_tid"].GetInt64(), worker.tid());
 +}
 +
-+// 3 (MissingTid): collect a tid that is not present. Status missing_tid, an error
-+// reason, and no frames.
++// Reason: [case 3] requesting a tid that is not present returns
++// missing_tid with an error reason and no frames.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #3 MissingTid.
 +TEST_F(NativeStackActionTest, MissingTid) {
++    // 1. Request a tid far above any pid_max so the lookup must fail.
 +    CollectOptions opts;
-+    opts.target_tid = static_cast<int64_t>(1) << 40; // far above any pid_max
++    opts.target_tid = static_cast<int64_t>(1) << 40;
 +    NativeStackReport report = collect_native_stacks(opts);
 +
++    // 2. Status is missing_tid with a non-empty reason and no frames.
 +    EXPECT_EQ(report.status, "missing_tid");
 +    EXPECT_FALSE(report.error_reason.empty());
 +    for (const auto& thread : report.threads) {
 +        EXPECT_TRUE(thread.frames.empty());
 +    }
++
++    // 3. JSON surface carries the same status.
 +    rapidjson::Document doc = parse_report(report);
 +    ASSERT_FALSE(doc.HasParseError());
 +    EXPECT_STREQ(doc["status"].GetString(), "missing_tid");
 +}
 +
-+// 4 (BadRequest): parse_collect_options rejects each bad input as bad_request with
-+// a reason and performs no collection.
++// Reason: [case 4] parse_collect_options is the only bad_request choke
++// point. Each bad input is rejected with a reason; no collection runs.
++// A valid request parses to the carried values.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #4 BadRequest.
 +TEST_F(NativeStackActionTest, BadRequest) {
++    // 1. A helper that asserts the params are rejected with a non-empty reason.
 +    auto rejected = [](std::map<std::string, std::string> params) {
 +        CollectOptions opts;
 +        std::string reason;
 +        EXPECT_FALSE(parse_collect_options(params, &opts, &reason));
 +        EXPECT_FALSE(reason.empty());
 +    };
++
++    // 2. Every bad input shape is rejected.
 +    rejected({{"tid", "0"}});
 +    rejected({{"tid", "-5"}});
 +    rejected({{"tid", "12x"}});
@@ -364,6 +398,7 @@ index 00000000000..cfb1f24c817
 +    rejected({{"timeout_ms", "abc"}});
 +    rejected({{"max_frames", "0"}});
 +
++    // 3. A valid request parses, with the supplied values carried through.
 +    CollectOptions opts;
 +    std::string reason;
 +    EXPECT_TRUE(
@@ -372,14 +407,18 @@ index 00000000000..cfb1f24c817
 +    EXPECT_EQ(opts.max_frames, 32);
 +}
 +
-+// 5 (ContendedDumpReturnsTimeout): hold the dump lock; a collect with a small
-+// timeout returns timeout with no threads. Releasing the lock lets the next
-+// collect succeed. The contended collect runs on another thread to avoid
++// Reason: [case 5] a second dump that contends on the single-dump gate
++// returns timeout with no threads; once the lock is released, the next
++// dump succeeds. The contended collect runs on another thread to avoid
 +// re-locking a non-recursive mutex on the holder thread.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #5 ContendedDumpReturnsTimeout.
 +TEST_F(NativeStackActionTest, ContendedDumpReturnsTimeout) {
 +    NativeStackReport contended;
 +    {
++        // 1. Hold the dump gate.
 +        DumpLockGuard guard = hold_dump_lock_for_test();
++
++        // 2. A concurrent collect with a small timeout returns timeout.
 +        std::thread collector([&contended] {
 +            CollectOptions opts;
 +            opts.timeout_ms = 20;
@@ -390,37 +429,44 @@ index 00000000000..cfb1f24c817
 +        EXPECT_TRUE(contended.threads.empty());
 +    }
 +
++    // 3. Release the gate; the next collect succeeds.
 +    NativeStackReport after = collect_native_stacks(CollectOptions {});
 +    EXPECT_NE(after.status, "timeout");
 +}
 +
-+// 6 (Timeout): mark a present tid unresponsive; collect {tid:T} reports T timeout
-+// and overall timeout. Clearing the hook lets a later dump succeed.
++// Reason: [case 6] the unresponsive-tid hook reports the marked tid as
++// `timeout` without calling capture; clearing the hook restores normal
++// collection.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #6 Timeout.
 +TEST_F(NativeStackActionTest, Timeout) {
++    // 1. Mark a present tid (this thread) unresponsive.
 +    const int64_t target = self_tid();
 +    set_unresponsive_tid_for_test(target);
 +
++    // 2. A collect targeting that tid reports timeout per-thread and overall.
 +    CollectOptions opts;
 +    opts.target_tid = target;
 +    opts.timeout_ms = 20;
 +    NativeStackReport report = collect_native_stacks(opts);
-+
 +    ASSERT_EQ(report.threads.size(), 1U);
 +    EXPECT_EQ(report.threads[0].status, "timeout");
 +    EXPECT_EQ(report.status, "timeout");
 +
++    // 3. Clear the hook; the next dump succeeds.
 +    set_unresponsive_tid_for_test(0);
 +    NativeStackReport after = collect_native_stacks(CollectOptions {});
 +    EXPECT_NE(after.status, "timeout");
 +}
 +
-+// 7 (NonZeroPcPerActiveThread): spawn spin-parked threads; each returns at least
-+// one non-zero pc. Real collector only.
++// Reason: [case 7] every active worker thread returns at least one
++// non-zero pc, proving the per-variant capture actually walked.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #7 NonZeroPcPerActiveThread.
 +TEST_F(NativeStackActionTest, NonZeroPcPerActiveThread) {
 +    if (collector_is_stub()) {
 +        GTEST_SKIP();
 +    }
 +
++    // 1. Spawn K busy-spinning workers; record their tids.
 +    constexpr int kWorkers = 4;
 +    std::vector<std::unique_ptr<SpinThread>> workers;
 +    std::set<int64_t> worker_tids;
@@ -429,6 +475,8 @@ index 00000000000..cfb1f24c817
 +        worker_tids.insert(workers.back()->tid());
 +    }
 +
++    // 2. Dump all threads; assert each worker has an `ok` status with at
++    //    least one non-zero pc.
 +    NativeStackReport report = collect_native_stacks(CollectOptions {});
 +    int seen = 0;
 +    for (const auto& thread : report.threads) {
@@ -444,24 +492,32 @@ index 00000000000..cfb1f24c817
 +        }
 +        EXPECT_TRUE(any_nonzero) << "tid " << thread.tid;
 +    }
++
++    // 3. Every worker was visited.
 +    EXPECT_EQ(seen, kWorkers);
 +}
 +
-+// 8 (KnownChainResolved): a known call chain parks at its deepest frame; the dump
-+// shows the recorded return PCs in caller order, each resolved to a dso with an
-+// offset such that the dso load base plus offset equals pc, and a non-negative
-+// handler time. Real collector only; exact frame indices validated at Gate B.
++// Reason: [case 8] a known call chain parks at its deepest frame; the
++// dump's walked PCs equal the recorded return addresses in caller order,
++// each resolved to a dso whose load base plus offset equals pc, with a
++// non-negative handler time. Exact frame indices are validated at Gate B.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #8 KnownChainResolved.
 +TEST_F(NativeStackActionTest, KnownChainResolved) {
 +    if (collector_is_stub()) {
 +        GTEST_SKIP();
 +    }
 +
++    // 1. Park the marker chain so its return addresses are recorded.
 +    MarkerChain chain;
 +    CollectOptions opts;
 +    opts.target_tid = chain.tid();
++
++    // 2. Collect and resolve DSOs.
 +    NativeStackReport report = collect_native_stacks(opts);
 +    resolve_dsos(&report);
 +
++    // 3. Basic shape: one thread, ok status, at least 5 frames, non-zero PC0,
++    //    handler time present.
 +    ASSERT_EQ(report.threads.size(), 1U);
 +    const ThreadStack& thread = report.threads[0];
 +    ASSERT_EQ(thread.status, "ok");
@@ -469,8 +525,8 @@ index 00000000000..cfb1f24c817
 +    EXPECT_NE(thread.frames[0].pc, 0U);
 +    EXPECT_GE(thread.handler_time_ns, 0);
 +
-+    // The walked return addresses, from the spin outward, are the recorded ones
-+    // in reverse call order. Find where that run begins and check it in order.
++    // 4. The walked PCs contain the recorded return addresses, in caller
++    //    order from the spin outward.
 +    std::vector<uintptr_t> expected(chain.returns().rbegin(), chain.returns().rend());
 +    ASSERT_EQ(expected.size(), 4U);
 +    std::vector<uintptr_t> pcs;
@@ -485,20 +541,22 @@ index 00000000000..cfb1f24c817
 +                << "chain frame " << i << " mismatch";
 +    }
 +
-+    // Every walked frame resolves to a mapped DSO (base + offset == pc).
++    // 5. Every walked frame resolves to a mapped DSO.
 +    for (const Frame& frame : thread.frames) {
 +        EXPECT_TRUE(frame.dso_resolved) << "pc " << frame.pc << " unresolved";
 +        EXPECT_FALSE(frame.dso.empty());
 +    }
 +}
 +
-+// 9 (Truncated): a chain deeper than N truncates at max_frames N with truncated
-+// true; a generous N does not truncate. Real collector only.
++// Reason: [case 9] a chain deeper than N truncates at max_frames N with
++// `truncated = true`; a generous N does not truncate.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #9 Truncated.
 +TEST_F(NativeStackActionTest, Truncated) {
 +    if (collector_is_stub()) {
 +        GTEST_SKIP();
 +    }
 +
++    // 1. A deep chain capped at max_frames = 4 truncates at the cap.
 +    RecursiveSpinThread worker(32);
 +    CollectOptions bounded;
 +    bounded.target_tid = worker.tid();
@@ -508,6 +566,7 @@ index 00000000000..cfb1f24c817
 +    EXPECT_EQ(report.threads[0].frames.size(), 4U);
 +    EXPECT_TRUE(report.threads[0].truncated);
 +
++    // 2. Control: a generous cap on the same chain returns truncated = false.
 +    CollectOptions generous;
 +    generous.target_tid = worker.tid();
 +    generous.max_frames = 256;
@@ -518,13 +577,17 @@ index 00000000000..cfb1f24c817
 +    EXPECT_GT(control.threads[0].frames.size(), 4U);
 +}
 +
-+// 10 (SignalBlocked): a thread that blocks the collector signal is reported
-+// signal_blocked, not timeout. Real collector only.
++// Reason: [case 10] a thread that blocks SIGRTMIN+6 with pthread_sigmask
++// is reported `signal_blocked`, distinct from `timeout`. This is the only
++// way the harness distinguishes "thread cannot be signalled" from "thread
++// did not respond in time".
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #10 SignalBlocked.
 +TEST_F(NativeStackActionTest, SignalBlocked) {
 +    if (collector_is_stub()) {
 +        GTEST_SKIP();
 +    }
 +
++    // 1. Spawn a worker that blocks the collector signal and parks.
 +    std::atomic<int64_t> tid {0};
 +    std::atomic<bool> stop {false};
 +    std::thread worker([&tid, &stop] {
@@ -541,33 +604,42 @@ index 00000000000..cfb1f24c817
 +        std::this_thread::yield();
 +    }
 +
++    // 2. Collect targeting that worker.
 +    CollectOptions opts;
 +    opts.target_tid = tid.load(std::memory_order_acquire);
 +    NativeStackReport report = collect_native_stacks(opts);
 +
++    // 3. Cleanup.
 +    stop.store(true, std::memory_order_release);
 +    worker.join();
 +
++    // 4. The per-thread status is signal_blocked, not timeout.
 +    ASSERT_EQ(report.threads.size(), 1U);
 +    EXPECT_EQ(report.threads[0].status, "signal_blocked");
 +}
 +
-+// 11 (PartialResults): responsive parked threads plus one unresponsive; the
-+// responsive carry frames, the unresponsive is timeout, overall partial, and the
-+// process stays healthy. Real collector only.
++// Reason: [case 11] responsive parked threads plus one unresponsive — the
++// responsive ones carry frames, the unresponsive one is `timeout`, the
++// overall status is `partial`, and the process stays healthy.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #11 PartialResults.
 +TEST_F(NativeStackActionTest, PartialResults) {
 +    if (collector_is_stub()) {
 +        GTEST_SKIP();
 +    }
 +
++    // 1. Spawn two responsive workers plus one tagged as unresponsive.
 +    SpinThread responsive_a;
 +    SpinThread responsive_b;
 +    ParkedThread unresponsive;
 +    set_unresponsive_tid_for_test(unresponsive.tid());
 +
++    // 2. Dump all threads.
 +    NativeStackReport report = collect_native_stacks(CollectOptions {});
++
++    // 3. Overall status is partial.
 +    EXPECT_EQ(report.status, "partial");
 +
++    // 4. The unresponsive worker is `timeout`; each responsive worker has frames.
 +    for (const auto& thread : report.threads) {
 +        if (thread.tid == unresponsive.tid()) {
 +            EXPECT_EQ(thread.status, "timeout");
@@ -578,42 +650,55 @@ index 00000000000..cfb1f24c817
 +    }
 +}
 +
-+// 12 (LateResponderDoesNotCorruptNextDump): a thread that runs its handler after
-+// dump 1's deadline must not corrupt dump 2 or be misattributed. Real collector
-+// only; the late-handler hook lands with fp-walk at Gate B.
++// Reason: [case 12] two sequential dumps of the same tid must not have
++// dump 1's handler leak into dump 2 or misattribute its result. This case
++// catches re-arming misattribution; it does NOT prove no use-after-free of
++// the shared capture slot (that requires forcing a handler to land after
++// its deadline, which is a fp-walk-specific Tier 2 / Gate B test).
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #12 LateResponderDoesNotCorruptNextDump.
 +TEST_F(NativeStackActionTest, LateResponderDoesNotCorruptNextDump) {
 +    if (collector_is_stub()) {
 +        GTEST_SKIP();
 +    }
 +
++    // 1. Park a worker.
 +    ParkedThread worker;
 +    CollectOptions opts;
 +    opts.target_tid = worker.tid();
 +
++    // 2. Two sequential dumps targeting the same tid.
 +    NativeStackReport first = collect_native_stacks(opts);
 +    NativeStackReport second = collect_native_stacks(opts);
 +
++    // 3. The second dump returns a single thread entry with the correct tid
++    //    — i.e. dump 1's handler did not poison the slot for dump 2.
 +    ASSERT_EQ(second.threads.size(), 1U);
 +    EXPECT_EQ(second.threads[0].tid, worker.tid());
 +}
 +
-+// 13 (DumpLoopNoCrashNoStuck): repeated all-thread dumps with workers alive each
-+// return within a wall-clock bound and leave the workers joinable.
++// Reason: [case 13] repeated all-thread dumps with live workers each
++// return within a wall-clock bound and leave workers joinable. This is the
++// "no crash, no stuck" stability gate.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #13 DumpLoopNoCrashNoStuck.
 +TEST_F(NativeStackActionTest, DumpLoopNoCrashNoStuck) {
++    // 1. Spawn two long-lived workers.
 +    SpinThread worker_a;
 +    ParkedThread worker_b;
 +
++    // 2. Loop N dumps; each returns with a non-empty status.
 +    constexpr int kIterations = 200;
 +    const auto start = std::chrono::steady_clock::now();
 +    for (int i = 0; i < kIterations; ++i) {
 +        NativeStackReport report = collect_native_stacks(CollectOptions {});
 +        ASSERT_FALSE(report.status.empty());
 +    }
++
++    // 3. The loop finishes within a wall-clock bound.
 +    const auto elapsed = std::chrono::steady_clock::now() - start;
 +    EXPECT_LT(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), 60);
 +}
 +
 +} // namespace doris::native_stack
 -- 
-2.53.0
+2.43.0
 

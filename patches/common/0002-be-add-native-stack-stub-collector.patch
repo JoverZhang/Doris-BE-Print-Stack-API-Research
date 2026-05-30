@@ -1,7 +1,7 @@
-From 6a244d02b7b9a397250affa4eed29072cd19a1f3 Mon Sep 17 00:00:00 2001
+From 6f4124681a6e10e8b81455dde414a33e49d117de Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
-Subject: [PATCH 2/5] [feature](be) add native stack stub collector
+Subject: [PATCH 2/5] (be) add native stack stub collector
 
 native_stack_collect.cpp is the one-file swap point: the common build ships a
 stub that returns the response shape with no PCs, and each variant patch
@@ -9,16 +9,16 @@ stub that returns the response shape with no PCs, and each variant patch
 
 Reference: docs/phase2-design.md "Common API" -> stub collect().
 ---
- .../http/action/native_stack_collect.cpp      | 43 +++++++++++++++++++
- 1 file changed, 43 insertions(+)
+ .../http/action/native_stack_collect.cpp      | 44 +++++++++++++++++++
+ 1 file changed, 44 insertions(+)
  create mode 100644 be/src/service/http/action/native_stack_collect.cpp
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
 new file mode 100644
-index 00000000000..deb904498ee
+index 00000000000..2c9e8bce4de
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,44 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -40,16 +40,17 @@ index 00000000000..deb904498ee
 +
 +#include "service/http/action/native_stack.h"
 +
-+// The per-variant collect step. The common build ships this stub; each variant
-+// patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file with its real
-+// collector, while every other file in the seam stays put.
-+// Reference: docs/phase2-design.md "Common API" -> stub collect().
++// Reason: the per-variant collect step. The common build ships this stub;
++// each variant patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file
++// with its real collector, so every other file in the seam stays put.
++// Spec: docs/phase2-design.md "Common API" -> stub collect().
 +namespace doris::native_stack {
 +namespace {
 +
-+// Reason: the stub proves the response shape and the single-dump gate without
-+// real signaling -- every live thread reports `ok` with no frames. run_collection
-+// owns the gate, tid selection, and aggregation, so the stub only fills status.
++// Reason: the stub proves the response shape and the single-dump gate
++// without real signaling — every live thread reports `ok` with no frames.
++// run_collection owns the gate, tid selection, and aggregation, so the stub
++// only fills status.
 +void stub_capture(int64_t /*tid*/, const CollectOptions& /*opts*/,
 +                  std::chrono::steady_clock::time_point /*deadline*/, ThreadStack* out) {
 +    out->status = "ok";
@@ -63,5 +64,5 @@ index 00000000000..deb904498ee
 +
 +} // namespace doris::native_stack
 -- 
-2.53.0
+2.43.0
 

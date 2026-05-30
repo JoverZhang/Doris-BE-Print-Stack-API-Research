@@ -1,7 +1,7 @@
-From a3fad5e6383c7c557b4472fbd8fc66db143e3e8d Mon Sep 17 00:00:00 2001
+From d4cf0b4e621a86e0e0e6696d3a8622f70cd5f64f Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
-Subject: [PATCH 4/5] [feature](be) register native stack debug HTTP route
+Subject: [PATCH 4/5] (be) register native stack debug HTTP route
 
 Register NativeStackAction at GET /api/debug/native_stack with ADMIN privilege.
 ---
@@ -34,5 +34,5 @@ index 93a50a81cc1..4a3d121bcab 100644
      LoadStreamAction* load_stream_action = _pool.add(new LoadStreamAction(_env));
      _ev_http_server->register_handler(HttpMethod::GET, "/api/load_streams", load_stream_action);
 -- 
-2.53.0
+2.43.0
 

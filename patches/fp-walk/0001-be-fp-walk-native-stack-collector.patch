@@ -1,7 +1,7 @@
-From 88bfc2896eec5e5b62139eb5e7d906e88d03efbf Mon Sep 17 00:00:00 2001
+From 67c2011f732e9e76f5e2ad492eba861a9bd105df Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 13:38:42 +0800
-Subject: [PATCH] [feature](be) fp-walk native stack collector
+Subject: [PATCH] (be) fp-walk native stack collector
 
 Rewrite the stub collect step as the real frame-pointer walk: interrupt each
 target thread with SIGRTMIN+6 queued via SI_QUEUE carrying a per-request
@@ -18,14 +18,14 @@ dl_iterate_phdr, so it never collides with the jemalloc allocator path.
 Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk";
 <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
 ---
- .../http/action/native_stack_collect.cpp      | 281 +++++++++++++++++-
- 1 file changed, 270 insertions(+), 11 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 282 +++++++++++++++++-
+ 1 file changed, 270 insertions(+), 12 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index deb904498ee..6b757699710 100644
+index 2c9e8bce4de..6b757699710 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,29 +15,288 @@
+@@ -15,30 +15,288 @@
  // specific language governing permissions and limitations
  // under the License.
  
@@ -51,10 +51,10 @@ index deb904498ee..6b757699710 100644
  
  #include "service/http/action/native_stack.h"
  
--// The per-variant collect step. The common build ships this stub; each variant
--// patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file with its real
--// collector, while every other file in the seam stays put.
--// Reference: docs/phase2-design.md "Common API" -> stub collect().
+-// Reason: the per-variant collect step. The common build ships this stub;
+-// each variant patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file
+-// with its real collector, so every other file in the seam stays put.
+-// Spec: docs/phase2-design.md "Common API" -> stub collect().
 +// The fp-walk collect step: interrupt each target thread with a realtime signal
 +// and walk its RBP chain in the handler. fp-walk runs no libunwind and overrides
 +// no dl_iterate_phdr, so the allocator path never collides with the handler.
@@ -64,9 +64,10 @@ index deb904498ee..6b757699710 100644
  namespace doris::native_stack {
  namespace {
  
--// Reason: the stub proves the response shape and the single-dump gate without
--// real signaling -- every live thread reports `ok` with no frames. run_collection
--// owns the gate, tid selection, and aggregation, so the stub only fills status.
+-// Reason: the stub proves the response shape and the single-dump gate
+-// without real signaling — every live thread reports `ok` with no frames.
+-// run_collection owns the gate, tid selection, and aggregation, so the stub
+-// only fills status.
 -void stub_capture(int64_t /*tid*/, const CollectOptions& /*opts*/,
 -                  std::chrono::steady_clock::time_point /*deadline*/, ThreadStack* out) {
 -    out->status = "ok";
@@ -326,5 +327,5 @@ index deb904498ee..6b757699710 100644
  
  } // namespace doris::native_stack
 -- 
-2.53.0
+2.43.0
 

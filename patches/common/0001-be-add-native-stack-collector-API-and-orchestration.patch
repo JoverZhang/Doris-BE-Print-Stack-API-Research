@@ -1,8 +1,7 @@
-From 24893e6f26444165be48d310b26dc6a4df925402 Mon Sep 17 00:00:00 2001
+From 8931f630ca1136c720686c1ce99aa9bd8c7a90ca Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:05 +0800
-Subject: [PATCH 1/5] [feature](be) add native stack collector API and
- orchestration
+Subject: [PATCH 1/5] (be) add native stack collector API and orchestration
 
 The shared seam for Phase 2 native-stack collection: parse_collect_options
 (the only bad_request choke point), run_collection (a single-dump timed_mutex
@@ -12,18 +11,18 @@ hooks. The per-variant collect step lives in a separate file.
 
 Reference: docs/phase2-design.md "Common API".
 ---
- be/src/service/http/action/native_stack.cpp | 388 ++++++++++++++++++++
- be/src/service/http/action/native_stack.h   | 126 +++++++
- 2 files changed, 514 insertions(+)
+ be/src/service/http/action/native_stack.cpp | 414 ++++++++++++++++++++
+ be/src/service/http/action/native_stack.h   | 144 +++++++
+ 2 files changed, 558 insertions(+)
  create mode 100644 be/src/service/http/action/native_stack.cpp
  create mode 100644 be/src/service/http/action/native_stack.h
 
 diff --git a/be/src/service/http/action/native_stack.cpp b/be/src/service/http/action/native_stack.cpp
 new file mode 100644
-index 00000000000..031231731ae
+index 00000000000..e0a5298816c
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack.cpp
-@@ -0,0 +1,388 @@
+@@ -0,0 +1,414 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -62,20 +61,25 @@ index 00000000000..031231731ae
 +
 +#include "util/easy_json.h"
 +
-+// The variant-agnostic half of the native-stack seam: the gate, tid selection,
++// Reason: the variant-agnostic half of the seam — the gate, tid selection,
 +// status aggregation, DSO resolution, and JSON. The only per-variant step
-+// (collect) lives in native_stack_collect.cpp.
-+// Reference: docs/phase2-design.md "Common API".
++// (`collect`) lives in native_stack_collect.cpp.
++// Spec: docs/phase2-design.md "Common API".
 +namespace doris::native_stack {
 +namespace {
 +
-+// Reason: a timed_mutex allows one in-flight dump; a contended request returns
-+// `timeout` after a bounded wait instead of blocking (CK) or spinning (OB).
-+// Reference: docs/phase2-design.md "Common API" -> Mechanics.
++// Reason: a timed_mutex allows one in-flight dump; a contended request
++// returns `timeout` after a bounded wait. CK blocks on a plain `std::mutex`
++// for the same single-reader guarantee; we bound the wait to match the
++// charter's "one active dump at a time" without queueing.
++// Spec: docs/phase2-design.md "Common API" -> Mechanics.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:93-101
++//   (the "Only one query at a time" mutex).
 +std::timed_mutex s_dump_mutex;
 +
-+// Reason: test hook. run_collection reports this tid `timeout` without calling
-+// capture, so the timeout and partial paths run without real signaling.
++// Reason: test hook. run_collection reports this tid `timeout` without
++// calling capture, so the timeout and partial paths run without real
++// signaling. set_unresponsive_tid_for_test(0) clears it.
 +std::atomic<int64_t> s_unresponsive_tid {0};
 +
 +int64_t elapsed_ms(std::chrono::steady_clock::time_point start) {
@@ -84,7 +88,8 @@ index 00000000000..031231731ae
 +                                        .count());
 +}
 +
-+// Reason: parses one signed integer and rejects trailing garbage.
++// Reason: parses one signed integer and rejects trailing garbage. Centralized
++// so every query-param parser uses the same accept/reject rules.
 +bool parse_i64(const std::string& value, int64_t* parsed) {
 +    try {
 +        size_t consumed = 0;
@@ -99,8 +104,9 @@ index 00000000000..031231731ae
 +    }
 +}
 +
-+// Reason: applies the default when the param is absent or empty and bounds-checks
-+// otherwise. The single choke point for rejecting out-of-range input.
++// Reason: applies the default when the param is absent or empty, otherwise
++// parses and bounds-checks. The single choke point for rejecting
++// out-of-range input.
 +bool parse_bounded(const std::map<std::string, std::string>& params, const std::string& key,
 +                   int64_t default_value, int64_t min_value, int64_t max_value, int64_t* out,
 +                   std::string* error_reason) {
@@ -118,9 +124,12 @@ index 00000000000..031231731ae
 +    return true;
 +}
 +
-+// Reason: enumerates BE threads from /proc/self/task as the canonical tid set, so
-+// a test binary can dump its own threads in-process.
-+// Reference: docs/phase2-design.md "Common API" -> Mechanics.
++// Reason: enumerates BE threads from /proc/self/task as the canonical tid
++// set, so a test binary can dump its own threads in-process. CK uses the
++// same enumeration; there is no portable alternative on Linux.
++// Spec: docs/phase2-design.md "Common API" -> Mechanics.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:656-667
++//   (`getFilteredThreadIds` iterates /proc/self/task entries).
 +std::vector<int64_t> list_thread_ids() {
 +    std::vector<int64_t> tids;
 +    std::error_code ec;
@@ -137,7 +146,8 @@ index 00000000000..031231731ae
 +    return tids;
 +}
 +
-+// One /proc/self/maps row, used by resolve_dsos to map a pc to its DSO.
++// Reason: one /proc/self/maps row. resolve_dsos uses these to map each pc
++// to its DSO and the offset within that DSO's segment.
 +struct MemoryMap {
 +    uintptr_t start = 0;
 +    uintptr_t end = 0;
@@ -153,7 +163,8 @@ index 00000000000..031231731ae
 +    return value.substr(first);
 +}
 +
-+// Reason: parses one unsigned hex field from /proc/self/maps and rejects garbage.
++// Reason: parses one unsigned hex field from /proc/self/maps and rejects
++// garbage. Same accept/reject pattern as parse_i64 but for hex.
 +bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
 +    try {
 +        size_t consumed = 0;
@@ -169,6 +180,8 @@ index 00000000000..031231731ae
 +}
 +
 +// Reason: reads the process map once so resolve_dsos can locate each pc.
++// Called per dump, in the request thread (not the signal handler), so I/O
++// is safe.
 +std::vector<MemoryMap> load_memory_maps() {
 +    std::vector<MemoryMap> maps;
 +    std::ifstream input("/proc/self/maps");
@@ -228,8 +241,8 @@ index 00000000000..031231731ae
 +
 +bool parse_collect_options(const std::map<std::string, std::string>& params, CollectOptions* out,
 +                           std::string* error_reason) {
-+    // Reason: the only place `bad_request` is decided. On any rejection *out is
-+    // left untouched and *error_reason carries the cause.
++    // Reason: the only place `bad_request` is decided. On any rejection *out
++    // is left untouched and *error_reason carries the cause.
 +    CollectOptions parsed;
 +    if (!parse_bounded(params, "timeout_ms", 100, 1, 60000, &parsed.timeout_ms, error_reason) ||
 +        !parse_bounded(params, "max_frames", 64, 1, 1024, &parsed.max_frames, error_reason) ||
@@ -250,6 +263,12 @@ index 00000000000..031231731ae
 +    return true;
 +}
 +
++// Reason: variant-agnostic orchestration shared by every variant; the
++// per-variant `capture` is the only thing that differs.
++// Spec: docs/phase2-design.md "Common API" -> Mechanics.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:381-384
++//   (CK signals threads one at a time for the same queued-signal-limit
++//   reason that motivates the per-thread `capture` call below).
 +NativeStackReport run_collection(const CollectOptions& opts, const char* collector_name,
 +                                 CaptureFn capture) {
 +    const auto start = std::chrono::steady_clock::now();
@@ -270,8 +289,8 @@ index 00000000000..031231731ae
 +        return report;
 +    }
 +
-+    // 2. Select target tids from /proc/self/task; a requested tid that is gone is
-+    //    `missing_tid`.
++    // 2. Select target tids from /proc/self/task; a requested tid that is
++    //    gone is `missing_tid`.
 +    std::vector<int64_t> tids = list_thread_ids();
 +    if (opts.target_tid.has_value()) {
 +        if (!std::binary_search(tids.begin(), tids.end(), opts.target_tid.value())) {
@@ -288,8 +307,10 @@ index 00000000000..031231731ae
 +        tids = {opts.target_tid.value()};
 +    }
 +
-+    // 3. Capture each thread. The unresponsive-tid hook forces `timeout` without
-+    //    calling capture, so the timeout and partial paths are testable.
++    // 3. Capture each thread sequentially. The unresponsive-tid hook forces
++    //    `timeout` without calling capture, so the timeout and partial paths
++    //    are testable. Sequential capture bounds the queued-signal load on
++    //    the OS (CK rationale).
 +    const auto deadline = start + std::chrono::milliseconds(opts.timeout_ms);
 +    const int64_t unresponsive = s_unresponsive_tid.load(std::memory_order_acquire);
 +    int ok_count = 0;
@@ -315,8 +336,8 @@ index 00000000000..031231731ae
 +        report.threads.push_back(std::move(ts));
 +    }
 +
-+    // 4. Aggregate: all ok -> ok; some ok -> partial; none ok with every failure a
-+    //    timeout -> timeout; otherwise partial.
++    // 4. Aggregate: all ok -> ok; some ok -> partial; none ok with every
++    //    failure a timeout -> timeout; otherwise partial.
 +    if (fail_count == 0) {
 +        report.status = "ok";
 +    } else if (ok_count > 0) {
@@ -332,10 +353,11 @@ index 00000000000..031231731ae
 +    if (report == nullptr) {
 +        return;
 +    }
-+    // Reason: resolve every frame's pc to (dso, dso_offset) so offline tools can
-+    // symbolize. dso_offset = map.offset + (pc - map.start), so the DSO's load
-+    // base plus dso_offset equals pc.
-+    // Reference: docs/phase2-design.md "Common API"; offset formula per case
++    // Reason: resolve every frame's pc to (dso, dso_offset) so offline tools
++    // can symbolize. dso_offset = map.offset + (pc - map.start), so the
++    // DSO's load base plus dso_offset equals pc. Runs in the request thread,
++    // not the signal handler, so file I/O is safe.
++    // Spec: docs/phase2-design.md "Common API". Offset formula per case
 +    // `KnownChainResolved` in docs/phase2-test-plan.md.
 +    const std::vector<MemoryMap> maps = load_memory_maps();
 +    for (ThreadStack& thread : report->threads) {
@@ -355,9 +377,11 @@ index 00000000000..031231731ae
 +}
 +
 +std::string serialize(const NativeStackReport& report) {
-+    // Reason: build the agreed JSON contract. EasyJson builds; tests parse with
-+    // rapidjson. Frame objects carry only pc/dso/dso_offset -- no symbol fields.
-+    // Reference: docs/phase2-test-plan.md case `Schema`.
++    // Reason: build the agreed JSON contract. EasyJson builds it; tests
++    // parse with rapidjson. Frame objects carry only pc/dso/dso_offset — no
++    // symbol fields.
++    // Spec: docs/phase2-design.md "Common API" -> Response shape; case
++    // `Schema` in docs/phase2-test-plan.md fails on drift.
 +    EasyJson root;
 +    root["collector"] = report.collector;
 +    root["status"] = report.status;
@@ -406,7 +430,8 @@ index 00000000000..031231731ae
 +DumpLockGuard::~DumpLockGuard() = default;
 +
 +// Reason: holds the single-dump gate for the lifetime of the guard so a
-+// concurrent collect deterministically hits the bounded-wait timeout. Test-only.
++// concurrent collect deterministically hits the bounded-wait timeout.
++// Test-only.
 +DumpLockGuard hold_dump_lock_for_test() {
 +    return DumpLockGuard(std::unique_lock<std::timed_mutex>(s_dump_mutex));
 +}
@@ -414,10 +439,10 @@ index 00000000000..031231731ae
 +} // namespace doris::native_stack
 diff --git a/be/src/service/http/action/native_stack.h b/be/src/service/http/action/native_stack.h
 new file mode 100644
-index 00000000000..792fdefc525
+index 00000000000..91437136db6
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack.h
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,144 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -445,91 +470,109 @@ index 00000000000..792fdefc525
 +#include <string>
 +#include <vector>
 +
-+// The native-stack collection seam shared by every Phase 2 variant. Tests call
-+// these free functions directly, without forging an HttpRequest. The thin
-+// NativeStackAction HTTP handler is the only other caller.
-+// Reason: a free-function seam keeps the per-variant step (collect) isolated and
-+// makes the response shape, gate, and parsing testable in-process.
-+// Reference: docs/phase2-design.md "Common API".
++// Reason: the shared collection seam. Every Phase 2 variant routes through
++// it; tests call these free functions directly, without forging an
++// HttpRequest. A free-function shape keeps `collect` per-variant and makes
++// the response shape, gate, and parsing testable in-process.
++// Spec: docs/phase2-design.md "Common API".
 +namespace doris::native_stack {
 +
-+// One captured frame. `pc` is the raw runtime instruction pointer, used only for
-+// in-process correlation. `dso`/`dso_offset` are filled by resolve_dsos() and are
-+// what offline tools symbolize. No symbol fields ever live here.
++// Reason: one captured frame. The handler writes raw `pc`; resolve_dsos()
++// later adds `dso`/`dso_offset` from /proc/self/maps. No symbol fields —
++// symbolization is offline.
 +struct Frame {
 +    uintptr_t pc = 0;
-+    std::string dso; // empty until resolved, or if pc is unmapped
++    std::string dso;          // empty until resolved, or if pc is unmapped.
 +    uint64_t dso_offset = 0;
 +    bool dso_resolved = false;
 +};
 +
 +struct ThreadStack {
 +    int64_t tid = 0;
-+    std::string status; // "ok","timeout","signal_blocked","missing_tid",...
++    // Reason: shared status vocabulary lets the orchestrator aggregate
++    // ok/partial/timeout without knowing variant-specific failure modes.
++    // Values: ok, timeout, signal_blocked, missing_tid, ...
++    std::string status;
 +    bool truncated = false;
-+    int64_t handler_time_ns = -1; // <0 means not measured (e.g. the stub)
-+    std::string error_reason;     // empty when there is none
++    // Reason: handler walk time. <0 is the "not measured" sentinel (the stub).
++    int64_t handler_time_ns = -1;
++    std::string error_reason;  // empty when there is none.
 +    std::vector<Frame> frames;
 +};
 +
 +struct NativeStackReport {
-+    std::string collector; // "stub","fp-walk",...
-+    std::string status;    // "ok","partial","timeout","missing_tid","bad_request"
++    std::string collector;  // "stub", "fp-walk", ...
++    // Reason: aggregated status across threads. `partial` means some threads
++    // returned frames and others did not; the per-thread `status` carries
++    // the detail.
++    std::string status;
 +    int64_t timeout_ms = 0;
 +    int64_t max_frames = 0;
 +    int64_t max_stack_bytes = 0;
 +    int64_t elapsed_ms = 0;
 +    std::optional<int64_t> target_tid;
-+    std::string error_reason; // root-level reason (bad_request, contended timeout)
++    std::string error_reason;  // root-level reason (bad_request, contended timeout).
 +    std::vector<ThreadStack> threads;
 +};
 +
 +struct CollectOptions {
-+    std::optional<int64_t> target_tid; // dump one thread instead of all
-+    int64_t timeout_ms = 100;          // 1..60000
-+    int64_t max_frames = 64;           // 1..1024
-+    int64_t max_stack_bytes = 8192;    // 1..1048576
++    std::optional<int64_t> target_tid;  // dump one thread instead of all.
++    int64_t timeout_ms = 100;           // 1..60000.
++    int64_t max_frames = 64;            // 1..1024.
++    int64_t max_stack_bytes = 8192;     // 1..1048576.
 +};
 +
-+// Parse and validate query params. This is the only place `bad_request` is
-+// decided: returns false and sets *error_reason on invalid input, leaving *out
-+// untouched. Absent params take their defaults.
++// Reason: the only place `bad_request` is decided. Returns false and sets
++// *error_reason on invalid input, leaving *out untouched. Absent params take
++// their defaults.
++// Spec: docs/phase2-design.md "Common API" -> Request parameters.
 +bool parse_collect_options(const std::map<std::string, std::string>& params, CollectOptions* out,
 +                           std::string* error_reason);
 +
-+// Per-thread capture callback: the only per-variant step. Given a live tid and
-+// the dump deadline, fill *out (status, frames, handler_time_ns). The stub
-+// returns "ok" with no frames; fp-walk does the signal + RBP walk.
++// Reason: the per-variant injection point. Given a live tid and the dump
++// deadline, fill *out (status, frames, handler_time_ns). The stub returns
++// "ok" with no frames; fp-walk does the signal + RBP walk.
++// Spec: docs/phase2-design.md "Common API" -> Mechanics.
 +using CaptureFn = void (*)(int64_t tid, const CollectOptions& opts,
 +                           std::chrono::steady_clock::time_point deadline, ThreadStack* out);
 +
-+// Variant-agnostic orchestration: take the single-dump gate bounded by
-+// `timeout_ms` (else `timeout`), select tids from /proc/self/task (else
-+// `missing_tid`), run `capture` per live thread honoring the unresponsive-tid
-+// test hook, and aggregate ok/partial/timeout. Each variant's
-+// collect_native_stacks() composes this with its own capture.
++// Reason: variant-agnostic orchestration. Each variant's
++// collect_native_stacks() composes this with its own capture; common owns
++// the single-dump gate, tid selection from /proc/self/task, the
++// unresponsive-tid test hook, and status aggregation, so only `capture`
++// differs across variants.
++// Spec: docs/phase2-design.md "Common API" -> Mechanics.
 +NativeStackReport run_collection(const CollectOptions& opts, const char* collector_name,
 +                                 CaptureFn capture);
 +
-+// The per-variant entry point. The common build ships a stub in
-+// native_stack_collect.cpp; the fp-walk patch rewrites only that file.
++// Reason: the per-variant entry. Link-time indirection: the common build
++// ships a stub in native_stack_collect.cpp; each variant patch rewrites
++// only that one file.
++// Spec: docs/phase2-design.md "Common API".
 +NativeStackReport collect_native_stacks(const CollectOptions& opts);
 +
-+// Fill dso/dso_offset on every frame from /proc/self/maps.
++// Reason: fills `dso`/`dso_offset` on every frame from /proc/self/maps. Runs
++// in the request thread (no signaling), so the in-handler path stays
++// async-signal-safe.
 +void resolve_dsos(NativeStackReport* report);
 +
-+// Serialize the report to the agreed JSON contract.
++// Reason: writes the agreed JSON contract. Split from collection so tests
++// can assert on either the typed report or the JSON.
++// Spec: docs/phase2-design.md "Common API" -> Response shape.
 +std::string serialize(const NativeStackReport& report);
 +
-+// --- test-only hooks (exercise the timeout/partial/contended paths without real
-+// signaling). Defined in common so every variant inherits them. ---
++// --- Test-only hooks. They exercise the timeout and partial paths without
++// real signaling. Defined in common so every variant inherits them.
++// Spec: docs/phase2-test-plan.md "Test-only hooks in common".
 +
-+// Mark one tid as unresponsive: run_collection reports it `timeout` without
-+// calling capture. Pass 0 to clear.
++// Reason: mark one tid unresponsive — run_collection reports it `timeout`
++// without calling capture. Pass 0 to clear. Used by Timeout and
++// PartialResults.
 +void set_unresponsive_tid_for_test(int64_t tid);
 +
-+// Holds the single-dump gate for as long as it is alive, so a concurrent
-+// collect hits the bounded-wait timeout deterministically.
++// Reason: holds the single-dump gate as long as it is alive, so a concurrent
++// collect hits the bounded-wait timeout deterministically. Used by
++// ContendedDumpReturnsTimeout.
 +class DumpLockGuard {
 +public:
 +    explicit DumpLockGuard(std::unique_lock<std::timed_mutex> lock);
@@ -545,5 +588,5 @@ index 00000000000..792fdefc525
 +
 +} // namespace doris::native_stack
 -- 
-2.53.0
+2.43.0
 

@@ -1,7 +1,7 @@
-From f246db362622db20ae39c43634f83148895f0ec6 Mon Sep 17 00:00:00 2001
+From d2e4ab3fb7b4df25db068e994862d301a3397b8a Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
-Subject: [PATCH 3/5] [feature](be) add native stack debug HTTP action
+Subject: [PATCH 3/5] (be) add native stack debug HTTP action
 
 NativeStackAction bridges GET /api/debug/native_stack to the common free
 functions: parse query params, then collect -> resolve_dsos -> serialize. It
@@ -82,7 +82,7 @@ index 00000000000..351b3ed10df
 +} // namespace doris
 diff --git a/be/src/service/http/action/native_stack_action.h b/be/src/service/http/action/native_stack_action.h
 new file mode 100644
-index 00000000000..06e6adcb1f9
+index 00000000000..66a04cac806
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack_action.h
 @@ -0,0 +1,39 @@
@@ -111,11 +111,11 @@ index 00000000000..06e6adcb1f9
 +
 +class HttpRequest;
 +
-+// Reason: the thin HTTP front for the native-stack seam. handle() parses query
++// Reason: the thin HTTP front for the native-stack seam. `handle` parses query
 +// params, then runs collect -> resolve_dsos -> serialize and writes the JSON.
 +// All logic lives in the common free functions (namespace doris::native_stack),
 +// so the action carries no per-variant code.
-+// Reference: docs/phase2-design.md "Common API".
++// Spec: docs/phase2-design.md "Common API".
 +class NativeStackAction : public HttpHandlerWithAuth {
 +public:
 +    NativeStackAction(ExecEnv* exec_env, TPrivilegeHier::type hier, TPrivilegeType::type type);
@@ -126,5 +126,5 @@ index 00000000000..06e6adcb1f9
 +
 +} // namespace doris
 -- 
-2.53.0
+2.43.0
 
