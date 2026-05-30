@@ -1,4 +1,4 @@
-From 84acde66aaeec9a51b5f0eedab6dddd2f31d0703 Mon Sep 17 00:00:00 2001
+From 5ef3d2e749cf0c220d662e49f7807f00cac5ae7f Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 13:38:42 +0800
 Subject: [PATCH] (be) fp-walk native stack collector
@@ -18,19 +18,20 @@ dl_iterate_phdr, so it never collides with the jemalloc allocator path.
 Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk";
 <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
 ---
- .../http/action/native_stack_collect.cpp      | 467 +++++++++++++++++-
- 1 file changed, 448 insertions(+), 19 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 512 +++++++++++++++++-
+ 1 file changed, 493 insertions(+), 19 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index 5fd53e33b4f..ed307ff9726 100644
+index 5fd53e33b4f..af680b9cdad 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,41 +15,470 @@
+@@ -15,41 +15,515 @@
  // specific language governing permissions and limitations
  // under the License.
  
 +#include <glog/logging.h>
 +#include <signal.h>
++#include <sys/mman.h>
 +#include <sys/syscall.h>
 +#include <sys/types.h>
 +#include <time.h>
@@ -170,8 +171,44 @@ index 5fd53e33b4f..ed307ff9726 100644
 +std::once_flag g_install_once;
 +std::atomic<bool> g_installed {false};
 +
++// Reason: cached page size, populated alongside handler install. The
++// in-handler `page_is_mapped` check needs this to round an RBP down to
++// its page base before calling `mincore`. `sysconf` is not in the POSIX
++// async-signal-safe list, so we read it once at install time and only
++// touch the cached atomic from the handler.
++// Local: fp-walk-specific cache for the junk-RBP guard.
++std::atomic<long> g_page_size {0};
++
 +CaptureSlot& slot_for_seq(uint64_t seq) {
 +    return g_slots[(seq - 1) % kSlotRingSize];
++}
++
++// Reason: refuse to dereference an RBP whose page is unmapped. `mincore`
++// returns -1 with errno=ENOMEM if any byte in `[addr, addr + length)`
++// lies in unmapped memory; we treat any non-zero return as "do not
++// touch". This is the codex-flagged junk-RBP guard: a corrupt or hostile
++// RBP that points outside the address space's mapped regions never gets
++// dereferenced.
++// NOTE: this does NOT reject PROT_NONE pages (stack guard pages, etc.).
++// `mincore` reports those as mapped-but-not-resident, so a `*rbp` into a
++// guard page still crashes. A `sigsetjmp`/`siglongjmp` fault trampoline
++// would close that residual case; deferred.
++// Local: fp-walk-specific safety check.
++bool page_is_mapped(uintptr_t addr) {
++    const long page_size = g_page_size.load(std::memory_order_acquire);
++    if (page_size <= 0) {
++        return false;
++    }
++    const uintptr_t mask = static_cast<uintptr_t>(page_size) - 1;
++    const uintptr_t page_base = addr & ~mask;
++    // The walk reads 16 bytes at `rbp`; round the length up so a read
++    // straddling a page boundary checks both pages.
++    constexpr uintptr_t kReadBytes = static_cast<uintptr_t>(2U * sizeof(uintptr_t));
++    const uintptr_t span = (addr + kReadBytes) - page_base;
++    const uintptr_t length = (span + mask) & ~mask;
++    unsigned char vec[2] = {0, 0};
++    return mincore(reinterpret_cast<void*>(page_base),
++                   static_cast<size_t>(length), vec) == 0;
 +}
 +
 +bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
@@ -303,20 +340,25 @@ index 5fd53e33b4f..ed307ff9726 100644
 +    }
 +    // 5. Walk the saved-RBP chain: [rbp] is the caller's rbp; [rbp+8] is
 +    //    its return pc. `rbp_can_read` enforces alignment and the
-+    //    max_stack_bytes window from the anchor.
-+    while (n < max_frames && rbp_can_read(initial_rbp, rbp, max_stack_bytes)) {
++    //    max_stack_bytes window from the anchor; `page_is_mapped` then
++    //    refuses to dereference an unmapped page (the codex-flagged
++    //    junk-RBP guard).
++    while (n < max_frames && rbp_can_read(initial_rbp, rbp, max_stack_bytes) &&
++           page_is_mapped(rbp)) {
 +        const uintptr_t next_rbp = *reinterpret_cast<const uintptr_t*>(rbp);
 +        const uintptr_t ret = *reinterpret_cast<const uintptr_t*>(rbp + sizeof(uintptr_t));
 +        if (ret != 0) {
 +            slot.frames[n++] = ret;
 +        }
-+        if (next_rbp <= rbp || !rbp_can_read(initial_rbp, next_rbp, max_stack_bytes)) {
++        if (next_rbp <= rbp || !rbp_can_read(initial_rbp, next_rbp, max_stack_bytes) ||
++            !page_is_mapped(next_rbp)) {
 +            break;
 +        }
 +        rbp = next_rbp;
 +    }
 +    slot.frame_count = n;
-+    slot.truncated = n >= max_frames && rbp_can_read(initial_rbp, rbp, max_stack_bytes);
++    slot.truncated = n >= max_frames && rbp_can_read(initial_rbp, rbp, max_stack_bytes) &&
++                     page_is_mapped(rbp);
 +#else
 +    slot.frame_count = 0;
 +#endif
@@ -338,6 +380,9 @@ index 5fd53e33b4f..ed307ff9726 100644
 +
 +void install_handler_once() {
 +    std::call_once(g_install_once, [] {
++        const long page_size = sysconf(_SC_PAGESIZE);
++        g_page_size.store(page_size > 0 ? page_size : 4096,
++                          std::memory_order_release);
 +        struct sigaction action {};
 +        sigemptyset(&action.sa_mask);
 +        action.sa_sigaction = native_stack_signal_handler;

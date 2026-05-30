@@ -1,4 +1,4 @@
-From dac7f478a345b3718ad8aeb37d1f2507a28002a5 Mon Sep 17 00:00:00 2001
+From 79bd2c5df3a362d5d9537e5536419de2ea559c54 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
 Subject: [PATCH 5/5] (be) add native stack action tests
@@ -9,16 +9,16 @@ cases (Schema, ShapeOneTid, MissingTid, BadRequest, ContendedDumpReturnsTimeout,
 Timeout, DumpLoopNoCrashNoStuck) run on the stub; correctness and boundary cases
 skip unless a real collector is linked.
 ---
- .../service/http/native_stack_action_test.cpp | 1044 +++++++++++++++++
- 1 file changed, 1044 insertions(+)
+ .../service/http/native_stack_action_test.cpp | 1100 +++++++++++++++++
+ 1 file changed, 1100 insertions(+)
  create mode 100644 be/test/service/http/native_stack_action_test.cpp
 
 diff --git a/be/test/service/http/native_stack_action_test.cpp b/be/test/service/http/native_stack_action_test.cpp
 new file mode 100644
-index 00000000000..f9cc579b6b3
+index 00000000000..84526d6b2f8
 --- /dev/null
 +++ b/be/test/service/http/native_stack_action_test.cpp
-@@ -0,0 +1,1044 @@
+@@ -0,0 +1,1100 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -1060,6 +1060,62 @@ index 00000000000..f9cc579b6b3
 +    EXPECT_LT(report.elapsed_ms, 200)
 +            << "elapsed " << report.elapsed_ms << " ms suggests per-thread waits leaked past the guard";
 +    (void)other;
++}
++
++// Reason: [case 17] when the handler captures an RBP that points into
++// unmapped memory (a junk RBP from JIT, hand-written asm, prologue/
++// epilogue interrupt, or memory corruption), the walk's `mincore` guard
++// must refuse to dereference it. The BE must remain alive and report
++// the dump with at most one frame (the RIP). Without the guard, the
++// first `*rbp` deref inside the signal handler SIGSEGVs and kills the
++// BE — a HIGH-severity hazard codex flagged in the per-sequence-slot
++// review.
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #17 JunkRbpDoesNotCrashCollector.
++TEST_F(NativeStackActionTest, JunkRbpDoesNotCrashCollector) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++#if !defined(__x86_64__)
++    GTEST_SKIP();
++#else
++    // 1. Spin up a detached worker whose RBP is clobbered to a
++    //    likely-unmapped address before it enters an infinite pause
++    //    loop. The asm never returns, so the compiler-generated
++    //    epilogue (which would `leave` and crash on the junk RBP) never
++    //    runs. The thread is detached on purpose: there is no clean
++    //    join path, and process exit reaps it.
++    static std::atomic<int64_t> s_junk_tid {0};
++    std::thread worker([] {
++        s_junk_tid.store(self_tid(), std::memory_order_release);
++        asm volatile(
++                "movq %%rax, %%rbp\n\t"
++                "1: pause\n\t"
++                "   jmp 1b\n\t"
++                :
++                : "a"(static_cast<uintptr_t>(0xCAFEBABE00000000ULL))
++                : "rbp", "memory");
++    });
++    worker.detach();
++    while (s_junk_tid.load(std::memory_order_acquire) == 0) {
++        std::this_thread::yield();
++    }
++
++    // 2. Dump that tid. If the guard works, the handler captures the
++    //    RIP into frame[0], the walk loop sees `page_is_mapped` say no,
++    //    and the walk aborts. If the guard fails, the BE SIGSEGVs and
++    //    this test process dies.
++    CollectOptions opts;
++    opts.target_tid = s_junk_tid.load(std::memory_order_acquire);
++    NativeStackReport report = collect_native_stacks(opts);
++
++    // 3. We are still running, so the guard did its job. Frames is
++    //    at most one (the RIP from inside the asm loop); no chain was
++    //    walked because RBP was junk.
++    ASSERT_EQ(report.threads.size(), 1U);
++    EXPECT_LE(report.threads[0].frames.size(), 1U)
++            << "walk produced " << report.threads[0].frames.size()
++            << " frames from a junk RBP; the mincore guard did not stop the deref";
++#endif
 +}
 +
 +} // namespace doris::native_stack
