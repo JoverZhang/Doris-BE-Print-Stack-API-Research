@@ -23,10 +23,7 @@ report instead of changing it.
 The current goal is to prove `fp-walk` first, as the baseline. See the charter.
 
 Acceptance is by command, not by document. A variant is accepted only when its
-tests pass under the acceptance doc. The first `fp-walk` task is to add
-`be/test/service/http/native_stack_action_test.cpp` as a `tests-` patch in
-`patches/common/`, plus a `just phase2-test <target>` recipe that builds and
-runs it.
+tests pass under the acceptance doc.
 
 ## Phase 2 Workflow
 
@@ -39,14 +36,16 @@ Do this:
 - Run `just phase2-clean-apply <target>` only when the user explicitly asks
   for a clean re-apply. It deletes untracked and ignored files under
   `phase2/<target>`, including build caches.
+- Run `just phase2-status [target]` to see what is applied.
 - Run `just phase2-diff <target>` to inspect temporary worktree changes.
 - Run `just phase2-export <target>` only when you intentionally move committed
   worktree changes back into `patches/`.
+- Run `just phase2-test <variant>` to apply, build, and run the
+  NativeStackActionTest suite in the build image.
 
 Do not do this:
 
 - Do not run `git clean -xfd` in `phase2/*` unless the user asks.
-- Do not run `just phase2-clean-apply <target>` unless the user asks.
 - Do not commit full all-thread JSON, full build logs, BE logs,
   `/proc/<pid>/maps`, binaries, or dumps.
 - Do not rebuild thirdparty dependencies unless the user asks.
@@ -57,48 +56,18 @@ Use this build image:
 
 ## Reference Source Trees
 
-Use these source trees when implementing related variants:
-
-- ClickHouse: `repos/source/ClickHouse-v26.3.10.62-lts`
-- OceanBase: `repos/source/oceanbase-v4.5.0_CE`
-
-Rules:
+Source-alias paths (`<ck>`, `<ob>`) live in
+[docs/coding-guidelines.md](docs/coding-guidelines.md). Per-variant rules:
 
 - For `ck-phdr-unwind`, check the ClickHouse source before implementation.
 - For `ob-kill60`, check the OceanBase source before implementation.
 - Record the source files or symbols you used in the variant notes.
 
-## Phase 2 Targets
-
-Common API:
-
-- `common`
-- `common-api`
-
-Variants:
-
-- `fp-walk`
-- `ck-phdr-unwind`
-- `ob-kill60`
-- `snapshot-remote-unwind`
-
-## Common Commands
-
-Use patch-first phase2 worktrees:
-
-- `just phase2-status`
-- `just phase2-apply <target>`
-- `just phase2-clean-apply <target>`
-- `just phase2-diff <target>`
-- `just phase2-export <target>`
-
-Other commands:
-
-- `just validate`
-
 ## Project Guidelines
 
 - Follow [docs/writing-guidelines.md](docs/writing-guidelines.md) when writing
   or editing docs.
+- Follow [docs/coding-guidelines.md](docs/coding-guidelines.md) when writing
+  or commenting code in patches.
 - Follow [docs/patch-guidelines.md](docs/patch-guidelines.md) when creating,
   editing, or exporting patch files.

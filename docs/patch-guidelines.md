@@ -52,47 +52,4 @@ A reviewer should understand each patch without reading unrelated files.
 
 ## Code Rules
 
-Write only code that is necessary for the variant.
-
-For each new class or function:
-
-- Add a short comment that explains why it exists.
-- If it follows reference source, cite the source location in the comment.
-- Use an exact file and line reference.
-
-Use these source aliases:
-
-- `<ck>`: `repos/source/ClickHouse-v26.3.10.62-lts`
-- `<ob>`: `repos/source/oceanbase-v4.5.0_CE`
-
-Examples:
-
-```cpp
-// Reason: mirrors ClickHouse signal-frame unwind setup.
-// Reference: <ck>/path/to/source.cpp:120
-```
-
-```cpp
-// Reason: keeps the request thread out of the two-phase signal wait.
-// Reference: <ob>/path/to/source.cpp:88
-```
-
-If there is no reference source, explain the local reason:
-
-```cpp
-// Reason: a timed_mutex allows one in-flight dump; a contended request returns timeout.
-```
-
-If a function has several core steps, add a numbered comment before each step.
-Keep the comment short.
-
-```cpp
-// 1. Collect target thread ids.
-collect_tids();
-
-// 2. Interrupt each target thread.
-signal_tids();
-
-// 3. Build the response from captured frames.
-write_response();
-```
+See [coding-guidelines.md](coding-guidelines.md).
