@@ -1,4 +1,4 @@
-From 870e1d58c14c20baaa241f72c80735ba3d16331b Mon Sep 17 00:00:00 2001
+From 84acde66aaeec9a51b5f0eedab6dddd2f31d0703 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 13:38:42 +0800
 Subject: [PATCH] (be) fp-walk native stack collector
@@ -18,14 +18,14 @@ dl_iterate_phdr, so it never collides with the jemalloc allocator path.
 Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk";
 <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
 ---
- .../http/action/native_stack_collect.cpp      | 455 +++++++++++++++++-
- 1 file changed, 436 insertions(+), 19 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 467 +++++++++++++++++-
+ 1 file changed, 448 insertions(+), 19 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index 5fd53e33b4f..94c0df7b975 100644
+index 5fd53e33b4f..ed307ff9726 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,41 +15,458 @@
+@@ -15,41 +15,470 @@
  // specific language governing permissions and limitations
  // under the License.
  
@@ -362,6 +362,18 @@ index 5fd53e33b4f..94c0df7b975 100644
 +//   (fresh `req_id`, queue `SI_QUEUE` with `sival_ptr` token).
 +void fp_walk_capture(int64_t tid, const CollectOptions& opts,
 +                     std::chrono::steady_clock::time_point deadline, ThreadStack* out) {
++    // 0. Defense-in-depth deadline guard. `run_collection` is supposed
++    //    to short-circuit expired deadlines before reaching here, but a
++    //    direct caller (or a future orchestration change) that skipped
++    //    the guard would otherwise queue a signal the wait loop has no
++    //    time to receive — creating exactly the stale-handler hazard
++    //    the per-sequence slot was added to defend against.
++    if (std::chrono::steady_clock::now() >= deadline) {
++        out->status = "timeout";
++        out->error_reason = "dump deadline expired before signaling this thread";
++        return;
++    }
++
 +    // 1. A thread that blocks the signal is reported as such, not as a timeout.
 +    if (is_signal_blocked(tid, native_stack_signal_number())) {
 +        out->status = "signal_blocked";

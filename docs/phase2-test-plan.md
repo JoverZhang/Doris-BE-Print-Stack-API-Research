@@ -32,6 +32,9 @@ Test-only hooks in common:
   timeout and partial paths run without real signaling.
 - `hold_dump_lock_for_test()` returns a guard that holds the dump lock, so the
   contended path is deterministic.
+- `consume_deadline_budget_for_test(ms)` sleeps `ms` milliseconds after the
+  dump lock is acquired but before the per-tid loop, so the deadline guard
+  case is deterministic.
 
 ## File and partition
 
@@ -70,7 +73,8 @@ Test-only hooks in common:
 | 12 | Boundary | `LateResponderDoesNotCorruptNextDump` | dump `{tid:T}`, then dump `{tid:T}` again. With fp-walk's per-sequence slot ring, the two dumps land in distinct slots, so the shared-slot hazard does not exist. The handler also validates the request token on entry and re-checks it before publishing. Forcing an actually-late handler is case 15; the deterministic use-after-free check is the Tier 2 TSan deepening below. | real |
 | 13 | Stability | `DumpLoopNoCrashNoStuck` | collect all in a loop of N iterations (about 200) with the marker threads alive. Every iteration returns, the loop finishes within a wall-clock bound, all workers stay joinable. | stub + real |
 | 14 | Correctness | `RbpBoundsRejectOutOfStackRBP` | drive the per-handler RBP safety check (`rbp_can_read_for_test`) over an accept/reject table: an RBP above the `[initial_rbp, initial_rbp + max_stack_bytes)` window, below it, at a position whose read crosses the upper bound, misaligned, zero anchor, aligned and inside, and equal to the anchor. Rejects every bad input; accepts the valid ones. This is the precondition that bounds the walk from reading past the stack. Validating `initial_rbp` itself against the thread's mapped stack range is a follow-up (mincore() or sigsetjmp/siglongjmp) — for now a junk `initial_rbp` will still pass and the first deref will crash, which the late-handler corruption stress in case 15 cannot exercise either. | real |
-| 15 | Boundary | `LateHandlerCannotCorruptNextDumpUnderLoad` | bait a late handler (block the collector signal in a worker, dump with a short timeout, then unblock so the queued signal is delivered while subsequent dumps run); loop dumps of the marker chain and assert every iteration's `frames[1..4]` match `chain.returns()`. `slot_busy` is acceptable (the per-sequence slot refused to reuse a slot still held by a late handler); corruption is not. Tier 1 is best-effort because the race is timing-dependent; deterministic detection is the Tier 2 TSan deepening below. | real |
+| 15 | Boundary | `LateHandlerCannotCorruptNextDumpUnderLoad` | bait a late handler (block the collector signal in a worker, dump with a short timeout, then unblock so the queued signal is delivered while subsequent dumps run); loop dumps of the marker chain and assert every iteration's `frames[1..4]` match `chain.returns()`. `slot_busy` is acceptable (the per-sequence slot refused to reuse a slot still held by a late handler); corruption is not. Tier 1 is best-effort because the race is timing-dependent; deterministic detection is the Tier 2 TSan deepening below. NOTE: the bait setup in the current implementation returns `signal_blocked` before queuing any signal, so this case currently exercises only normal dumps. Tracked as a follow-up (rewrite the bait so it provably queues a delayed handler). | real |
+| 16 | Correctness | `DeadlineGuardSkipsExpiredSignaling` | drain the dump's deadline budget with `consume_deadline_budget_for_test(80)` before a `timeout_ms = 50` collect of all live threads. Every per-thread entry must carry `"dump deadline expired before signaling this thread"` and status `timeout`; no entry may be `ok`. Wall-clock stays close to `timeout_ms + consume_ms`. Without the guard, every tid still gets a queued signal that the wait loop has no time to receive, creating exactly the late-handler hazard the per-sequence slot must defend against. | stub + real |
 
 ## Candidates
 
@@ -87,8 +91,8 @@ then builds and runs the tests in the build-env image
 (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```
-just phase2-test common      # 7 pass, 8 skip (stub collector)
-just phase2-test fp-walk     # 15 pass
+just phase2-test common      # 8 pass, 8 skip (stub collector)
+just phase2-test fp-walk     # 16 pass
 ```
 
 It runs `run-be-ut.sh --run --filter='NativeStackActionTest.*' -j $(nproc)`

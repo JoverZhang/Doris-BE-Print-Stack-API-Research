@@ -1,4 +1,4 @@
-From 15ab66f5a092bc9e1a8f38cebe423a32ea074bfd Mon Sep 17 00:00:00 2001
+From 4fc8b2e59e65d342ccf5ca6f928c68f6de5899cd Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:05 +0800
 Subject: [PATCH 1/5] (be) add native stack collector API and orchestration
@@ -11,18 +11,18 @@ hooks. The per-variant collect step lives in a separate file.
 
 Reference: docs/phase2-design.md "Common API".
 ---
- be/src/service/http/action/native_stack.cpp | 414 ++++++++++++++++++++
- be/src/service/http/action/native_stack.h   | 144 +++++++
- 2 files changed, 558 insertions(+)
+ be/src/service/http/action/native_stack.cpp | 436 ++++++++++++++++++++
+ be/src/service/http/action/native_stack.h   | 153 +++++++
+ 2 files changed, 589 insertions(+)
  create mode 100644 be/src/service/http/action/native_stack.cpp
  create mode 100644 be/src/service/http/action/native_stack.h
 
 diff --git a/be/src/service/http/action/native_stack.cpp b/be/src/service/http/action/native_stack.cpp
 new file mode 100644
-index 00000000000..e0a5298816c
+index 00000000000..a6a0cae3920
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack.cpp
-@@ -0,0 +1,414 @@
+@@ -0,0 +1,436 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -56,6 +56,7 @@ index 00000000000..e0a5298816c
 +#include <optional>
 +#include <sstream>
 +#include <string>
++#include <thread>
 +#include <utility>
 +#include <vector>
 +
@@ -81,6 +82,12 @@ index 00000000000..e0a5298816c
 +// calling capture, so the timeout and partial paths run without real
 +// signaling. set_unresponsive_tid_for_test(0) clears it.
 +std::atomic<int64_t> s_unresponsive_tid {0};
++
++// Reason: test hook. run_collection sleeps this many milliseconds after
++// acquiring the dump lock but before the per-thread capture loop. Used
++// by the DeadlineGuardSkipsExpiredSignaling case to make the per-thread
++// deadline guard fire deterministically. 0 clears.
++std::atomic<int64_t> s_consume_deadline_budget_ms {0};
 +
 +int64_t elapsed_ms(std::chrono::steady_clock::time_point start) {
 +    return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -307,11 +314,19 @@ index 00000000000..e0a5298816c
 +        tids = {opts.target_tid.value()};
 +    }
 +
-+    // 3. Capture each thread sequentially. The unresponsive-tid hook forces
-+    //    `timeout` without calling capture, so the timeout and partial paths
-+    //    are testable. Sequential capture bounds the queued-signal load on
-+    //    the OS (CK rationale).
++    // 3. Capture each thread sequentially. The unresponsive-tid hook
++    //    forces `timeout` without calling capture, so the timeout and
++    //    partial paths are testable. Sequential capture bounds the
++    //    queued-signal load on the OS (CK rationale). Before each
++    //    capture, the deadline guard short-circuits remaining tids
++    //    instead of queuing a signal that the timeout-driven coordinator
++    //    has no time to wait for — a stale-handler hazard the
++    //    per-sequence slot would otherwise have to mop up.
 +    const auto deadline = start + std::chrono::milliseconds(opts.timeout_ms);
++    const int64_t consume_ms = s_consume_deadline_budget_ms.load(std::memory_order_acquire);
++    if (consume_ms > 0) {
++        std::this_thread::sleep_for(std::chrono::milliseconds(consume_ms));
++    }
 +    const int64_t unresponsive = s_unresponsive_tid.load(std::memory_order_acquire);
 +    int ok_count = 0;
 +    int fail_count = 0;
@@ -322,6 +337,9 @@ index 00000000000..e0a5298816c
 +        if (unresponsive != 0 && tid == unresponsive) {
 +            ts.status = "timeout";
 +            ts.error_reason = "thread marked unresponsive for test";
++        } else if (std::chrono::steady_clock::now() >= deadline) {
++            ts.status = "timeout";
++            ts.error_reason = "dump deadline expired before signaling this thread";
 +        } else {
 +            capture(tid, opts, deadline, &ts);
 +        }
@@ -425,6 +443,10 @@ index 00000000000..e0a5298816c
 +    s_unresponsive_tid.store(tid, std::memory_order_release);
 +}
 +
++void consume_deadline_budget_for_test(int64_t ms) {
++    s_consume_deadline_budget_ms.store(ms, std::memory_order_release);
++}
++
 +DumpLockGuard::DumpLockGuard(std::unique_lock<std::timed_mutex> lock) : _lock(std::move(lock)) {}
 +
 +DumpLockGuard::~DumpLockGuard() = default;
@@ -439,10 +461,10 @@ index 00000000000..e0a5298816c
 +} // namespace doris::native_stack
 diff --git a/be/src/service/http/action/native_stack.h b/be/src/service/http/action/native_stack.h
 new file mode 100644
-index 00000000000..91437136db6
+index 00000000000..094dd248e73
 --- /dev/null
 +++ b/be/src/service/http/action/native_stack.h
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,153 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -585,6 +607,15 @@ index 00000000000..91437136db6
 +    std::unique_lock<std::timed_mutex> _lock;
 +};
 +DumpLockGuard hold_dump_lock_for_test();
++
++// Reason: drains `ms` milliseconds of wall-clock budget at the top of
++// `run_collection` (after the dump lock is acquired, before the per-tid
++// loop). Lets a test set up a request whose per-thread deadline guard
++// has already expired by the time the loop runs, so the
++// DeadlineGuardSkipsExpiredSignaling case is deterministic. Pass 0 to
++// clear.
++// Spec: docs/phase2-test-plan.md "Test-only hooks in common".
++void consume_deadline_budget_for_test(int64_t ms);
 +
 +} // namespace doris::native_stack
 -- 

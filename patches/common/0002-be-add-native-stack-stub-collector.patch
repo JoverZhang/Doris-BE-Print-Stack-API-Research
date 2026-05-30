@@ -1,4 +1,4 @@
-From ad589d46ad53949433416f33734c0a470aa7473f Mon Sep 17 00:00:00 2001
+From 0b57049a25d0b661f84034bf4e4e264bfabf128c Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
 Subject: [PATCH 2/5] (be) add native stack stub collector

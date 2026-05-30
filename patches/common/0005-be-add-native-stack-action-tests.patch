@@ -1,4 +1,4 @@
-From e5ae3ef46226b4388ba2adfd15d2685a768e437a Mon Sep 17 00:00:00 2001
+From dac7f478a345b3718ad8aeb37d1f2507a28002a5 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
 Subject: [PATCH 5/5] (be) add native stack action tests
@@ -9,16 +9,16 @@ cases (Schema, ShapeOneTid, MissingTid, BadRequest, ContendedDumpReturnsTimeout,
 Timeout, DumpLoopNoCrashNoStuck) run on the stub; correctness and boundary cases
 skip unless a real collector is linked.
 ---
- .../service/http/native_stack_action_test.cpp | 995 ++++++++++++++++++
- 1 file changed, 995 insertions(+)
+ .../service/http/native_stack_action_test.cpp | 1044 +++++++++++++++++
+ 1 file changed, 1044 insertions(+)
  create mode 100644 be/test/service/http/native_stack_action_test.cpp
 
 diff --git a/be/test/service/http/native_stack_action_test.cpp b/be/test/service/http/native_stack_action_test.cpp
 new file mode 100644
-index 00000000000..0104a11d4ba
+index 00000000000..f9cc579b6b3
 --- /dev/null
 +++ b/be/test/service/http/native_stack_action_test.cpp
-@@ -0,0 +1,995 @@
+@@ -0,0 +1,1044 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -1011,6 +1011,55 @@ index 00000000000..0104a11d4ba
 +    EXPECT_EQ(corrupted, 0) << corrupted << "/" << kIterations
 +                            << " iterations had corrupted frames; " << slot_busy
 +                            << " slot_busy; " << ok << " ok";
++}
++
++// Reason: [case 16] when `run_collection` enters its per-thread loop
++// with a deadline that has already expired, no per-thread `capture`
++// call may queue a signal — those threads must short-circuit to
++// `timeout` with the deadline-expired error reason. Without this guard,
++// a tiny-timeout request to a many-thread BE still signals every thread
++// and creates late handlers (codex finding #2).
++// Spec: docs/phase2-test-plan.md "Tier 1 cases" -> #16 DeadlineGuardSkipsExpiredSignaling.
++TEST_F(NativeStackActionTest, DeadlineGuardSkipsExpiredSignaling) {
++    // 1. Spawn a few live workers so the dump has multiple tids to walk.
++    SpinThread a;
++    SpinThread b;
++    SpinThread c;
++
++    // 2. Drain the deadline budget before the loop runs. With timeout_ms
++    //    = 50 and a 80 ms pre-loop sleep, every per-thread iteration
++    //    enters with the deadline already past.
++    CollectOptions opts;
++    opts.timeout_ms = 50;
++    consume_deadline_budget_for_test(80);
++    NativeStackReport report = collect_native_stacks(opts);
++    consume_deadline_budget_for_test(0);
++
++    // 3. Every per-thread entry must carry the deadline-expired error
++    //    reason and a `timeout` status. No `ok` is allowed: any `ok`
++    //    means a signal was queued after the deadline.
++    ASSERT_FALSE(report.threads.empty());
++    int deadline_expired = 0;
++    int ok = 0;
++    int other = 0;
++    for (const auto& thread : report.threads) {
++        if (thread.error_reason.find("dump deadline expired before signaling") !=
++            std::string::npos) {
++            ++deadline_expired;
++        } else if (thread.status == "ok") {
++            ++ok;
++        } else {
++            ++other;
++        }
++    }
++    EXPECT_EQ(ok, 0) << ok << " threads returned `ok` after the deadline expired";
++    EXPECT_GT(deadline_expired, 0)
++            << "no thread carried the deadline-expired error reason; the guard never fired";
++    // Wall-clock should be near `timeout_ms + consume_ms`, not
++    // `timeout_ms * thread_count` (the unguarded worst case).
++    EXPECT_LT(report.elapsed_ms, 200)
++            << "elapsed " << report.elapsed_ms << " ms suggests per-thread waits leaked past the guard";
++    (void)other;
 +}
 +
 +} // namespace doris::native_stack
