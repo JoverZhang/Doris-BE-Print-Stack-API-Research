@@ -1,4 +1,4 @@
-From d4cf0b4e621a86e0e0e6696d3a8622f70cd5f64f Mon Sep 17 00:00:00 2001
+From ed356489ec09a25facce48dd0d1a0f759bbebb98 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 03:23:19 +0800
 Subject: [PATCH 4/5] (be) register native stack debug HTTP route

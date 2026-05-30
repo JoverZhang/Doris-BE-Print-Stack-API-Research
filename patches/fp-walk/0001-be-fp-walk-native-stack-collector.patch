@@ -1,4 +1,4 @@
-From 67c2011f732e9e76f5e2ad492eba861a9bd105df Mon Sep 17 00:00:00 2001
+From ebbc9259cbb5a5dc9d63f8a4db1e4583cf69e925 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 13:38:42 +0800
 Subject: [PATCH] (be) fp-walk native stack collector
@@ -18,14 +18,14 @@ dl_iterate_phdr, so it never collides with the jemalloc allocator path.
 Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk";
 <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
 ---
- .../http/action/native_stack_collect.cpp      | 282 +++++++++++++++++-
- 1 file changed, 270 insertions(+), 12 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 352 +++++++++++++++++-
+ 1 file changed, 340 insertions(+), 12 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index 2c9e8bce4de..6b757699710 100644
+index 2c9e8bce4de..9c7028041d1 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,30 +15,288 @@
+@@ -15,30 +15,358 @@
  // specific language governing permissions and limitations
  // under the License.
  
@@ -55,12 +55,12 @@ index 2c9e8bce4de..6b757699710 100644
 -// each variant patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file
 -// with its real collector, so every other file in the seam stays put.
 -// Spec: docs/phase2-design.md "Common API" -> stub collect().
-+// The fp-walk collect step: interrupt each target thread with a realtime signal
-+// and walk its RBP chain in the handler. fp-walk runs no libunwind and overrides
-+// no dl_iterate_phdr, so the allocator path never collides with the handler.
-+// This file is the only one the fp-walk patch rewrites; the rest of the seam is
-+// shared with every variant.
-+// Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk".
++// Reason: the fp-walk variant of the common collector seam. The per-thread
++// capture interrupts the target with a queued realtime signal, then walks the
++// saved-RBP chain from `ucontext_t` inside the handler. fp-walk runs no
++// libunwind and overrides no `dl_iterate_phdr`, so the allocator path never
++// collides with the handler.
++// Spec: docs/phase2-design.md "Variant Mechanics -> fp-walk".
  namespace doris::native_stack {
  namespace {
  
@@ -71,16 +71,24 @@ index 2c9e8bce4de..6b757699710 100644
 -void stub_capture(int64_t /*tid*/, const CollectOptions& /*opts*/,
 -                  std::chrono::steady_clock::time_point /*deadline*/, ThreadStack* out) {
 -    out->status = "ok";
++// Reason: a runaway frame walk would block the handler indefinitely. This
++// cap stops the walk and sizes the global slot's frame array.
++// Local: fp-walk-specific cap.
 +constexpr int kMaxSignalFrames = 1024;
 +
-+// Reason: SIGRTMIN+6 is queued with SI_QUEUE so the handler can read a request
-+// token; realtime signals queue rather than coalesce.
-+// Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk".
++// Reason: a realtime signal queues rather than coalesces, and `SI_QUEUE` lets
++// the sender attach a request token in `si_value`. SIGRTMIN+6 is the only
++// realtime slot the BE uses for stack dumps. CK uses `sival_int`; OB uses
++// `sival_ptr`. fp-walk follows OB so the token is wide enough for a 64-bit
++// monotonic sequence.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:131-134
++//   (sequence check on `sival_int`).
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:304-309
++//   (queued `SI_QUEUE` with `sival_ptr` request id).
 +int native_stack_signal_number() {
 +    return SIGRTMIN + 6;
 +}
 +
-+// Reason: async-signal-safe monotonic clock for per-thread handler timing.
 +int64_t monotonic_ns() {
 +    timespec ts {};
 +    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
@@ -91,14 +99,19 @@ index 2c9e8bce4de..6b757699710 100644
 +
 +enum SlotState : int { SLOT_IDLE = 0, SLOT_PENDING = 1, SLOT_DONE = 2 };
 +
-+// Reason: a single never-freed global capture slot. Collection is sequential --
-+// run_collection drives one capture (hence one in-flight signal) at a time -- so
-+// one slot suffices and there is no lifetime hazard: the slot outlives every
-+// handler, unlike a stack-local session pointer.
-+// Reference: CK signals one thread at a time,
-+// <ck>/src/Storages/System/StorageSystemStackTrace.cpp:381-384.
++// Reason: the handler needs somewhere to publish its captured frames. One
++// never-freed global slot is enough because the coordinator drives one
++// capture at a time; CK's `StackTrace stack_trace{NoCapture{}}` is the same
++// shape. NOTE: this struct alone does NOT make the handoff race-free against
++// a late handler that returns after its dump's deadline -- see
++// `native_stack_signal_handler` and `fp_walk_capture` for the token gate,
++// and thread #2 for the planned per-sequence slot that hardens it.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:103
++//   (the single global `stack_trace`).
 +struct CaptureSlot {
-+    std::atomic<uint64_t> expected_seq {0}; // a handler writes only on a token match
++    // Reason: the token gates against late-handler writes from a finished dump.
++    // A non-matching seq aborts before any write to this slot.
++    std::atomic<uint64_t> expected_seq {0};
 +    std::atomic<int> state {SLOT_IDLE};
 +    int max_frames = 0;
 +    uintptr_t max_stack_bytes = 0;
@@ -108,8 +121,23 @@ index 2c9e8bce4de..6b757699710 100644
 +    std::atomic<int64_t> handler_ns {0};
 +};
 +
++// Reason: the never-freed global slot referenced above. Lives for the
++// process lifetime, so a late handler that reaches the write step never
++// dereferences a dangling pointer -- the worst case is overwriting the
++// next dump's payload, which thread #2 hardens.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:103,381-384
++//   (single global slot; CK signals one thread at a time for the same reason).
 +CaptureSlot g_slot;
++
++// Reason: a monotonic sequence number that rides in the signal payload as
++// the dump's request token. The handler matches it against `expected_seq`
++// before writing. CK uses `sequence_num` the same way; OB calls it `req_id`.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:131-134
++//   (handler checks `sival_int` against `sequence_num`).
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:293-307
++//   (atomic `req_id` queued as `sival_ptr`).
 +std::atomic<uint64_t> g_seq {0};
++
 +std::once_flag g_install_once;
 +std::atomic<bool> g_installed {false};
 +
@@ -127,8 +155,11 @@ index 2c9e8bce4de..6b757699710 100644
 +    }
 +}
 +
-+// Reason: a thread that blocks the collector signal is reported as
-+// `signal_blocked`, not as a timeout. Read its SigBlk mask from /proc.
++// Reason: a thread that blocks the collector signal would never run the
++// handler. Report it as `signal_blocked` so the dump distinguishes it from
++// a slow thread that should time out.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:294-326
++//   (CK's `isSignalBlocked` reads `SigBlk:` from /proc the same way).
 +bool is_signal_blocked(int64_t tid, int signal_number) {
 +    if (signal_number <= 0 || signal_number > 64) {
 +        return false;
@@ -154,8 +185,15 @@ index 2c9e8bce4de..6b757699710 100644
 +    return false;
 +}
 +
-+// Reason: bound every RBP read to the interrupted thread's own stack window and
-+// keep it aligned, so a corrupt or hostile chain cannot read arbitrary memory.
++// Reason: a corrupt or hostile RBP chain would otherwise read past the
++// stack and could crash the process. Every read must stay aligned and
++// inside the window `[initial_rbp, initial_rbp + max_stack_bytes)`.
++// NOTE: this bounds reads against the captured `initial_rbp` from
++// `ucontext_t`. If `initial_rbp` is itself outside the thread's mapped
++// stack (a signal that interrupts a function prologue, jitted code, or a
++// corrupted frame) the first read can still crash. Thread #2 will validate
++// `initial_rbp` against `/proc/self/maps` before the walk.
++// Local: fp-walk-specific safety check.
 +bool rbp_can_read(uintptr_t initial_rbp, uintptr_t rbp, uintptr_t max_stack_bytes) {
 +    constexpr uintptr_t kReadBytes = static_cast<uintptr_t>(2U * sizeof(uintptr_t));
 +    if (initial_rbp == 0 || rbp < initial_rbp || max_stack_bytes < kReadBytes) {
@@ -167,12 +205,21 @@ index 2c9e8bce4de..6b757699710 100644
 +    return rbp % alignof(uintptr_t) == 0;
 +}
 +
-+// Reason: the realtime-signal handler. It validates the sender and the request
-+// token, walks the RBP chain into the global slot, records handler time, and
-+// restores errno. A late handler from a finished dump fails the token check and
-+// drops its result, which closes the late-responder window.
-+// Reference: errno save/restore, si_pid sender check, and the request token,
-+// <ck>/src/Storages/System/StorageSystemStackTrace.cpp:123,128-129,131-134,180,499-506.
++// Reason: the realtime-signal handler. It validates the sender and the
++// request token, walks the RBP chain into the global slot, records handler
++// time, and restores `errno`. The double token check (entry and pre-publish)
++// is the spec's mechanism for dropping a late handler whose dump has already
++// timed out.
++//
++// NOTE: the double check does NOT prove no late-handler corruption of the
++// next dump's slot. The walk loop writes into `g_slot.frames[]` before the
++// re-check; if the next dump arms the slot while this handler is still
++// walking, those mid-walk writes can clobber the new dump's payload even
++// though the SLOT_DONE store is suppressed. Thread #2 addresses this with
++// a per-sequence slot.
++// Spec: docs/phase2-design.md "Variant Mechanics -> fp-walk".
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:123,128-134,180
++//   (errno save/restore, `si_pid` sender check, `sival_int` token check).
 +void native_stack_signal_handler(int /*sig*/, siginfo_t* info, void* raw_context) {
 +    const int saved_errno = errno;
 +
@@ -193,6 +240,8 @@ index 2c9e8bce4de..6b757699710 100644
 +    auto* context = static_cast<ucontext_t*>(raw_context);
 +    uintptr_t pc = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RIP]);
 +    uintptr_t rbp = static_cast<uintptr_t>(context->uc_mcontext.gregs[REG_RBP]);
++    // Reason: capture the starting RBP once so the bounds check measures
++    // against a fixed anchor as `rbp` walks up the chain.
 +    const uintptr_t initial_rbp = rbp;
 +    const int max_frames = g_slot.max_frames;
 +    const uintptr_t max_stack_bytes = g_slot.max_stack_bytes;
@@ -202,7 +251,8 @@ index 2c9e8bce4de..6b757699710 100644
 +    if (pc != 0 && n < max_frames) {
 +        g_slot.frames[n++] = pc;
 +    }
-+    // 4. Walk the saved-RBP chain: [rbp] is the caller's rbp, [rbp+8] its return pc.
++    // 4. Walk the saved-RBP chain: [rbp] is the caller's rbp; [rbp+8] is its
++    //    return pc. Bounded by `rbp_can_read` and `kMaxSignalFrames`.
 +    while (n < max_frames && rbp_can_read(initial_rbp, rbp, max_stack_bytes)) {
 +        const uintptr_t next_rbp = *reinterpret_cast<const uintptr_t*>(rbp);
 +        const uintptr_t ret = *reinterpret_cast<const uintptr_t*>(rbp + sizeof(uintptr_t));
@@ -224,8 +274,10 @@ index 2c9e8bce4de..6b757699710 100644
 +        g_slot.handler_ns.store(end_ns - start_ns, std::memory_order_relaxed);
 +    }
 +
-+    // 5. Re-check the token before publishing: if the dump moved on while we
-+    //    walked, drop the result so it never lands in the next dump's slot.
++    // 5. Re-check the token before publishing SLOT_DONE: if the dump moved
++    //    on while we walked, suppress the state store. The earlier writes
++    //    to `frames[]` and `frame_count` are NOT suppressed; thread #2
++    //    will fix this by giving each sequence its own slot.
 +    if (seq == g_slot.expected_seq.load(std::memory_order_acquire)) {
 +        g_slot.state.store(SLOT_DONE, std::memory_order_release);
 +    }
@@ -246,10 +298,21 @@ index 2c9e8bce4de..6b757699710 100644
 +    });
 +}
 +
-+// Reason: the per-thread CaptureFn run_collection drives. It arms the global slot
-+// with a fresh token, queues the signal, waits for the handler up to the dump
-+// deadline, and copies the frames out. Sequential by construction: one signal is
-+// ever in flight, so the single slot is race-free.
++// Reason: the per-thread `CaptureFn` `run_collection` drives. Arms the global
++// slot with a fresh token, queues the signal, polls until the handler
++// publishes or the deadline expires, and copies the frames out.
++//
++// The coordinator drives one capture at a time, so only one signal is ever
++// in flight. NOTE: this alone does NOT make the handoff safe against a late
++// handler that lands after this call returns -- the next call will re-arm
++// the same slot. The token gate in the handler suppresses the late
++// SLOT_DONE store but not the mid-walk frame writes. Thread #2 hardens
++// this; thread #3 documents the gap.
++// Spec: docs/phase2-design.md "Variant Mechanics -> fp-walk".
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:381-384
++//   (sequential per-thread signaling).
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:293-309
++//   (fresh `req_id`, queue `SI_QUEUE` with `sival_ptr` token).
 +void fp_walk_capture(int64_t tid, const CollectOptions& opts,
 +                     std::chrono::steady_clock::time_point deadline, ThreadStack* out) {
 +    // 1. A thread that blocks the signal is reported as such, not as a timeout.
@@ -297,10 +360,17 @@ index 2c9e8bce4de..6b757699710 100644
 +        if (g_slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
 +            break;
 +        }
++        // Reason: the coordinator must wait for the handler to publish.
++        // 200 microseconds polls often enough to keep the next thread moving
++        // without burning a core on a busy yield. CK waits on a pipe; OB
++        // waits with `wait_readable`; fp-walk polls so the wait stays
++        // signal-safe-symmetric with the handler's atomic publish.
++        // Local: fp-walk-specific cadence. No CK or OB precedent.
 +        std::this_thread::sleep_for(std::chrono::microseconds(200));
 +    }
 +
-+    // 5. Read the frames, or disarm the token so a late handler drops.
++    // 5. Read the frames, or disarm the token so a late handler drops on
++    //    its entry check.
 +    if (g_slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
 +        out->frames.reserve(static_cast<size_t>(g_slot.frame_count));
 +        for (int i = 0; i < g_slot.frame_count; ++i) {
