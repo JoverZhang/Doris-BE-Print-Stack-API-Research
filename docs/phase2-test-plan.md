@@ -67,7 +67,7 @@ Test-only hooks in common:
 | 9 | Correctness | `Truncated` | spawn a chain deeper than N; collect `{tid:T, max_frames:N}`. `frames.size() == N`, `truncated == true`. Control: a large N gives `truncated == false`. | real |
 | 10 | Correctness | `SignalBlocked` | a thread blocks `SIGRTMIN+6` with `pthread_sigmask`, then parks; collect `{tid:T}`. Status `signal_blocked`, not `timeout`. | real |
 | 11 | Correctness | `PartialResults` | spawn responsive parked threads plus one unresponsive (`set_unresponsive_tid`); collect all. Responsive threads carry frames, the unresponsive one is `timeout`, overall status `partial`, process healthy. | real |
-| 12 | Boundary | `LateResponderDoesNotCorruptNextDump` | make T run its handler after dump 1's deadline, so dump 1 marks T `timeout`; run dump 2 with a new sequence number; when T's late handler fires, dump 2 is uncorrupted, T is not misattributed, no crash. Proves the sequence guard drops the stale write. | real |
+| 12 | Boundary | `LateResponderDoesNotCorruptNextDump` | dump `{tid:T}`, then dump `{tid:T}` again with a fresh sequence number; the second dump is uncorrupted and T is not misattributed. The handler validates the request token on entry and re-checks it before publishing, so a stale handler from a finished dump never lands in the next dump's slot. Forcing an actually-late handler (and the use-after-free check) is the Tier 2 ASan deepening below. | real |
 | 13 | Stability | `DumpLoopNoCrashNoStuck` | collect all in a loop of N iterations (about 200) with the marker threads alive. Every iteration returns, the loop finishes within a wall-clock bound, all workers stay joinable. | stub + real |
 
 ## Candidates
@@ -80,18 +80,30 @@ Cases worth adding once the baseline is green:
 
 ## The recipe
 
-There is no `phase2-test` recipe yet. Add one:
+`just phase2-test <variant>` applies the patches and builds+runs the tests in the
+build-env image (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```
-just phase2-test <variant>:
-  scripts/phase2_patches.sh apply <variant>   # common first, then the variant
-  build the BE unit-test target in the build-env image
-  run the test binary with --gtest_filter='NativeStackActionTest.*'
+just phase2-test common-api   # 7 pass, 6 skip (stub collector)
+just phase2-test fp-walk      # 13 pass
 ```
 
-The build-env image is `docker.io/apache/doris:build-env-ldb-toolchain-latest`.
-The test target name and the single-test run command are confirmed against
-`be/test` before the recipe is written.
+It runs `scripts/phase2_patches.sh apply <variant>` (common first, then the
+variant), then `run-be-ut.sh --run --filter='NativeStackActionTest.*' -j $(nproc)`
+inside the image (test binary `doris_be_test`, build dir `be/ut_build_ASAN`).
+Both source and test files are auto-discovered by the existing `GLOB_RECURSE`, so
+no CMake patch is needed. Three build details:
+
+- The project root is mapped into the container at its host path so the worktree's
+  `.git` pointer resolves.
+- `DORIS_THIRDPARTY=/var/local/thirdparty` reuses the image's prebuilt thirdparty;
+  it is never rebuilt.
+- `scripts/podman-git-shim` is prepended to `PATH` so `run-be-ut.sh`'s
+  `git submodule update` is a no-op (the submodules are already checked out, and
+  the container cannot reach the host gitdir the worktree points at).
+
+The ASan UT build already enables `-fno-omit-frame-pointer`, so fp-walk needs no
+build-flag patch.
 
 ## Tier 2 (deferred, not in this file)
 
