@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# A git shim for building a phase2 worktree inside the build-env container.
+#
+# The bind-mounted worktree's .git is a pointer to a gitdir under the host
+# project's .git/modules/.../worktrees/<target>. That path does not exist inside
+# the container, so run-be-ut.sh's `git submodule update --init --recursive`
+# fails with "fatal: not a git repository", and its `git ls-tree HEAD` fallback
+# fails too, aborting the build (exit 128).
+#
+# The submodules it wants (contrib/apache-orc, contrib/clucene) are already
+# checked out in the worktree, so updating them is unnecessary here. Make
+# `git submodule ...` a successful no-op and pass every other git call through
+# to the real git, so an unexpected git use still behaves normally.
+if [[ "${1:-}" == "submodule" ]]; then
+    exit 0
+fi
+exec /usr/bin/git "$@"
