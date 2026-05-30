@@ -1,7 +1,8 @@
 # Coding Guidelines
 
-This file defines what to write and how to comment it, for the patches
-under `patches/` and the code they introduce. Prose style follows
+This file defines what to write and how to comment it, for code in this
+repo — the patches under `patches/`, the code they introduce, and the
+harness scripts under `scripts/`. Prose style follows
 [writing-guidelines.md](writing-guidelines.md).
 
 ## Scope

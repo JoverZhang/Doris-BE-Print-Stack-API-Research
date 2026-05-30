@@ -2,14 +2,17 @@
 # them once keeps drift between scripts impossible.
 # Local: sourced helper, never invoked directly.
 
-# Upstream Doris commit that patches/ apply on top of.
+# Reason: the upstream Doris commit that patches/ apply on top of. Every
+# phase2/* branch descends from this; changing it requires re-baselining
+# every variant. Env-overridable for one-off bootstrap from a different base.
+# Local: harness config.
 DORIS_BASE="${DORIS_BASE:-c24d454f15cee2d937ef4749270a3ecb449eafe6}"
 
-# Variants known to the harness. common is implicit.
-# Reason: ck-phdr-unwind, ob-kill60, and snapshot-remote-unwind are
-# spec-defined but their patch series are not yet healthy against the current
-# phase2/common. Add them back here once patches/<v>/ contains a series that
-# applies cleanly.
+# Reason: variants known to the harness; common is implicit. ck-phdr-unwind,
+# ob-kill60, and snapshot-remote-unwind are spec-defined but their patch
+# series are not yet healthy against the current phase2/common. Add them
+# back here once patches/<v>/ contains a series that applies cleanly.
+# Local: harness config.
 VARIANTS="fp-walk"
 
 # Resolve the project root: prefer the PROJECT_ROOT exported by in-container;
@@ -22,8 +25,9 @@ DORIS_REPO="${PROJECT_ROOT}/repos/source/doris-master"
 WORKTREE="${PROJECT_ROOT}/.worktree/phase2"
 
 # Reason: every git op inside this submodule's worktree needs a committer
-# identity for git am. The values are local-only — the produced commits never
+# identity for git am. The values are local-only; produced commits never
 # leave this checkout (format-patch emits new files from them).
+# Local: harness helper.
 ensure_git_identity() {
     local repo="$1"
     git -C "$repo" config user.name >/dev/null 2>&1 || \
@@ -33,9 +37,10 @@ ensure_git_identity() {
 }
 
 # Reason: shared dirty-worktree guard. The naive `diff-index --quiet HEAD --`
-# false-positives after a submodule init (stat cache stale) and again on
-# submodule pointer movement. Refresh the stat cache first; ignore submodule
-# diffs (they are normal after init/build and the user is not editing them).
+# false-positives after a submodule init (stat cache stale) and on submodule
+# pointer movement. Refresh the stat cache first; ignore submodule diffs
+# (they are normal after init/build and the user is not editing them).
+# Local: harness helper.
 assert_clean_worktree() {
     local wt="$1"
     git -C "$wt" update-index --refresh -q >/dev/null 2>&1 || true
@@ -47,6 +52,7 @@ assert_clean_worktree() {
 
 # Reason: a stale verify worktree (left from a crashed run) blocks the next
 # verify. Removing the dir and pruning the registry recovers cleanly.
+# Local: harness helper.
 cleanup_worktree() {
     local dir="$1"
     if [[ -d "$dir" ]]; then
