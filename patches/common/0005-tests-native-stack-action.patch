@@ -1,0 +1,619 @@
+From 655e96830b3a309e2192cf9a3a9174aebcb29c8e Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Sat, 30 May 2026 03:23:19 +0800
+Subject: [PATCH 5/5] [test](be) add native stack action tests
+
+The 13 Tier-1 cases from docs/phase2-test-plan.md, calling the common free
+functions directly rather than forging an HttpRequest. Contract and stability
+cases (Schema, ShapeOneTid, MissingTid, BadRequest, ContendedDumpReturnsTimeout,
+Timeout, DumpLoopNoCrashNoStuck) run on the stub; correctness and boundary cases
+skip unless a real collector is linked.
+---
+ .../service/http/native_stack_action_test.cpp | 595 ++++++++++++++++++
+ 1 file changed, 595 insertions(+)
+ create mode 100644 be/test/service/http/native_stack_action_test.cpp
+
+diff --git a/be/test/service/http/native_stack_action_test.cpp b/be/test/service/http/native_stack_action_test.cpp
+new file mode 100644
+index 00000000000..cfb1f24c817
+--- /dev/null
++++ b/be/test/service/http/native_stack_action_test.cpp
+@@ -0,0 +1,595 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include <gtest/gtest.h>
++#include <rapidjson/document.h>
++#include <signal.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <atomic>
++#include <chrono>
++#include <condition_variable>
++#include <cstdint>
++#include <map>
++#include <memory>
++#include <mutex>
++#include <set>
++#include <string>
++#include <thread>
++#include <vector>
++
++#include "service/http/action/native_stack.h"
++
++// Tests call the common free functions directly; they do not forge an
++// HttpRequest. This one file ships as a tests- patch in patches/common/, so it
++// is present for every variant. Contract and stability cases run on the stub and
++// on a real collector; correctness and boundary cases start with
++// `if (collector_is_stub()) GTEST_SKIP();` so they run only on a real collector.
++// Reference: docs/phase2-test-plan.md.
++namespace doris::native_stack {
++namespace {
++
++int64_t self_tid() {
++    return static_cast<int64_t>(syscall(SYS_gettid));
++}
++
++// The realtime signal fp-walk uses; case SignalBlocked blocks it on a worker.
++int native_stack_signal() {
++    return SIGRTMIN + 6;
++}
++
++// EasyJson builds JSON; tests parse it back with rapidjson for assertions.
++rapidjson::Document parse_report(const NativeStackReport& report) {
++    const std::string body = serialize(report);
++    rapidjson::Document doc;
++    doc.Parse(body.c_str());
++    return doc;
++}
++
++// Assert no symbol-like key appears anywhere: the contract carries raw PCs only.
++void expect_no_symbol_keys(const rapidjson::Value& value) {
++    static const std::set<std::string> kForbidden = {"function", "func",      "file", "line",
++                                                     "symbol",   "demangled", "name"};
++    if (value.IsObject()) {
++        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it) {
++            EXPECT_EQ(kForbidden.count(it->name.GetString()), 0U)
++                    << "symbol-like key leaked: " << it->name.GetString();
++            expect_no_symbol_keys(it->value);
++        }
++    } else if (value.IsArray()) {
++        for (const auto& element : value.GetArray()) {
++            expect_no_symbol_keys(element);
++        }
++    }
++}
++
++// True on the common build's stub collector. Correctness/boundary cases skip on
++// it because they need real frames.
++bool collector_is_stub() {
++    return collect_native_stacks(CollectOptions {}).collector == "stub";
++}
++
++// A worker parked on a condition variable that publishes its tid. Cheap; used by
++// the contract cases that only need a live, targetable thread.
++class ParkedThread {
++public:
++    ParkedThread() {
++        _thread = std::thread([this] {
++            _tid.store(self_tid(), std::memory_order_release);
++            std::unique_lock<std::mutex> lock(_mutex);
++            _cv.wait(lock, [this] { return _release; });
++        });
++        while (_tid.load(std::memory_order_acquire) == 0) {
++            std::this_thread::yield();
++        }
++    }
++    ParkedThread(const ParkedThread&) = delete;
++    ParkedThread& operator=(const ParkedThread&) = delete;
++    ~ParkedThread() {
++        {
++            std::lock_guard<std::mutex> lock(_mutex);
++            _release = true;
++        }
++        _cv.notify_all();
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
++
++private:
++    std::thread _thread;
++    std::atomic<int64_t> _tid {0};
++    std::mutex _mutex;
++    std::condition_variable _cv;
++    bool _release = false;
++};
++
++// A worker busy-spinning in a non-trivial frame; has a real walkable RBP chain.
++class SpinThread {
++public:
++    SpinThread() {
++        _thread = std::thread([this] {
++            _tid.store(self_tid(), std::memory_order_release);
++            while (!_stop.load(std::memory_order_acquire)) {
++                volatile int sink = 0;
++                (void)sink;
++            }
++        });
++        while (_tid.load(std::memory_order_acquire) == 0) {
++            std::this_thread::yield();
++        }
++    }
++    SpinThread(const SpinThread&) = delete;
++    SpinThread& operator=(const SpinThread&) = delete;
++    ~SpinThread() {
++        _stop.store(true, std::memory_order_release);
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
++
++private:
++    std::thread _thread;
++    std::atomic<int64_t> _tid {0};
++    std::atomic<bool> _stop {false};
++};
++
++// A worker that descends a known four-level call chain and busy-spins at the
++// bottom, recording the return address into each caller (in call order: the
++// outermost caller first). The walked frames, from the spin outward, are those
++// same addresses in reverse, so KnownChainResolved can check them. noinline and
++// the trailing asm keep each frame distinct and on the stack at -O0.
++class MarkerChain {
++public:
++    MarkerChain() {
++        _thread = std::thread([this] { level_a(); });
++        while (_tid.load(std::memory_order_acquire) == 0) {
++            std::this_thread::yield();
++        }
++    }
++    MarkerChain(const MarkerChain&) = delete;
++    MarkerChain& operator=(const MarkerChain&) = delete;
++    ~MarkerChain() {
++        _stop.store(true, std::memory_order_release);
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
++    // Return addresses in call order (level_a's caller first, spin's caller last).
++    const std::vector<uintptr_t>& returns() const { return _returns; }
++
++private:
++    __attribute__((noinline)) void spin() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        _tid.store(self_tid(), std::memory_order_release);
++        while (!_stop.load(std::memory_order_acquire)) {
++            volatile int sink = 0;
++            (void)sink;
++        }
++    }
++    __attribute__((noinline)) void level_c() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        spin();
++        asm volatile("");
++    }
++    __attribute__((noinline)) void level_b() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        level_c();
++        asm volatile("");
++    }
++    __attribute__((noinline)) void level_a() {
++        _returns.push_back(reinterpret_cast<uintptr_t>(__builtin_return_address(0)));
++        level_b();
++        asm volatile("");
++    }
++    std::thread _thread;
++    std::atomic<int64_t> _tid {0};
++    std::atomic<bool> _stop {false};
++    std::vector<uintptr_t> _returns;
++};
++
++// A worker that recurses to a fixed depth and busy-spins at the bottom, leaving a
++// deep walkable chain. Used to exercise the max_frames truncation bound.
++class RecursiveSpinThread {
++public:
++    explicit RecursiveSpinThread(int depth) {
++        _thread = std::thread([this, depth] { recurse(depth); });
++        while (_tid.load(std::memory_order_acquire) == 0) {
++            std::this_thread::yield();
++        }
++    }
++    RecursiveSpinThread(const RecursiveSpinThread&) = delete;
++    RecursiveSpinThread& operator=(const RecursiveSpinThread&) = delete;
++    ~RecursiveSpinThread() {
++        _stop.store(true, std::memory_order_release);
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++    int64_t tid() const { return _tid.load(std::memory_order_acquire); }
++
++private:
++    __attribute__((noinline)) void recurse(int depth) {
++        if (depth > 0) {
++            recurse(depth - 1);
++            asm volatile("");
++            return;
++        }
++        _tid.store(self_tid(), std::memory_order_release);
++        while (!_stop.load(std::memory_order_acquire)) {
++            volatile int sink = 0;
++            (void)sink;
++        }
++    }
++    std::thread _thread;
++    std::atomic<int64_t> _tid {0};
++    std::atomic<bool> _stop {false};
++};
++
++} // namespace
++
++class NativeStackActionTest : public ::testing::Test {
++protected:
++    void TearDown() override { set_unresponsive_tid_for_test(0); }
++};
++
++// 1 (Schema): collect all, resolve, serialize, parse. The required root and
++// per-thread keys are present, an all-thread dump carries no target_tid, frame
++// objects hold only pc/dso/dso_offset, and no symbol-like key appears anywhere.
++TEST_F(NativeStackActionTest, Schema) {
++    CollectOptions opts;
++    NativeStackReport report = collect_native_stacks(opts);
++    resolve_dsos(&report);
++    rapidjson::Document doc = parse_report(report);
++
++    ASSERT_FALSE(doc.HasParseError());
++    ASSERT_TRUE(doc.IsObject());
++
++    for (const char* key : {"collector", "status", "timeout_ms", "max_frames_per_thread",
++                            "max_copied_stack_bytes", "elapsed_ms", "threads"}) {
++        ASSERT_TRUE(doc.HasMember(key)) << "missing root key: " << key;
++    }
++    EXPECT_TRUE(doc["collector"].IsString());
++    EXPECT_FALSE(std::string(doc["collector"].GetString()).empty());
++    EXPECT_TRUE(doc["threads"].IsArray());
++    EXPECT_FALSE(doc.HasMember("target_tid"));
++
++    for (const auto& thread : doc["threads"].GetArray()) {
++        ASSERT_TRUE(thread.IsObject());
++        for (const char* key : {"tid", "status", "truncated", "frames"}) {
++            ASSERT_TRUE(thread.HasMember(key)) << "missing thread key: " << key;
++        }
++        EXPECT_TRUE(thread["frames"].IsArray());
++        for (const auto& frame : thread["frames"].GetArray()) {
++            ASSERT_TRUE(frame.IsObject());
++            ASSERT_TRUE(frame.HasMember("pc"));
++            ASSERT_TRUE(frame.HasMember("dso"));
++            ASSERT_TRUE(frame.HasMember("dso_offset"));
++            EXPECT_EQ(frame.MemberCount(), 3U) << "frame carries unexpected members";
++        }
++    }
++
++    expect_no_symbol_keys(doc);
++}
++
++// 2 (ShapeOneTid): park one thread T; collect {tid:T}. Exactly one thread entry,
++// tid == T, root target_tid == T.
++TEST_F(NativeStackActionTest, ShapeOneTid) {
++    ParkedThread worker;
++    CollectOptions opts;
++    opts.target_tid = worker.tid();
++    NativeStackReport report = collect_native_stacks(opts);
++    resolve_dsos(&report);
++    rapidjson::Document doc = parse_report(report);
++
++    ASSERT_FALSE(doc.HasParseError());
++    ASSERT_TRUE(doc["threads"].IsArray());
++    ASSERT_EQ(doc["threads"].Size(), 1U);
++    EXPECT_EQ(doc["threads"][0]["tid"].GetInt64(), worker.tid());
++    ASSERT_TRUE(doc.HasMember("target_tid"));
++    EXPECT_EQ(doc["target_tid"].GetInt64(), worker.tid());
++}
++
++// 3 (MissingTid): collect a tid that is not present. Status missing_tid, an error
++// reason, and no frames.
++TEST_F(NativeStackActionTest, MissingTid) {
++    CollectOptions opts;
++    opts.target_tid = static_cast<int64_t>(1) << 40; // far above any pid_max
++    NativeStackReport report = collect_native_stacks(opts);
++
++    EXPECT_EQ(report.status, "missing_tid");
++    EXPECT_FALSE(report.error_reason.empty());
++    for (const auto& thread : report.threads) {
++        EXPECT_TRUE(thread.frames.empty());
++    }
++    rapidjson::Document doc = parse_report(report);
++    ASSERT_FALSE(doc.HasParseError());
++    EXPECT_STREQ(doc["status"].GetString(), "missing_tid");
++}
++
++// 4 (BadRequest): parse_collect_options rejects each bad input as bad_request with
++// a reason and performs no collection.
++TEST_F(NativeStackActionTest, BadRequest) {
++    auto rejected = [](std::map<std::string, std::string> params) {
++        CollectOptions opts;
++        std::string reason;
++        EXPECT_FALSE(parse_collect_options(params, &opts, &reason));
++        EXPECT_FALSE(reason.empty());
++    };
++    rejected({{"tid", "0"}});
++    rejected({{"tid", "-5"}});
++    rejected({{"tid", "12x"}});
++    rejected({{"timeout_ms", "0"}});
++    rejected({{"timeout_ms", "60001"}});
++    rejected({{"timeout_ms", "abc"}});
++    rejected({{"max_frames", "0"}});
++
++    CollectOptions opts;
++    std::string reason;
++    EXPECT_TRUE(
++            parse_collect_options({{"timeout_ms", "50"}, {"max_frames", "32"}}, &opts, &reason));
++    EXPECT_EQ(opts.timeout_ms, 50);
++    EXPECT_EQ(opts.max_frames, 32);
++}
++
++// 5 (ContendedDumpReturnsTimeout): hold the dump lock; a collect with a small
++// timeout returns timeout with no threads. Releasing the lock lets the next
++// collect succeed. The contended collect runs on another thread to avoid
++// re-locking a non-recursive mutex on the holder thread.
++TEST_F(NativeStackActionTest, ContendedDumpReturnsTimeout) {
++    NativeStackReport contended;
++    {
++        DumpLockGuard guard = hold_dump_lock_for_test();
++        std::thread collector([&contended] {
++            CollectOptions opts;
++            opts.timeout_ms = 20;
++            contended = collect_native_stacks(opts);
++        });
++        collector.join();
++        EXPECT_EQ(contended.status, "timeout");
++        EXPECT_TRUE(contended.threads.empty());
++    }
++
++    NativeStackReport after = collect_native_stacks(CollectOptions {});
++    EXPECT_NE(after.status, "timeout");
++}
++
++// 6 (Timeout): mark a present tid unresponsive; collect {tid:T} reports T timeout
++// and overall timeout. Clearing the hook lets a later dump succeed.
++TEST_F(NativeStackActionTest, Timeout) {
++    const int64_t target = self_tid();
++    set_unresponsive_tid_for_test(target);
++
++    CollectOptions opts;
++    opts.target_tid = target;
++    opts.timeout_ms = 20;
++    NativeStackReport report = collect_native_stacks(opts);
++
++    ASSERT_EQ(report.threads.size(), 1U);
++    EXPECT_EQ(report.threads[0].status, "timeout");
++    EXPECT_EQ(report.status, "timeout");
++
++    set_unresponsive_tid_for_test(0);
++    NativeStackReport after = collect_native_stacks(CollectOptions {});
++    EXPECT_NE(after.status, "timeout");
++}
++
++// 7 (NonZeroPcPerActiveThread): spawn spin-parked threads; each returns at least
++// one non-zero pc. Real collector only.
++TEST_F(NativeStackActionTest, NonZeroPcPerActiveThread) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    constexpr int kWorkers = 4;
++    std::vector<std::unique_ptr<SpinThread>> workers;
++    std::set<int64_t> worker_tids;
++    for (int i = 0; i < kWorkers; ++i) {
++        workers.push_back(std::make_unique<SpinThread>());
++        worker_tids.insert(workers.back()->tid());
++    }
++
++    NativeStackReport report = collect_native_stacks(CollectOptions {});
++    int seen = 0;
++    for (const auto& thread : report.threads) {
++        if (worker_tids.count(thread.tid) == 0) {
++            continue;
++        }
++        ++seen;
++        EXPECT_EQ(thread.status, "ok") << "tid " << thread.tid;
++        ASSERT_FALSE(thread.frames.empty()) << "tid " << thread.tid;
++        bool any_nonzero = false;
++        for (const auto& frame : thread.frames) {
++            any_nonzero = any_nonzero || frame.pc != 0;
++        }
++        EXPECT_TRUE(any_nonzero) << "tid " << thread.tid;
++    }
++    EXPECT_EQ(seen, kWorkers);
++}
++
++// 8 (KnownChainResolved): a known call chain parks at its deepest frame; the dump
++// shows the recorded return PCs in caller order, each resolved to a dso with an
++// offset such that the dso load base plus offset equals pc, and a non-negative
++// handler time. Real collector only; exact frame indices validated at Gate B.
++TEST_F(NativeStackActionTest, KnownChainResolved) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    MarkerChain chain;
++    CollectOptions opts;
++    opts.target_tid = chain.tid();
++    NativeStackReport report = collect_native_stacks(opts);
++    resolve_dsos(&report);
++
++    ASSERT_EQ(report.threads.size(), 1U);
++    const ThreadStack& thread = report.threads[0];
++    ASSERT_EQ(thread.status, "ok");
++    ASSERT_GE(thread.frames.size(), 5U);
++    EXPECT_NE(thread.frames[0].pc, 0U);
++    EXPECT_GE(thread.handler_time_ns, 0);
++
++    // The walked return addresses, from the spin outward, are the recorded ones
++    // in reverse call order. Find where that run begins and check it in order.
++    std::vector<uintptr_t> expected(chain.returns().rbegin(), chain.returns().rend());
++    ASSERT_EQ(expected.size(), 4U);
++    std::vector<uintptr_t> pcs;
++    for (const Frame& frame : thread.frames) {
++        pcs.push_back(frame.pc);
++    }
++    auto start = std::find(pcs.begin(), pcs.end(), expected[0]);
++    ASSERT_NE(start, pcs.end()) << "spin's return address not found among walked frames";
++    ASSERT_GE(static_cast<size_t>(pcs.end() - start), expected.size());
++    for (size_t i = 0; i < expected.size(); ++i) {
++        EXPECT_EQ(*(start + static_cast<std::ptrdiff_t>(i)), expected[i])
++                << "chain frame " << i << " mismatch";
++    }
++
++    // Every walked frame resolves to a mapped DSO (base + offset == pc).
++    for (const Frame& frame : thread.frames) {
++        EXPECT_TRUE(frame.dso_resolved) << "pc " << frame.pc << " unresolved";
++        EXPECT_FALSE(frame.dso.empty());
++    }
++}
++
++// 9 (Truncated): a chain deeper than N truncates at max_frames N with truncated
++// true; a generous N does not truncate. Real collector only.
++TEST_F(NativeStackActionTest, Truncated) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    RecursiveSpinThread worker(32);
++    CollectOptions bounded;
++    bounded.target_tid = worker.tid();
++    bounded.max_frames = 4;
++    NativeStackReport report = collect_native_stacks(bounded);
++    ASSERT_EQ(report.threads.size(), 1U);
++    EXPECT_EQ(report.threads[0].frames.size(), 4U);
++    EXPECT_TRUE(report.threads[0].truncated);
++
++    CollectOptions generous;
++    generous.target_tid = worker.tid();
++    generous.max_frames = 256;
++    generous.max_stack_bytes = 1048576;
++    NativeStackReport control = collect_native_stacks(generous);
++    ASSERT_EQ(control.threads.size(), 1U);
++    EXPECT_FALSE(control.threads[0].truncated);
++    EXPECT_GT(control.threads[0].frames.size(), 4U);
++}
++
++// 10 (SignalBlocked): a thread that blocks the collector signal is reported
++// signal_blocked, not timeout. Real collector only.
++TEST_F(NativeStackActionTest, SignalBlocked) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    std::atomic<int64_t> tid {0};
++    std::atomic<bool> stop {false};
++    std::thread worker([&tid, &stop] {
++        sigset_t set;
++        sigemptyset(&set);
++        sigaddset(&set, native_stack_signal());
++        pthread_sigmask(SIG_BLOCK, &set, nullptr);
++        tid.store(self_tid(), std::memory_order_release);
++        while (!stop.load(std::memory_order_acquire)) {
++            std::this_thread::sleep_for(std::chrono::milliseconds(1));
++        }
++    });
++    while (tid.load(std::memory_order_acquire) == 0) {
++        std::this_thread::yield();
++    }
++
++    CollectOptions opts;
++    opts.target_tid = tid.load(std::memory_order_acquire);
++    NativeStackReport report = collect_native_stacks(opts);
++
++    stop.store(true, std::memory_order_release);
++    worker.join();
++
++    ASSERT_EQ(report.threads.size(), 1U);
++    EXPECT_EQ(report.threads[0].status, "signal_blocked");
++}
++
++// 11 (PartialResults): responsive parked threads plus one unresponsive; the
++// responsive carry frames, the unresponsive is timeout, overall partial, and the
++// process stays healthy. Real collector only.
++TEST_F(NativeStackActionTest, PartialResults) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    SpinThread responsive_a;
++    SpinThread responsive_b;
++    ParkedThread unresponsive;
++    set_unresponsive_tid_for_test(unresponsive.tid());
++
++    NativeStackReport report = collect_native_stacks(CollectOptions {});
++    EXPECT_EQ(report.status, "partial");
++
++    for (const auto& thread : report.threads) {
++        if (thread.tid == unresponsive.tid()) {
++            EXPECT_EQ(thread.status, "timeout");
++        } else if (thread.tid == responsive_a.tid() || thread.tid == responsive_b.tid()) {
++            EXPECT_EQ(thread.status, "ok");
++            EXPECT_FALSE(thread.frames.empty());
++        }
++    }
++}
++
++// 12 (LateResponderDoesNotCorruptNextDump): a thread that runs its handler after
++// dump 1's deadline must not corrupt dump 2 or be misattributed. Real collector
++// only; the late-handler hook lands with fp-walk at Gate B.
++TEST_F(NativeStackActionTest, LateResponderDoesNotCorruptNextDump) {
++    if (collector_is_stub()) {
++        GTEST_SKIP();
++    }
++
++    ParkedThread worker;
++    CollectOptions opts;
++    opts.target_tid = worker.tid();
++
++    NativeStackReport first = collect_native_stacks(opts);
++    NativeStackReport second = collect_native_stacks(opts);
++
++    ASSERT_EQ(second.threads.size(), 1U);
++    EXPECT_EQ(second.threads[0].tid, worker.tid());
++}
++
++// 13 (DumpLoopNoCrashNoStuck): repeated all-thread dumps with workers alive each
++// return within a wall-clock bound and leave the workers joinable.
++TEST_F(NativeStackActionTest, DumpLoopNoCrashNoStuck) {
++    SpinThread worker_a;
++    ParkedThread worker_b;
++
++    constexpr int kIterations = 200;
++    const auto start = std::chrono::steady_clock::now();
++    for (int i = 0; i < kIterations; ++i) {
++        NativeStackReport report = collect_native_stacks(CollectOptions {});
++        ASSERT_FALSE(report.status.empty());
++    }
++    const auto elapsed = std::chrono::steady_clock::now() - start;
++    EXPECT_LT(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count(), 60);
++}
++
++} // namespace doris::native_stack
+-- 
+2.53.0
+

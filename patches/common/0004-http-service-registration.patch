@@ -1,14 +1,15 @@
-From 9a5d39e7bf90629e1a3d87d6075e49afff04703b Mon Sep 17 00:00:00 2001
+From a3fad5e6383c7c557b4472fbd8fc66db143e3e8d Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
-Date: Thu, 28 May 2026 21:44:00 +0800
-Subject: [PATCH 2/2] [feature](be) Register native stack debug HTTP route
+Date: Sat, 30 May 2026 03:23:19 +0800
+Subject: [PATCH 4/5] [feature](be) register native stack debug HTTP route
 
+Register NativeStackAction at GET /api/debug/native_stack with ADMIN privilege.
 ---
- be/src/service/http_service.cpp | 6 ++++++
- 1 file changed, 6 insertions(+)
+ be/src/service/http_service.cpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
 
 diff --git a/be/src/service/http_service.cpp b/be/src/service/http_service.cpp
-index 93a50a81cc1..d005f701ac1 100644
+index 93a50a81cc1..4a3d121bcab 100644
 --- a/be/src/service/http_service.cpp
 +++ b/be/src/service/http_service.cpp
 @@ -58,6 +58,7 @@
@@ -19,10 +20,11 @@ index 93a50a81cc1..d005f701ac1 100644
  #include "service/http/action/pad_rowset_action.h"
  #include "service/http/action/pipeline_task_action.h"
  #include "service/http/action/pprof_actions.h"
-@@ -190,6 +191,11 @@ Status HttpService::start() {
+@@ -190,6 +191,12 @@ Status HttpService::start() {
      _ev_http_server->register_handler(HttpMethod::GET, "/api/be_process_thread_num",
                                        be_proc_thread_action);
  
++    // Register the Phase 2 native stack debug action.
 +    NativeStackAction* native_stack_action =
 +            _pool.add(new NativeStackAction(_env, TPrivilegeHier::GLOBAL, TPrivilegeType::ADMIN));
 +    _ev_http_server->register_handler(HttpMethod::GET, "/api/debug/native_stack",
