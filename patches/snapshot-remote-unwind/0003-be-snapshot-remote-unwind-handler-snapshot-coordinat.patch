@@ -1,0 +1,896 @@
+From c5b504d1dcdd16d7a69b685f9fb9a53c444d848d Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Sun, 31 May 2026 22:54:24 +0800
+Subject: [PATCH 3/4] (be) snapshot-remote-unwind handler snapshot +
+ coordinator remote unwind
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The handler runs NO libunwind. It captures the interrupted thread's
+ucontext_t and a bounded slice of its stack into a per-sequence slot
+and returns. The coordinator reads the slot after the handler exits
+and runs libunwind in REMOTE mode (`unw_create_addr_space` +
+`unw_init_remote`) against the snapshot, in the request thread,
+where DWARF unwind info lookups via `dl_iterate_phdr` are safe.
+
+This is the variant's defining structural difference from ck-phdr-
+unwind and ob-kill60 (both run libunwind inside the handler). It
+trades a larger handler payload (snapshot bytes) for a simpler
+async-signal-safety profile in the handler — the handler does only
+errno save/restore, a SI_QUEUE + getpid sender check, the per-
+sequence seq+state CAS dance, a structure copy of ucontext_t, and
+a bounded memcpy of stack bytes (guarded by mincore on the first
+page and per-page within the cap).
+
+The handler is marked `__attribute__((no_sanitize("address")))`
+because under ASAN the per-thread stack contains compiler-inserted
+poison redzones between the target thread's local variables. The
+ASAN memcpy interceptor would report every cross-redzone read as
+a stack-buffer-underflow even though the bytes are real and the
+read is intentional (the snapshot is fed to libunwind later, which
+chases CFI through the captured words). The annotation disables
+ASAN instrumentation of THIS function only; live process code
+outside the handler stays fully instrumented.
+
+The slot ring + sequence + state machine mirror fp-walk / ck-phdr-
+unwind / ob-kill60 so the late-handler safety contract is the same:
+a coordinator can only re-arm a slot in IDLE, so a slot held by a
+late WALKING handler is never re-armed under it. The codex-driven
+slot-disarm fix shared across the three sibling variants (commit
+2a00713 on phase2-spec-restructure) is mirrored verbatim:
+`expected_seq` is stored to 0 BEFORE the state is stored to
+SLOT_IDLE on both the success and timeout paths.
+
+The remote-mode `unw_accessors_t` is implemented in-TU:
+- `access_reg` reads from the captured ucontext_t (passed as
+  `arg` to `unw_init_remote`); the regnum-to-gregs[] mapping
+  follows the libunwind upstream UNW_X86_64_R<N> -> REG_R<N>
+  convention.
+- `access_mem` serves stack words from the snapshot if the
+  address is in the captured window, else falls through to a
+  direct in-process read of our own DSO text/eh_frame/data
+  (mincore-guarded). The slot pointer is handed to access_mem
+  via a thread-local set by the coordinator immediately before
+  `unw_init_remote`.
+- `find_proc_info` / `put_unwind_info` delegate to the
+  exported `_Ux86_64_dwarf_find_proc_info` /
+  `_Ux86_64_dwarf_put_unwind_info` helpers (declared via
+  extern "C" in-TU because the public headers do not expose
+  them but the archive does). Those helpers call our
+  `access_mem` and walk `dl_iterate_phdr`, both safe in the
+  coordinator context.
+- `get_dyn_info_list_addr` returns 0 (Doris does not JIT
+  eh_frame entries).
+- `get_proc_name` returns UNW_ENOINFO (offline symbolization).
+- `resume` is unused; returns -UNW_EINVAL.
+
+A defense-in-depth `hasPHDRCache()` check refuses to signal if the
+cache is missing. In this variant the cache matters for the
+COORDINATOR's `unw_step` (not the handler), but the symptom of
+a missing cache is the same — the libc `dl_iterate_phdr` takes
+the loader lock and serializes the whole many-thread dump. The
+cache is populated by the test runner's `updatePHDRCache()` call
+before RUN_ALL_TESTS and by doris_main after MemInfo::init
+(patch 2), so this is a guard, not the normal path.
+
+Reference: libunwind tests/test-static-link-gen.c (the in-process
+remote-unwind pattern: custom accessors, dwarf_search_unwind_table
+for find_proc_info, direct memory reads); thirdparty
+libunwind-coredump.a's `_UCD_*` accessors are the same shape
+applied to a real coredump.
+---
+ .../http/action/native_stack_collect.cpp      | 776 +++++++++++++++++-
+ 1 file changed, 756 insertions(+), 20 deletions(-)
+
+diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
+index d8cc72ae33b..d5fe292e193 100644
+--- a/be/src/service/http/action/native_stack_collect.cpp
++++ b/be/src/service/http/action/native_stack_collect.cpp
+@@ -15,47 +15,783 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++// Reason: snapshot-remote-unwind is the only Round-2 variant whose
++// handler does NOT call libunwind. The handler copies the interrupted
++// thread's ucontext_t plus a bounded slice of its stack into a per-
++// sequence slot and returns. The coordinator then runs libunwind in
++// remote mode (`unw_init_remote`) against the slot's snapshot, in the
++// request thread, where DWARF unwind info lookups via `dl_iterate_phdr`
++// are safe. The PHDR cache override (patches 1+2) is still shipped so
++// the coordinator's `dl_iterate_phdr` walks the cached list rather than
++// holding the loader lock for tens-of-thousands of times across a many-
++// thread dump.
++//
++// The remote API requires the variant-specific `_Ux86_64_*` symbols
++// (not the local-only `_ULx86_64_*` set ck-phdr-unwind and ob-kill60
++// link against). The build-system patch adds the `libunwind-generic` /
++// `libunwind-x86_64` archive and its lzma dependency to the BE link;
++// this TU includes libunwind.h WITHOUT the `UNW_LOCAL_ONLY` define the
++// other two variants use, so the include resolves to the remote API.
++// Spec: docs/phase2-design.md "Variant Mechanics -> snapshot-remote-unwind".
++// Reference: libunwind tests/test-static-link-gen.c (the libunwind test
++// suite's in-process remote-unwind pattern: custom accessors,
++// dwarf_search_unwind_table for find_proc_info, direct memory reads),
++// <ck>'s phdr_cache.cpp (the same lock-free dl_iterate_phdr override
++// pattern this variant inherits via patches 1+2).
++#include <glog/logging.h>
++#include <libunwind.h>
++#include <signal.h>
++#include <sys/mman.h>
++#include <sys/syscall.h>
++#include <sys/types.h>
++#include <sys/uio.h>
++#include <time.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <atomic>
++#include <cerrno>
+ #include <chrono>
+ #include <cstdint>
++#include <cstring>
++#include <fstream>
++#include <mutex>
++#include <sstream>
++#include <string>
++#include <thread>
+ 
++#include "common/phdr_cache.h"
+ #include "service/http/action/native_stack.h"
+ 
+-// Reason: the per-variant collect step. The common build ships this stub;
+-// each variant patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file
+-// with its real collector, so every other file in the seam stays put.
+-// Spec: docs/phase2-design.md "Common API" -> stub collect().
+ namespace doris::native_stack {
+ namespace {
+ 
+-// Reason: the stub proves the response shape and the single-dump gate
+-// without real signaling — every live thread reports `ok` with no frames.
+-// `run_collection` owns the gate, tid selection, and aggregation, so the
+-// stub only fills status.
+-void stub_capture(int64_t /*tid*/, const CollectOptions& /*opts*/,
+-                  std::chrono::steady_clock::time_point /*deadline*/, ThreadStack* out) {
+-    out->status = "ok";
++// Reason: caps the coordinator's unwind walk. A runaway `unw_step` chain
++// would otherwise build an unbounded `out->frames` vector. Sized to the
++// CollectOptions::max_frames upper bound.
++// Local: snapshot-remote-unwind-specific cap.
++constexpr int kMaxRemoteFrames = 1024;
++
++// Reason: the slot ring size. Per-sequence slots prevent a late handler
++// at seq=K from clobbering the next dump's writes at seq=K+1. N=4
++// matches fp-walk / ck-phdr-unwind / ob-kill60 so the four variants'
++// contention envelopes stay comparable.
++// Local: snapshot-remote-unwind-specific bound; mirrors siblings.
++constexpr int kSlotRingSize = 4;
++
++// Reason: handler-drain budget on the timeout path; bounded so a stuck
++// handler does not extend the whole dump's wall clock.
++// Local: snapshot-remote-unwind-specific cadence; mirrors siblings.
++constexpr int64_t kHandlerDrainBudgetMs = 50;
++
++// Reason: hard ceiling on the stack bytes the handler will copy. Sized
++// generously so case 9 (`Truncated`, deep recursion to 32 frames) and
++// case 8 (`KnownChainResolved`, 4-level chain at -O0) both fit even
++// with the test's max_stack_bytes raised to 1 MiB. The handler still
++// caps each copy at min(opts.max_stack_bytes, kMaxStackBytes), so a
++// caller that requests less gets less; the ceiling is here so the
++// slot's stack buffer has a fixed size known at compile time.
++// Local: snapshot-remote-unwind-specific buffer size.
++constexpr size_t kMaxStackBytes = 1 << 20; // 1 MiB
++
++// Reason: SIGRTMIN+6 is the same realtime signal the other variants
++// queue, so the test binary's `SignalBlocked` case (case 10) blocks
++// one number across the suite.
++int native_stack_signal_number() {
++    return SIGRTMIN + 6;
++}
++
++int64_t monotonic_ns() {
++    timespec ts {};
++    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
++        return 0;
++    }
++    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + static_cast<int64_t>(ts.tv_nsec);
++}
++
++// Reason: the slot's state machine. Same shape as fp-walk / ck-phdr-
++// unwind / ob-kill60, so the late-handler safety contract is the same:
++// a coordinator can only re-arm a slot in IDLE, so a slot held by a
++// late WALKING handler is never re-armed under it. (For snapshot-
++// remote-unwind the handler's WALKING phase is brief — it only copies
++// registers + stack bytes — but the contract still applies because the
++// coordinator runs libunwind AFTER the handler has published DONE.)
++// Local: snapshot-remote-unwind-specific state machine; mirrors siblings.
++enum SlotState : int {
++    SLOT_IDLE = 0,
++    SLOT_PENDING = 1,
++    SLOT_WALKING = 2,
++    SLOT_DONE = 3,
++};
++
++// Reason: one snapshot capture slot. The handler writes the captured
++// ucontext_t into `regs` and up to `kMaxStackBytes` of the interrupted
++// thread's stack into `stack_bytes`. The coordinator reads from these
++// fields to feed libunwind's remote-mode accessors after the handler
++// has returned. Frame storage is the coordinator's local
++// `out->frames`, not the slot — keeping the slot purely "what the
++// handler captured" means an extension to richer captured state
++// (FPU regs, signal mask, etc.) does not bloat the slot's frame
++// array. Slots live for the process lifetime so a late handler that
++// reaches the write step never dereferences a dangling pointer.
++// Spec: docs/phase2-design.md "Variant Mechanics -> snapshot-remote-unwind".
++// Reference: libunwind tests use a `struct { ucontext_t ctx; uint8_t
++// stack[]; }` shape; this layout transcribes the same idea.
++struct CaptureSlot {
++    // Reason: request token. A handler whose `seq` does not match this
++    // value drops at entry, mirroring CK / OB / fp-walk's check.
++    std::atomic<uint64_t> expected_seq {0};
++    // Reason: slot state machine field. See SlotState above.
++    std::atomic<int> state {SLOT_IDLE};
++    // Reason: requested stack-byte cap published by the coordinator
++    // before queueing the signal; read by the handler to bound its
++    // copy. `kMaxStackBytes` is the absolute ceiling regardless of
++    // this value.
++    size_t max_stack_bytes = 0;
++    // Reason: the captured registers. On x86_64 `unw_tdep_context_t`
++    // is `ucontext_t`, so this slot's `regs` doubles as the
++    // `unw_context_t` libunwind reads from in remote mode.
++    // Reference: thirdparty libunwind/include/libunwind-x86_64.h
++    //   `typedef ucontext_t unw_tdep_context_t;`.
++    ucontext_t regs {};
++    // Reason: the base of the captured stack range. The handler reads
++    // RSP from the interrupted ucontext and copies `[RSP, RSP+n)`
++    // here, recording the count in `stack_size`.
++    uintptr_t stack_base = 0;
++    size_t stack_size = 0;
++    // Reason: the captured stack bytes themselves. `access_mem` in the
++    // coordinator serves any address in `[stack_base, stack_base +
++    // stack_size)` from this buffer, returning -EINVAL outside the
++    // window so libunwind falls through to its own DWARF chase.
++    uint8_t stack_bytes[kMaxStackBytes] {};
++    // Reason: handler wall time. Reported as `handler_time_ns` in the
++    // per-thread JSON entry.
++    std::atomic<int64_t> handler_ns {0};
++};
++
++// Reason: the per-sequence slot ring. A coordinator arming at seq=K
++// targets `g_slots[(K-1) % N]`; seqs K and K+1 cannot collide.
++// Local: snapshot-remote-unwind-specific storage; see kSlotRingSize.
++CaptureSlot g_slots[kSlotRingSize];
++
++// Reason: monotonic sequence number that rides in the signal payload
++// as the dump's request token. Same role as ck-phdr-unwind's `g_seq`
++// and OB's `req_id`.
++std::atomic<uint64_t> g_seq {0};
++
++std::once_flag g_install_once;
++std::atomic<bool> g_installed {false};
++
++CaptureSlot& slot_for_seq(uint64_t seq) {
++    return g_slots[(seq - 1) % kSlotRingSize];
++}
++
++bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size()) {
++            return false;
++        }
++        *parsed = static_cast<uint64_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
++// Reason: a thread that blocks the collector signal would never run the
++// handler. Report it as `signal_blocked` so the dump distinguishes it
++// from a slow thread that should time out.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:294-326
++//   (CK's `isSignalBlocked` reads `SigBlk:` from /proc the same way).
++bool is_signal_blocked(int64_t tid, int signal_number) {
++    if (signal_number <= 0 || signal_number > 64) {
++        return false;
++    }
++    std::ifstream status("/proc/self/task/" + std::to_string(tid) + "/status");
++    std::string line;
++    while (std::getline(status, line)) {
++        constexpr char kSigBlkPrefix[] = "SigBlk:";
++        if (line.rfind(kSigBlkPrefix, 0) != 0) {
++            continue;
++        }
++        std::istringstream iss(line.substr(sizeof(kSigBlkPrefix) - 1));
++        std::string hex_mask;
++        if (!(iss >> hex_mask)) {
++            return false;
++        }
++        uint64_t mask = 0;
++        if (!parse_hex_u64(hex_mask, &mask)) {
++            return false;
++        }
++        return (mask & (uint64_t {1} << (signal_number - 1))) != 0;
++    }
++    return false;
++}
++
++// Reason: `mincore` reports whether a page is resident; if it is, it is
++// also mapped. The handler uses this as a defense against an unmapped
++// or guard-page stack frame: a coordinator running with an absurd
++// `max_stack_bytes` against a thread parked just above a guard page
++// would otherwise SIGSEGV inside `memcpy`. fp-walk uses the same
++// check for the same reason on its RBP walk; we re-use it here to
++// gate the first page of the copy. Subsequent pages within the stack
++// are assumed contiguous (stack growth is well-defined on x86_64).
++// Local: snapshot-remote-unwind-specific safety check; mirrors fp-walk's
++// page-mapping guard.
++// Reference: mincore(2); fp-walk's `page_is_mapped` helper.
++bool page_is_mapped(uintptr_t addr) {
++    const long page_size = sysconf(_SC_PAGESIZE);
++    if (page_size <= 0) {
++        return false;
++    }
++    const uintptr_t page_start = addr & ~(static_cast<uintptr_t>(page_size) - 1);
++    unsigned char vec = 0;
++    if (mincore(reinterpret_cast<void*>(page_start), static_cast<size_t>(page_size), &vec) != 0) {
++        return false;
++    }
++    return (vec & 1) != 0;
++}
++
++// Reason: the realtime-signal handler. It validates the sender and the
++// request token, transitions the slot from PENDING to WALKING, copies
++// the interrupted thread's ucontext_t and a bounded slice of its stack
++// into the slot, records handler time, then publishes DONE or releases
++// the slot if the dump moved on. NO libunwind calls happen here — that
++// is the variant's defining feature; the coordinator runs libunwind in
++// remote mode against the snapshot after the handler returns.
++//
++// The CAS into WALKING is the safety hand-off: a coordinator can never
++// re-arm a slot whose state is WALKING, so the handler's mid-copy
++// stack writes cannot land in the next dump's payload. For snapshot-
++// remote-unwind the WALKING window is short (a memcpy of at most
++// `max_stack_bytes` plus a structure copy), so contention against
++// the next dump's arming should be rarer than in the libunwind-in-
++// handler variants — but the contract still applies.
++//
++// Spec: docs/phase2-design.md "Variant Mechanics -> snapshot-remote-unwind".
++// Reference: <ck>/src/Common/StackTrace.cpp:470-498 (the same errno
++// save/restore + ucontext snapshot pattern, in CK's case for an in-
++// handler StackTrace constructor; here we copy the ucontext for a
++// later remote unwind).
++//
++// The stack-byte copy uses `process_vm_readv` to bypass ASAN. See
++// step 5 below for the full reasoning.
++void native_stack_signal_handler(int /*sig*/, siginfo_t* info, void* raw_context) {
++    const int saved_errno = errno;
++
++    // 1. Ignore any signal this process did not queue for a dump.
++    if (info == nullptr || info->si_code != SI_QUEUE || info->si_pid != getpid()) {
++        errno = saved_errno;
++        return;
++    }
++    // 2. Drop a handler whose request token no longer matches the live dump.
++    const uint64_t seq = reinterpret_cast<uintptr_t>(info->si_value.sival_ptr);
++    if (seq == 0) {
++        errno = saved_errno;
++        return;
++    }
++    CaptureSlot& slot = slot_for_seq(seq);
++    if (seq != slot.expected_seq.load(std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++    // 3. Claim the slot for WALKING. Fail closed if the coordinator
++    //    already transitioned it away (e.g. timeout drove PENDING -> IDLE).
++    int expected_state = SLOT_PENDING;
++    if (!slot.state.compare_exchange_strong(expected_state, SLOT_WALKING,
++                                            std::memory_order_acq_rel)) {
++        errno = saved_errno;
++        return;
++    }
++
++    const int64_t start_ns = monotonic_ns();
++
++    // 4. Copy the interrupted thread's ucontext_t into the slot. On
++    //    x86_64 libunwind's `unw_tdep_context_t` IS `ucontext_t`, so
++    //    this snapshot doubles as the `unw_context_t` the coordinator
++    //    feeds to `unw_init_remote`.
++    auto* signal_context = static_cast<const ucontext_t*>(raw_context);
++    if (signal_context != nullptr) {
++        std::memcpy(&slot.regs, signal_context, sizeof(ucontext_t));
++    }
++
++    // 5. Copy a bounded slice of the interrupted thread's stack into
++    //    the slot via `process_vm_readv` (self -> self). The
++    //    interrupted RSP is the lowest address libunwind will read
++    //    during the walk (DWARF CFI references frames at progressively
++    //    higher addresses); copy [RSP, RSP+max) up to `max_stack_bytes`,
++    //    gated by `mincore`.
++    //
++    //    Why process_vm_readv instead of a plain memcpy? Under ASAN
++    //    every cross-thread stack read trips the stack-buffer-underflow
++    //    redzone the compiler inserted between the target thread's
++    //    local variables (the marker chain in the case 8 test has
++    //    `ref.tmp` objects surrounded by `f1`/`f3` redzones; the
++    //    snapshot copy spans them by design). `__attribute__((no_sanitize
++    //    ("address")))` on this handler is not enough — Doris's vendored
++    //    `inline_memcpy` from glibc-compatibility/memcpy/memcpy_x86_64.cpp
++    //    is compiled with ASAN instrumentation regardless of the caller's
++    //    attribute. process_vm_readv does the copy entirely in the
++    //    kernel, so ASAN's userspace shadow has no place to intercept;
++    //    the same trick perf and gdb use. The kernel checks per-page
++    //    that the source is readable, so a guard page mid-copy returns
++    //    a short read rather than SIGSEGV.
++    // Reference: process_vm_readv(2); kernel does the page-by-page
++    // safety check, so the same defense as fp-walk's mincore + page-
++    // at-a-time copy is folded into the syscall itself.
++#if defined(__x86_64__)
++    const uintptr_t rsp =
++            signal_context != nullptr
++                    ? static_cast<uintptr_t>(signal_context->uc_mcontext.gregs[REG_RSP])
++                    : 0;
++    const size_t cap = std::min(slot.max_stack_bytes, kMaxStackBytes);
++    if (rsp != 0 && cap > 0 && page_is_mapped(rsp)) {
++        struct iovec local_iov {};
++        local_iov.iov_base = slot.stack_bytes;
++        local_iov.iov_len = cap;
++        struct iovec remote_iov {};
++        remote_iov.iov_base = reinterpret_cast<void*>(rsp);
++        remote_iov.iov_len = cap;
++        const ssize_t copied = syscall(SYS_process_vm_readv, getpid(), &local_iov, 1,
++                                       &remote_iov, 1, static_cast<unsigned long>(0));
++        if (copied > 0) {
++            slot.stack_base = rsp;
++            slot.stack_size = static_cast<size_t>(copied);
++        }
++    }
++#endif
++
++    const int64_t end_ns = monotonic_ns();
++    if (start_ns > 0 && end_ns >= start_ns) {
++        slot.handler_ns.store(end_ns - start_ns, std::memory_order_relaxed);
++    }
++
++    // 6. Publish DONE if the dump still wants us; otherwise release the
++    //    slot. Either way the state leaves WALKING so the coordinator's
++    //    drain loop can break.
++    if (seq == slot.expected_seq.load(std::memory_order_acquire)) {
++        slot.state.store(SLOT_DONE, std::memory_order_release);
++    } else {
++        slot.state.store(SLOT_IDLE, std::memory_order_release);
++    }
++    errno = saved_errno;
++}
++
++void install_handler_once() {
++    std::call_once(g_install_once, [] {
++        struct sigaction action {};
++        sigemptyset(&action.sa_mask);
++        action.sa_sigaction = native_stack_signal_handler;
++        action.sa_flags = SA_SIGINFO | SA_RESTART;
++        if (sigaction(native_stack_signal_number(), &action, nullptr) == 0) {
++            g_installed.store(true, std::memory_order_release);
++        } else {
++            LOG(ERROR) << "failed to install native stack signal handler: " << std::strerror(errno);
++        }
++    });
++}
++
++// Reason: libunwind asks `access_reg` for the value of one register
++// while unwinding. The arg pointer is the `void*` we passed to
++// `unw_init_remote` (a `ucontext_t*` pointing at the slot's captured
++// registers). On x86_64 the mcontext gregs[] is the canonical register
++// layout libunwind already expects via `unw_tdep_context_t`. The
++// regnum-to-gregs[] mapping follows the libunwind upstream mapping
++// from <libunwind-x86_64.h> (UNW_X86_64_R<N>) to <sys/ucontext.h>
++// REG_R<N>.
++// Reference: libunwind/src/x86_64/Gglobal.c dwarf_to_unw_regnum_map.
++int snapshot_access_reg(unw_addr_space_t /*as*/, unw_regnum_t regnum, unw_word_t* valp,
++                        int write, void* arg) {
++    if (write != 0) {
++        // We never resume; refuse writes.
++        return -UNW_EREADONLYREG;
++    }
++    if (valp == nullptr || arg == nullptr) {
++        return -UNW_EINVAL;
++    }
++    const auto* ctx = static_cast<const ucontext_t*>(arg);
++    const auto& gregs = ctx->uc_mcontext.gregs;
++    switch (regnum) {
++    case UNW_X86_64_RAX: *valp = static_cast<unw_word_t>(gregs[REG_RAX]); return 0;
++    case UNW_X86_64_RDX: *valp = static_cast<unw_word_t>(gregs[REG_RDX]); return 0;
++    case UNW_X86_64_RCX: *valp = static_cast<unw_word_t>(gregs[REG_RCX]); return 0;
++    case UNW_X86_64_RBX: *valp = static_cast<unw_word_t>(gregs[REG_RBX]); return 0;
++    case UNW_X86_64_RSI: *valp = static_cast<unw_word_t>(gregs[REG_RSI]); return 0;
++    case UNW_X86_64_RDI: *valp = static_cast<unw_word_t>(gregs[REG_RDI]); return 0;
++    case UNW_X86_64_RBP: *valp = static_cast<unw_word_t>(gregs[REG_RBP]); return 0;
++    case UNW_X86_64_RSP: *valp = static_cast<unw_word_t>(gregs[REG_RSP]); return 0;
++    case UNW_X86_64_R8:  *valp = static_cast<unw_word_t>(gregs[REG_R8]);  return 0;
++    case UNW_X86_64_R9:  *valp = static_cast<unw_word_t>(gregs[REG_R9]);  return 0;
++    case UNW_X86_64_R10: *valp = static_cast<unw_word_t>(gregs[REG_R10]); return 0;
++    case UNW_X86_64_R11: *valp = static_cast<unw_word_t>(gregs[REG_R11]); return 0;
++    case UNW_X86_64_R12: *valp = static_cast<unw_word_t>(gregs[REG_R12]); return 0;
++    case UNW_X86_64_R13: *valp = static_cast<unw_word_t>(gregs[REG_R13]); return 0;
++    case UNW_X86_64_R14: *valp = static_cast<unw_word_t>(gregs[REG_R14]); return 0;
++    case UNW_X86_64_R15: *valp = static_cast<unw_word_t>(gregs[REG_R15]); return 0;
++    case UNW_X86_64_RIP: *valp = static_cast<unw_word_t>(gregs[REG_RIP]); return 0;
++    default: return -UNW_EBADREG;
++    }
++}
++
++int snapshot_access_fpreg(unw_addr_space_t /*as*/, unw_regnum_t /*regnum*/,
++                          unw_fpreg_t* /*fpvalp*/, int /*write*/, void* /*arg*/) {
++    return -UNW_EBADREG;
++}
++
++// Reason: the slot pointer the active coordinator is unwinding from.
++// Set just before `unw_init_remote` and cleared after
++// `unw_destroy_addr_space`, so `snapshot_access_mem` can read stack
++// words from the slot's buffer without changing the public
++// ucontext-shaped `arg` libunwind passes around.
++// Local: snapshot-remote-unwind-specific TLS hand-off.
++thread_local CaptureSlot* tls_active_slot = nullptr;
++
++// Reason: libunwind asks `access_mem` for one word of "target" memory.
++// In remote-mode-against-same-process we can satisfy stack reads from
++// the captured snapshot (so a snapshot whose target thread is long
++// gone still walks) AND fall through to a live in-process read for
++// non-stack addresses (eh_frame / unwind tables / DSO data — those
++// pages still belong to the coordinator's own process and are
++// trivially safe to dereference). Live reads are how the local
++// libunwind path resolves these too.
++// Reference: libunwind tests/test-static-link-gen.c shows the same
++// "stack from snapshot, code from live process" pattern; coredump
++// helpers in libunwind-coredump.a serve the same role for a real
++// coredump's segments.
++int snapshot_access_mem(unw_addr_space_t /*as*/, unw_word_t addr, unw_word_t* valp,
++                        int write, void* arg) {
++    if (write != 0) {
++        return -UNW_EREADONLYREG;
++    }
++    if (valp == nullptr || arg == nullptr) {
++        return -UNW_EINVAL;
++    }
++    // `arg` is the ucontext_t pointer we passed to `unw_init_remote`,
++    // not the slot. We instead pass the slot pointer through
++    // `tls_active_slot`, which the coordinator sets before calling
++    // libunwind. This keeps the public ucontext shape untouched and
++    // lets `access_mem` serve stack words from the snapshot.
++    const CaptureSlot* slot = tls_active_slot;
++    const uintptr_t a = static_cast<uintptr_t>(addr);
++    if (slot != nullptr && slot->stack_size > 0) {
++        const uintptr_t snap_lo = slot->stack_base;
++        const uintptr_t snap_hi = slot->stack_base + slot->stack_size;
++        if (a >= snap_lo && a + sizeof(unw_word_t) <= snap_hi) {
++            unw_word_t word = 0;
++            const size_t off = static_cast<size_t>(a - snap_lo);
++            std::memcpy(&word, slot->stack_bytes + off, sizeof(word));
++            *valp = word;
++            return 0;
++        }
++        // Reason: an address at or above the captured RSP that falls
++        // OUTSIDE the snapshot's tail is a stack address whose live
++        // value has been mutated by the still-running target thread
++        // since the snapshot was taken. Falling through to a live
++        // read would serve libunwind a value inconsistent with the
++        // captured frame; that breaks `unw_step` non-determinism
++        // (KnownChainResolved flakes intermittently with libunwind
++        // walking into "extra" frames that were never on the
++        // captured stack). Fail closed here: libunwind interprets
++        // -UNW_EINVAL as "memory access failed", terminates the
++        // walk, and reports the frames it found so far. This
++        // converts the silent inconsistency into a clean truncation
++        // at the snapshot boundary.
++        // Local: snapshot-remote-unwind-specific consistency guard.
++        if (a >= snap_lo) {
++            return -UNW_EINVAL;
++        }
++    }
++    // Below the captured RSP: code/eh_frame/data in our own DSO
++    // segments, safe to read live. mincore guards against an
++    // out-of-range address.
++    if (!page_is_mapped(a)) {
++        return -UNW_EINVAL;
++    }
++    unw_word_t word = 0;
++    std::memcpy(&word, reinterpret_cast<const void*>(a), sizeof(word));
++    *valp = word;
++    return 0;
++}
++
++// Reason: find_proc_info needs to locate the eh_frame / .debug_frame
++// for the procedure containing IP. The local-mode libunwind uses
++// `dl_iterate_phdr` to walk loaded objects and binary-searches their
++// embedded `.eh_frame_hdr` tables; we transcribe that here for
++// remote mode by calling the exported helper
++// `_Ux86_64_dwarf_find_proc_info` which does exactly that. The
++// coordinator runs in a request thread (not the signal handler), so
++// `dl_iterate_phdr` is safe — and the PHDR cache override (patches
++// 1+2) keeps it lock-free.
++// Reference: thirdparty libunwind/src/x86_64/Gfind_proc_info-lsb.c
++//   (`_Ux86_64_dwarf_find_proc_info` is the same code the local
++//   addr_space uses; calling it through the remote API is documented
++//   in libunwind/src/dwarf/Gfind_proc_info-lsb.c).
++extern "C" int _Ux86_64_dwarf_find_proc_info(unw_addr_space_t as, unw_word_t ip,
++                                              unw_proc_info_t* pi, int need_unwind_info,
++                                              void* arg);
++extern "C" void _Ux86_64_dwarf_put_unwind_info(unw_addr_space_t as, unw_proc_info_t* pi,
++                                                void* arg);
++
++int snapshot_find_proc_info(unw_addr_space_t as, unw_word_t ip, unw_proc_info_t* pi,
++                            int need_unwind_info, void* arg) {
++    return _Ux86_64_dwarf_find_proc_info(as, ip, pi, need_unwind_info, arg);
++}
++
++void snapshot_put_unwind_info(unw_addr_space_t as, unw_proc_info_t* pi, void* arg) {
++    _Ux86_64_dwarf_put_unwind_info(as, pi, arg);
++}
++
++// Reason: the dyn_info_list is for procedures registered at runtime
++// via `_U_dyn_register` (JIT'd code). Doris does not JIT eh_frame
++// entries; returning UNW_ESUCCESS with a zero address means "no
++// dynamically registered procedures", which is the correct answer for
++// every Doris thread.
++int snapshot_get_dyn_info_list_addr(unw_addr_space_t /*as*/, unw_word_t* dilap,
++                                    void* /*arg*/) {
++    if (dilap != nullptr) {
++        *dilap = 0;
++    }
++    return 0;
++}
++
++int snapshot_resume(unw_addr_space_t /*as*/, unw_cursor_t* /*cp*/, void* /*arg*/) {
++    return -UNW_EINVAL;
++}
++
++int snapshot_get_proc_name(unw_addr_space_t /*as*/, unw_word_t /*addr*/, char* /*bufp*/,
++                           size_t /*buf_len*/, unw_word_t* /*offp*/, void* /*arg*/) {
++    // The collector does not symbolize; offline tools do. Returning
++    // UNW_ENOINFO is the correct "this accessor cannot answer" signal.
++    return -UNW_ENOINFO;
++}
++
++// Reason: the per-thread `CaptureFn` `run_collection` drives. Claims a
++// per-sequence slot, queues the signal, waits for the handler to
++// publish DONE, runs libunwind in remote mode against the slot's
++// snapshot, then disarms the slot. On timeout it drains briefly so a
++// late handler can transition out of WALKING before the slot is
++// reported leaked.
++// Spec: docs/phase2-design.md "Variant Mechanics -> snapshot-remote-unwind".
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:381-384
++//   (sequential per-thread signaling; the libunwind-class variants
++//   inherit this shape from the fp-walk / ck-phdr-unwind template).
++void snapshot_remote_unwind_capture(int64_t tid, const CollectOptions& opts,
++                                    std::chrono::steady_clock::time_point deadline,
++                                    ThreadStack* out) {
++    // 0. Defense-in-depth deadline guard. `run_collection` short-
++    //    circuits expired deadlines before reaching here, but a direct
++    //    caller that skipped the guard would otherwise queue a signal
++    //    the wait loop has no time to receive — creating exactly the
++    //    stale-handler hazard the per-sequence slot was added to defend
++    //    against.
++    if (std::chrono::steady_clock::now() >= deadline) {
++        out->status = "timeout";
++        out->error_reason = "dump deadline expired before signaling this thread";
++        return;
++    }
++
++    // 1. A thread that blocks the collector signal would never run the
++    //    handler. Report `signal_blocked` so the dump distinguishes it
++    //    from a slow thread that should time out.
++    if (is_signal_blocked(tid, native_stack_signal_number())) {
++        out->status = "signal_blocked";
++        out->error_reason = "thread blocks the native stack signal";
++        return;
++    }
++    install_handler_once();
++    if (!g_installed.load(std::memory_order_acquire)) {
++        out->status = "signal_failed";
++        out->error_reason = "native stack signal handler is unavailable";
++        return;
++    }
++
++    // 1a. Refuse to signal if the PHDR cache is not populated. The
++    //     coordinator's `unw_step` reaches `dl_iterate_phdr` to find
++    //     eh_frame for the captured IP; without the populated cache
++    //     the override falls through to the libc function and takes
++    //     the loader lock. The test runner calls `updatePHDRCache()`
++    //     before RUN_ALL_TESTS and `doris_main` calls it after
++    //     MemInfo::init (patch 2), so this is a defense-in-depth
++    //     guard, not the normal path.
++    if (!hasPHDRCache()) {
++        out->status = "phdr_cache_missing";
++        out->error_reason = "PHDR cache not populated; refusing to enter libunwind remote";
++        return;
++    }
++
++    // 2. Claim a per-sequence slot via CAS IDLE -> PENDING. Failure
++    //    means a late handler from seq-N still holds this slot.
++    const uint64_t seq = g_seq.fetch_add(1, std::memory_order_relaxed) + 1;
++    CaptureSlot& slot = slot_for_seq(seq);
++    int expected_state = SLOT_IDLE;
++    if (!slot.state.compare_exchange_strong(expected_state, SLOT_PENDING,
++                                            std::memory_order_acq_rel)) {
++        out->status = "slot_busy";
++        out->error_reason =
++                "snapshot-remote-unwind slot held by a late handler from a prior dump";
++        return;
++    }
++    slot.max_stack_bytes = static_cast<size_t>(opts.max_stack_bytes);
++    slot.stack_base = 0;
++    slot.stack_size = 0;
++    slot.handler_ns.store(0, std::memory_order_relaxed);
++    // Reason: the release on `expected_seq` publishes all the slot
++    // setup above so the handler's acquire load sees a fully
++    // initialized slot.
++    slot.expected_seq.store(seq, std::memory_order_release);
++
++    // 3. Queue the signal with the token in `si_value.sival_ptr`
++    //    (SI_QUEUE, this process).
++    siginfo_t info {};
++    info.si_signo = native_stack_signal_number();
++    info.si_code = SI_QUEUE;
++    info.si_pid = getpid();
++    info.si_uid = getuid();
++    info.si_value.sival_ptr = reinterpret_cast<void*>(static_cast<uintptr_t>(seq));
++    const long rc = syscall(SYS_rt_tgsigqueueinfo, getpid(), static_cast<pid_t>(tid),
++                            native_stack_signal_number(), &info);
++    if (rc != 0) {
++        const int err = errno;
++        slot.expected_seq.store(0, std::memory_order_release);
++        int from = SLOT_PENDING;
++        slot.state.compare_exchange_strong(from, SLOT_IDLE, std::memory_order_acq_rel);
++        out->status = err == ESRCH ? "exited_thread" : "signal_failed";
++        out->error_reason = std::string("rt_tgsigqueueinfo failed: ") + std::strerror(err);
++        return;
++    }
++
++    // 4. Wait for the handler to publish DONE, or for the dump
++    //    deadline.
++    while (std::chrono::steady_clock::now() < deadline) {
++        if (slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
++            break;
++        }
++        // Reason: 200 microseconds polls often enough to keep the next
++        // thread moving without burning a core on a busy yield. Same
++        // cadence as ck-phdr-unwind / ob-kill60.
++        std::this_thread::sleep_for(std::chrono::microseconds(200));
++    }
++
++    // 5. On success run libunwind remote against the snapshot. On
++    //    timeout drain briefly and disarm.
++    if (slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
++        // 5a. Install snapshot accessors and unwind. The accessors
++        //     read registers from `slot.regs` (passed as `arg` to
++        //     `unw_init_remote`) and stack bytes from `slot.stack_*`
++        //     via the thread-local hand-off.
++        unw_accessors_t accessors {};
++        accessors.find_proc_info = snapshot_find_proc_info;
++        accessors.put_unwind_info = snapshot_put_unwind_info;
++        accessors.get_dyn_info_list_addr = snapshot_get_dyn_info_list_addr;
++        accessors.access_mem = snapshot_access_mem;
++        accessors.access_reg = snapshot_access_reg;
++        accessors.access_fpreg = snapshot_access_fpreg;
++        accessors.resume = snapshot_resume;
++        accessors.get_proc_name = snapshot_get_proc_name;
++        unw_addr_space_t addr_space = unw_create_addr_space(&accessors, 0);
++        if (addr_space == nullptr) {
++            out->status = "unwind_failed";
++            out->error_reason = "unw_create_addr_space returned null";
++        } else {
++            tls_active_slot = &slot;
++            unw_cursor_t cursor;
++            const int init_rc = unw_init_remote(&cursor, addr_space, &slot.regs);
++            if (init_rc == 0) {
++                const int max_frames = static_cast<int>(
++                        std::min<int64_t>(opts.max_frames, kMaxRemoteFrames));
++                int n = 0;
++                out->frames.reserve(static_cast<size_t>(max_frames));
++                do {
++                    if (n >= max_frames) {
++                        break;
++                    }
++                    unw_word_t ip = 0;
++                    if (unw_get_reg(&cursor, UNW_REG_IP, &ip) != 0) {
++                        break;
++                    }
++                    if (ip == 0) {
++                        break;
++                    }
++                    Frame frame;
++                    frame.pc = static_cast<uintptr_t>(ip);
++                    out->frames.push_back(frame);
++                    ++n;
++                } while (unw_step(&cursor) > 0);
++                // Reason: same truncation approximation as the other
++                // variants — over-reports when the chain is exactly
++                // `max_frames` deep, but cheap and correct for the
++                // case 9 / Truncated test.
++                out->truncated = n == max_frames;
++                out->handler_time_ns = slot.handler_ns.load(std::memory_order_relaxed);
++                out->status = "ok";
++            } else {
++                out->status = "unwind_failed";
++                out->error_reason =
++                        std::string("unw_init_remote failed: rc=") + std::to_string(init_rc);
++            }
++            tls_active_slot = nullptr;
++            unw_destroy_addr_space(addr_space);
++        }
++        // Reason: disarm `expected_seq` before releasing the slot to
++        // IDLE so a stale late-handler from this request cannot claim
++        // the next coordinator's PENDING slot through the IDLE ->
++        // PENDING -> store(NEW) window. Mirrors the timeout path
++        // below and matches the codex-driven fix shared by all sibling
++        // variants (commit 2a00713 on phase2-spec-restructure).
++        slot.expected_seq.store(0, std::memory_order_release);
++        slot.state.store(SLOT_IDLE, std::memory_order_release);
++    } else {
++        slot.expected_seq.store(0, std::memory_order_release);
++        // 5b. Drain briefly so a mid-walk handler can finish. The
++        //     handler's post-walk re-check will see `seq != expected_seq`
++        //     and store SLOT_IDLE.
++        const auto drain_deadline = std::chrono::steady_clock::now() +
++                                    std::chrono::milliseconds(kHandlerDrainBudgetMs);
++        while (std::chrono::steady_clock::now() < drain_deadline) {
++            const int s = slot.state.load(std::memory_order_acquire);
++            if (s == SLOT_IDLE || s == SLOT_DONE || s == SLOT_PENDING) {
++                break;
++            }
++            std::this_thread::sleep_for(std::chrono::microseconds(200));
++        }
++        // 5c. If the handler never entered, the state is still PENDING.
++        //     CAS it back to IDLE. If CAS fails the handler just
++        //     entered; it will transition the state on its own.
++        int from_pending = SLOT_PENDING;
++        slot.state.compare_exchange_strong(from_pending, SLOT_IDLE,
++                                           std::memory_order_acq_rel);
++        // 5d. If the handler published DONE during the drain, release
++        //     the slot. We still report timeout because the dump
++        //     deadline already passed.
++        int from_done = SLOT_DONE;
++        slot.state.compare_exchange_strong(from_done, SLOT_IDLE,
++                                           std::memory_order_acq_rel);
++        out->status = "timeout";
++        out->error_reason = "thread did not run the native stack handler before the deadline";
++    }
+ }
+ 
+ } // namespace
+ 
+ NativeStackReport collect_native_stacks(const CollectOptions& opts) {
+-    return run_collection(opts, "stub", stub_capture);
++    return run_collection(opts, "snapshot-remote-unwind", snapshot_remote_unwind_capture);
+ }
+ 
+-// Reason: stub side of the fp-walk RBP-safety test hook. The test gates
+-// every call on `collector_is_stub()` and skips, so the stub's return
+-// value is never inspected. Defining it here keeps the test file
+-// linkable on the common build, where no fp-walk-specific code exists.
++// Reason: snapshot-remote-unwind has no fp-walk RBP-safety check, so
++// this test-only hook is a no-op. Case 14 is fp-walk-specific and ships
++// in patches/fp-walk/.
+ // Local: test hook.
+ bool rbp_can_read_for_test(uintptr_t /*initial_rbp*/, uintptr_t /*rbp*/,
+                            uintptr_t /*max_stack_bytes*/) {
+     return false;
+ }
+ 
+-// Reason: stub side of the fp-walk handler-pause hook. The stub has no
+-// signal handler to pause; the late-handler corruption test gates on
+-// `collector_is_stub()` and skips, so this no-op only exists to keep
+-// the test file linkable on the common build.
++// Reason: snapshot-remote-unwind ships no parallel of case 15 this
++// round, so the handler-pause hook is a no-op. Every variant must
++// define the symbol so the test binary links.
+ // Local: test hook.
+ void pause_handler_for_tid_for_test(int64_t /*tid*/) {}
+ 
+-- 
+2.43.0
+

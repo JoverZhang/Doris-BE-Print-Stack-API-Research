@@ -1,0 +1,75 @@
+From beceee90c02084d6b4a64c1a0b8933bf6dcb9116 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Sun, 31 May 2026 22:44:19 +0800
+Subject: [PATCH 2/4] (be) snapshot-remote-unwind populate PHDR cache at BE
+ startup
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Uncomment the existing updatePHDRCache() call in doris_main.cpp so the
+lock-free dl_iterate_phdr override (patch 1) has a populated cache
+before the coordinator runs libunwind remote against any captured
+thread snapshot. The test runner (be/test/testutil/run_all_tests.cpp:109)
+already calls updatePHDRCache() before RUN_ALL_TESTS, so this commit
+only restores the production path.
+
+In snapshot-remote-unwind the handler does NOT call libunwind — it
+copies registers + bounded stack bytes into the slot and returns.
+The COORDINATOR runs libunwind remote in a request thread, where
+unw_step calls dl_iterate_phdr. The coordinator is not a signal
+handler, so async-signal-safety is not the gate here; the jemalloc
+heap-profile deadlock (libgcc backtracer reentering the loader against
+the override) is, and the populated cache fixes it the same way.
+
+The placement is the existing upstream-anchored line (between
+`MemInfo::debug_string` and `BackendOptions::init`); the call must
+precede `ExecEnv::init` because that line brings up the BE worker
+pools whose threads can be captured as snapshot targets.
+
+Reference: <ck>/programs/main.cpp:318.
+---
+ be/src/service/doris_main.cpp | 20 ++++++++++++++++----
+ 1 file changed, 16 insertions(+), 4 deletions(-)
+
+diff --git a/be/src/service/doris_main.cpp b/be/src/service/doris_main.cpp
+index fd534bc77f0..fb7337a62fa 100644
+--- a/be/src/service/doris_main.cpp
++++ b/be/src/service/doris_main.cpp
+@@ -48,6 +48,7 @@
+ 
+ #include "cloud/cloud_backend_service.h"
+ #include "cloud/config.h"
++#include "common/phdr_cache.h"
+ #include "common/stack_trace.h"
+ #include "runtime/memory/mem_tracker_limiter.h"
+ #include "storage/tablet/tablet_schema_cache.h"
+@@ -585,10 +586,21 @@ int main(int argc, char** argv) {
+     LOG(INFO) << doris::DiskInfo::debug_string();
+     LOG(INFO) << doris::MemInfo::debug_string();
+ 
+-    // PHDR speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
+-    // will work only after additional call of this function.
+-    // rewrites dl_iterate_phdr will cause Jemalloc to fail to run after enable profile. see #
+-    // updatePHDRCache();
++    // Reason: populate the PHDR cache before any thread that may run the
++    // ck-phdr-unwind signal handler exists. Once `BackendOptions::init` +
++    // `ExecEnv::init` bring up the BE worker pools (next lines), a worker
++    // can enter the handler, which calls `unw_step` -> `dl_iterate_phdr`;
++    // without the populated cache the override falls through to the libc
++    // function and takes the loader lock, which is not async-signal-safe.
++    // Reason: jemalloc heap-profile previously crashed against the override
++    // because libgcc's backtracer reentered the loader. Profiling defaults
++    // to OFF in this round's test build, so the prebuilt jemalloc is safe;
++    // turning profiling on requires the jemalloc rebuild documented in the
++    // build-system patch + build-facts.md.
++    // Reference: <ck>/programs/main.cpp:318 (ClickHouse calls
++    // updatePHDRCache near the top of main; Doris keeps the existing
++    // upstream-anchored placement to avoid moving init order).
++    updatePHDRCache();
+     if (!doris::BackendOptions::init()) {
+         exit(-1);
+     }
+-- 
+2.43.0
+

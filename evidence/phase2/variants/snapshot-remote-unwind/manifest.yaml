@@ -1,0 +1,61 @@
+variant: snapshot-remote-unwind
+brief: evidence/phase2/briefs/snapshot-remote-unwind.md
+branch: phase2/snapshot-remote-unwind
+base_branch: phase2/common
+doris_base: c24d454f15cee2d937ef4749270a3ecb449eafe6
+common_head: cd35ea605e074f6375e778920a4c9a37e53f8f3d
+variant_head: 81108aa459571198b86e165f0a3f5716afdbba15
+
+build_image: docker.io/apache/doris:build-env-ldb-toolchain-latest
+build_image_id: 7b449a709746
+
+commits:
+  - sha: 901976f75cdc9573ed04fd7a301423f3d4007ad3
+    subject: "(be) snapshot-remote-unwind enable lock-free dl_iterate_phdr override"
+    patch: patches/snapshot-remote-unwind/0001-be-snapshot-remote-unwind-enable-lock-free-dl_iterate_phdr-o.patch
+  - sha: beceee90c02084d6b4a64c1a0b8933bf6dcb9116
+    subject: "(be) snapshot-remote-unwind populate PHDR cache at BE startup"
+    patch: patches/snapshot-remote-unwind/0002-be-snapshot-remote-unwind-populate-PHDR-cache-at-BE-startup.patch
+  - sha: 78c1189b6a55e683d6c94df29ea4f240bf357b51
+    subject: "(be) snapshot-remote-unwind handler snapshot + coordinator remote unwind"
+    patch: patches/snapshot-remote-unwind/0003-be-snapshot-remote-unwind-handler-snapshot-coordinator-remote-unwind.patch
+  - sha: 81108aa459571198b86e165f0a3f5716afdbba15
+    subject: "(be) snapshot-remote-unwind build-system Tier 2 jemalloc rebuild hook + libunwind-generic link"
+    patch: patches/snapshot-remote-unwind/0004-be-snapshot-remote-unwind-build-system-Tier-2-jemalloc-rebuild-hook-libunwind-generic-link.patch
+
+build_command: just phase2-test snapshot-remote-unwind
+runtime_command: just phase2-test snapshot-remote-unwind
+
+assumptions:
+  - "PHDR cache init point: be/src/service/doris_main.cpp between MemInfo::debug_string and BackendOptions::init (the existing upstream-anchored call site, uncommented). In the test binary, init runs from be/test/testutil/run_all_tests.cpp:109, also pre-existing. Inherited verbatim from ck-phdr-unwind / ob-kill60 patch 2 (subject rewritten only)."
+  - "jemalloc rebuild: NOT performed for this round. Tier 1 keeps profiling OFF, so the prebuilt thirdparty jemalloc (libgcc backtracer, libjemalloc_doris.a from /var/local/thirdparty/installed/lib) is safe. The reusable rebuild path lives in patch 0004 (be/cmake/build-jemalloc-prof-libunwind.sh + SNAPSHOT_REMOTE_UNWIND_LOCAL_JEMALLOC opt-in CMake flag); see build-facts.md for the verification recipe."
+  - "libunwind link: this variant additionally links against libunwind-x86_64.a (= libunwind-generic.a), not just the local-only libunwind.a, because the coordinator calls REMOTE-mode symbols (_Ux86_64_create_addr_space, _Ux86_64_init_remote, _Ux86_64_destroy_addr_space, _Ux86_64_dwarf_find_proc_info, _Ux86_64_dwarf_put_unwind_info) that the local-only archive does not export. lzma is already in COMMON_THIRDPARTY (add_thirdparty(lzma LIB64)) so the WL_START_GROUP wrapping resolves libunwind-x86_64.a's lzma_* references cleanly."
+  - "max_stack_bytes ceiling: handler caps its stack-copy at min(opts.max_stack_bytes, kMaxStackBytes=1 MiB). The default request (max_stack_bytes=8192) is honored verbatim; the absolute ceiling exists so the slot's stack buffer has a fixed size known at compile time."
+  - "stack-byte copy: process_vm_readv(self -> self) is the canonical safe-cross-thread-stack-read primitive on Linux. Used to bypass ASAN's stack-buffer-underflow false positives that an instrumented inline_memcpy would trip on reading the target thread's compiler-inserted poison redzones. The kernel does the per-page mapped-page check internally."
+  - "access_mem strict guard: addresses at or above the captured RSP that fall OUTSIDE the snapshot's tail are refused (UNW_EINVAL). Falling through to a live process read would serve libunwind values the still-running target thread has mutated since the snapshot, breaking determinism of the walk. Live reads are allowed only for addresses BELOW the captured RSP (DSO text / eh_frame / data — stable during the dump)."
+
+patch_partition_divergence: |
+  The 4-patch partition matches the brief's "Expected Patch Series":
+    1. phdr-cache (uncomment override in be/src/common/phdr_cache.cpp).
+       Inherited content from ck-phdr-unwind patch 0001 (the override
+       itself is variant-agnostic; only the commit subject is rewritten
+       to claim the change for snapshot-remote-unwind's needs).
+    2. phdr-cache-init (uncomment updatePHDRCache() in doris_main.cpp).
+       Same shape as ck-phdr-unwind / ob-kill60 patch 0002; the in-
+       handler vs in-coordinator distinction does not change the call
+       site (both need a populated cache before any worker thread runs
+       libunwind).
+    3. native-stack-collector (the variant-specific patch). The handler
+       captures the ucontext_t + bounded stack bytes; the coordinator
+       runs libunwind REMOTE-mode (unw_init_remote) against the
+       snapshot. ~755 lines (larger than ck-phdr-unwind's ~455 because
+       the variant adds the snapshot capture mechanism + the remote
+       access_mem / access_reg / find_proc_info accessors).
+    4. build-system (Tier 2 jemalloc rebuild hook + libunwind-generic
+       archive link for the remote symbols).
+  No per-variant test patch (5) is shipped this round: the brief listed
+  it as optional and the snapshot+remote-unwind model has no analog to
+  fp-walk's case 14 / 15 / 17 (no RBP-walk in handler, no WALKING-state
+  pause hook, no junk-RBP guard). Cases 12 (LateResponderDoesNotCorruptNextDump)
+  and the inherited per-sequence slot ring cover the only late-handler
+  hazard this variant has.

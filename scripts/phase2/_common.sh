@@ -9,11 +9,8 @@
 DORIS_BASE="${DORIS_BASE:-c24d454f15cee2d937ef4749270a3ecb449eafe6}"
 
 # Reason: variants known to the harness; common is implicit.
-# snapshot-remote-unwind is spec-defined but its patch series is not yet
-# healthy against the current phase2/common. Add it back here once
-# patches/snapshot-remote-unwind/ contains a series that applies cleanly.
 # Local: harness config.
-VARIANTS="fp-walk ck-phdr-unwind ob-kill60"
+VARIANTS="fp-walk ck-phdr-unwind ob-kill60 snapshot-remote-unwind"
 
 # Resolve the project root: prefer the PROJECT_ROOT exported by in-container;
 # fall back to git when sourced from the host.
