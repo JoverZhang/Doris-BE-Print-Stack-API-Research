@@ -1,0 +1,48 @@
+variant: ob-kill60
+brief: evidence/phase2/briefs/ob-kill60.md
+branch: phase2/ob-kill60
+base_branch: phase2/common
+doris_base: c24d454f15cee2d937ef4749270a3ecb449eafe6
+common_head: cd35ea605e074f6375e778920a4c9a37e53f8f3d
+variant_head: 156437b4de45462337ad8649837ed511795116ec
+
+build_image: docker.io/apache/doris:build-env-ldb-toolchain-latest
+build_image_id: 7b449a709746
+
+commits:
+  - sha: 5a518ed6b0ed2e6de7caa22b8019b3f6c0863a23
+    subject: "(be) ob-kill60 enable lock-free dl_iterate_phdr override"
+    patch: patches/ob-kill60/0001-be-ob-kill60-enable-lock-free-dl_iterate_phdr-overri.patch
+  - sha: 33782c796a966fd30c9484f1c55d5f62b8fd50a0
+    subject: "(be) ob-kill60 populate PHDR cache at BE startup"
+    patch: patches/ob-kill60/0002-be-ob-kill60-populate-PHDR-cache-at-BE-startup.patch
+  - sha: 9a7f57b7927ed721cba9b68a1cc0b1b0a24121c9
+    subject: "(be) ob-kill60 single-phase libunwind native stack collector"
+    patch: patches/ob-kill60/0003-be-ob-kill60-single-phase-libunwind-native-stack-col.patch
+  - sha: 156437b4de45462337ad8649837ed511795116ec
+    subject: "(be) ob-kill60 build-system Tier 2 jemalloc rebuild hook"
+    patch: patches/ob-kill60/0004-be-ob-kill60-build-system-Tier-2-jemalloc-rebuild-ho.patch
+
+build_command: just phase2-test ob-kill60
+runtime_command: just phase2-test ob-kill60
+
+assumptions:
+  - "Single-phase ack: ob-kill60 ships SINGLE-PHASE — the handler captures frames via libunwind and returns; the coordinator reads the slot AFTER the handler exits. The worker thread NEVER hangs. This is the deliberate divergence from OceanBase's upstream two-phase form (ObSigHandler::handle blocks in wait_readable(fd_[0]) until the coordinator writes an exit ack). Per docs/phase2-charter.md and evidence/phase2/briefs/ob-kill60.md, the worker-hang is OB's main open risk in our evaluation, so ob-kill60 drops it."
+  - "PHDR cache init point: be/src/service/doris_main.cpp between MemInfo::debug_string and BackendOptions::init (the existing upstream-anchored call site, uncommented). In the test binary, init runs from be/test/testutil/run_all_tests.cpp:109, also pre-existing."
+  - "jemalloc rebuild: NOT performed for this round. Tier 1 keeps profiling OFF, so the prebuilt thirdparty jemalloc (libgcc backtracer, libjemalloc_doris.a from /var/local/thirdparty/installed/lib) is safe. The reusable rebuild path lives in patch 0004 (be/cmake/build-jemalloc-prof-libunwind.sh + OB_KILL60_LOCAL_JEMALLOC opt-in CMake flag); see build-facts.md for the verification recipe."
+  - "libunwind link: already linked via DORIS_DEPENDENCIES (be/CMakeLists.txt:679). UNW_LOCAL_ONLY is TU-scoped at the top of be/src/service/http/action/native_stack_collect.cpp so the `_ULx86_64_*` local-only symbols resolve."
+  - "OB citation set: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120 (ob_signal_handler validation), <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:280-347 (task_process — the two-phase coordinator), <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:349-385 (ObSigHandler::handle — the two-phase worker we drop), <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:15-16,55-82 (UNW_LOCAL_ONLY + get_stack_trace_inplace unwind shape)."
+
+patch_partition_divergence: |
+  The 4-patch partition matches the brief exactly:
+    1. phdr-cache (uncomment override in be/src/common/phdr_cache.cpp; duplicate of ck-phdr-unwind/0001 near-verbatim with variant-prefixed comment).
+    2. phdr-cache-init (uncomment updatePHDRCache() in doris_main.cpp; duplicate of ck-phdr-unwind/0002 near-verbatim with variant-prefixed comment).
+    3. native-stack-collector (single-phase OB-style libunwind walk in native_stack_collect.cpp; the variant-specific patch this round).
+    4. build-system (Tier 2 jemalloc rebuild hook; CMake flag renamed CK_PHDR_UNWIND_LOCAL_JEMALLOC -> OB_KILL60_LOCAL_JEMALLOC so each variant branch is independent).
+  No per-variant test patch (5) is shipped this round: the brief listed it
+  as optional, and ob-kill60 ships no variant-specific cases. The
+  inherited case 12 (LateResponderDoesNotCorruptNextDump) exercises the
+  per-sequence slot ring under the single-phase model. Cases 14/15/17
+  are fp-walk-specific (RBP bounds, WALKING-state pause, junk-RBP);
+  libunwind handles its own bounds via DWARF, so a parallel case set
+  adds no coverage for this variant.

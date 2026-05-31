@@ -1,0 +1,79 @@
+{
+    "collector": "ob-kill60",
+    "status": "ok",
+    "timeout_ms": 100,
+    "max_frames_per_thread": 64,
+    "max_copied_stack_bytes": 8192,
+    "elapsed_ms": 0,
+    "target_tid": 2196,
+    "threads": [
+        {
+            "tid": 2196,
+            "status": "ok",
+            "truncated": false,
+            "handler_time_ns": 137828,
+            "frames": [
+                {
+                    "pc": "0x55de569750c7",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1263d0c7"
+                },
+                {
+                    "pc": "0x55de573953e2",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1305d3e2"
+                },
+                {
+                    "pc": "0x55de5ec95962",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1a95d962"
+                },
+                {
+                    "pc": "0x55de5ec95795",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1a95d795"
+                },
+                {
+                    "pc": "0x55de5ec95755",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1a95d755"
+                },
+                {
+                    "pc": "0x55de5ec9572d",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1a95d72d"
+                },
+                {
+                    "pc": "0x55de5ec95705",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1a95d705"
+                },
+                {
+                    "pc": "0x55de5ec95649",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x1a95d649"
+                },
+                {
+                    "pc": "0x55de7f9decb0",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x3b6a6cb0"
+                },
+                {
+                    "pc": "0x55de56905d27",
+                    "dso": "/home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.worktree/phase2/be/ut_build_ASAN/test/doris_be_test",
+                    "dso_offset": "0x125cdd27"
+                },
+                {
+                    "pc": "0x7f3a4940fea5",
+                    "dso": "/usr/lib64/libpthread-2.17.so",
+                    "dso_offset": "0x7ea5"
+                },
+                {
+                    "pc": "0x7f3a48f34b0d",
+                    "dso": "/usr/lib64/libc-2.17.so",
+                    "dso_offset": "0xfeb0d"
+                }
+            ]
+        }
+    ]
+}
