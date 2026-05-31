@@ -1,0 +1,174 @@
+From 5bd2a45a3db43e322831a61c4ff029070aecdba5 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Sun, 31 May 2026 20:33:24 +0800
+Subject: [PATCH 4/4] (be) ck-phdr-unwind build-system Tier 2 jemalloc rebuild
+ hook
+
+Provide a reusable, opt-in path for swapping the prebuilt thirdparty
+jemalloc for a locally-built jemalloc_doris.a configured with
+--enable-prof-libunwind. Reusable by every variant whose handler
+unwinds via libunwind AND overrides dl_iterate_phdr (ck-phdr-unwind,
+ob-kill60, snapshot-remote-unwind).
+
+Pieces:
+
+- be/cmake/build-jemalloc-prof-libunwind.sh fetches jemalloc-5.3.0
+  (matching thirdparty/vars.sh JEMALLOC_VERSION), configures it with
+  --enable-prof-libunwind plus the same flags thirdparty's
+  build_jemalloc_doris() function uses, and writes the static archive
+  under .tmp/jemalloc-prof-libunwind/install/. Verifies the
+  `backtrace_method = 'libunwind'` line in config.log before declaring
+  success; fails the script if libunwind detection silently fell back
+  to libgcc (jemalloc/jemalloc#2504).
+
+- be/cmake/thirdparty.cmake conditional swap: a new CMake option
+  CK_PHDR_UNWIND_LOCAL_JEMALLOC (default OFF) replaces the prebuilt
+  add_thirdparty(jemalloc) with an IMPORTED static target pointing at
+  the locally-built archive. ON requires the script to have run
+  first; otherwise the CMake configure step errors with the exact
+  command to run.
+
+The libunwind link itself needs no change: Doris already builds with
+USE_UNWIND=ON, which adds libunwind to DORIS_DEPENDENCIES (be/
+CMakeLists.txt:679). The TU-scoped UNW_LOCAL_ONLY in
+native_stack_collect.cpp (patch 3) handles the local-only `_ULx86_64_*`
+symbol prefix.
+
+Tier 1 keeps profiling OFF and leaves CK_PHDR_UNWIND_LOCAL_JEMALLOC
+OFF; the prebuilt jemalloc with libgcc backtracer is safe under this
+round's gate. Tier 2 (deferred per docs/phase2-acceptance.md) toggles
+the flag and runs the script first; the build-facts.md in the
+variant's evidence directory records the verification recipe.
+
+Reference: <ck>'s contrib/jemalloc-cmake configures jemalloc with
+--enable-prof-libunwind.
+Spec: docs/phase2-acceptance.md "Tier 2: Compatibility".
+---
+ be/cmake/build-jemalloc-prof-libunwind.sh | 73 +++++++++++++++++++++++
+ be/cmake/thirdparty.cmake                 | 30 +++++++++-
+ 2 files changed, 102 insertions(+), 1 deletion(-)
+ create mode 100755 be/cmake/build-jemalloc-prof-libunwind.sh
+
+diff --git a/be/cmake/build-jemalloc-prof-libunwind.sh b/be/cmake/build-jemalloc-prof-libunwind.sh
+new file mode 100755
+index 00000000000..11bb9ec3c3f
+--- /dev/null
++++ b/be/cmake/build-jemalloc-prof-libunwind.sh
+@@ -0,0 +1,73 @@
++#!/usr/bin/env bash
++# Reason: build jemalloc with --enable-prof-libunwind inside the worktree
++# (not in thirdparty), so heap profiling uses libunwind instead of libgcc.
++# This is the Tier 2 prerequisite for every variant whose handler unwinds
++# via libunwind AND overrides dl_iterate_phdr (ck-phdr-unwind, ob-kill60,
++# snapshot-remote-unwind). The prebuilt thirdparty jemalloc ships with the
++# libgcc backtracer, which re-enters dl_iterate_phdr through _Unwind_Backtrace
++# -> _Unwind_Find_FDE and deadlocks against the override under profiling
++# load (jemalloc/jemalloc#2504). Tier 1 leaves profiling off, so the
++# prebuilt jemalloc is safe under this round's gate; Tier 2 requires
++# running this script first, then re-running the BE build with
++# CK_PHDR_UNWIND_LOCAL_JEMALLOC=ON.
++# Reference: <ck>'s contrib/jemalloc-cmake configures jemalloc with the
++# same --enable-prof-libunwind flag.
++# Spec: docs/phase2-acceptance.md "Tier 2: Compatibility" -> jemalloc
++#       profiling on, then off.
++# Local: per-variant build helper; not invoked from the default Tier 1
++#        path. Run manually before a Tier 2 evaluation.
++set -euo pipefail
++
++# Tunables. JEMALLOC_VERSION matches the thirdparty pin
++# (thirdparty/vars.sh JEMALLOC_VERSION).
++JEMALLOC_VERSION="${JEMALLOC_VERSION:-5.3.0}"
++JEMALLOC_URL="${JEMALLOC_URL:-https://github.com/jemalloc/jemalloc/releases/download/${JEMALLOC_VERSION}/jemalloc-${JEMALLOC_VERSION}.tar.bz2}"
++TP_INSTALL="${DORIS_THIRDPARTY:-/var/local/thirdparty}/installed"
++SRC_DIR="${SRC_DIR:-.tmp/jemalloc-prof-libunwind-src}"
++BUILD_DIR="${BUILD_DIR:-.tmp/jemalloc-prof-libunwind-build}"
++OUT_LIB_DIR="${OUT_LIB_DIR:-.tmp/jemalloc-prof-libunwind}"
++
++mkdir -p "${SRC_DIR}" "${BUILD_DIR}" "${OUT_LIB_DIR}"
++
++# 1. Fetch and unpack jemalloc source if not already present.
++if [[ ! -f "${SRC_DIR}/jemalloc-${JEMALLOC_VERSION}/configure" ]]; then
++    echo "Fetching jemalloc-${JEMALLOC_VERSION} from ${JEMALLOC_URL}"
++    curl -fsSL "${JEMALLOC_URL}" -o "${SRC_DIR}/jemalloc.tar.bz2"
++    tar -xjf "${SRC_DIR}/jemalloc.tar.bz2" -C "${SRC_DIR}"
++fi
++
++# 2. Configure with --enable-prof-libunwind, pointing at the thirdparty
++#    libunwind headers + archive. The same flag values as the upstream
++#    thirdparty/build-thirdparty.sh build_jemalloc_doris() function:
++#    --with-jemalloc-prefix=je, --enable-prof, --disable-cxx,
++#    --disable-libdl, --disable-shared, --with-install-suffix=_doris.
++#    Adding --enable-prof-libunwind is the only material delta.
++cd "${SRC_DIR}/jemalloc-${JEMALLOC_VERSION}"
++CFLAGS="${CFLAGS:--O3 -fno-omit-frame-pointer}" \
++CPPFLAGS="-I${TP_INSTALL}/include" \
++LDFLAGS="-L${TP_INSTALL}/lib64" \
++./configure \
++    --prefix="${PWD}/../../${OUT_LIB_DIR}/install" \
++    --with-install-suffix="_doris" \
++    --with-jemalloc-prefix=je \
++    --enable-prof \
++    --enable-prof-libunwind \
++    --disable-cxx \
++    --disable-libdl \
++    --disable-shared
++
++# 3. Build and install into OUT_LIB_DIR.
++make -j "$(nproc)"
++make install
++
++# 4. Verify the backtrace method by reading config.log.
++if grep -q "^backtrace_method = 'libunwind'" config.log; then
++    echo "backtrace_method = 'libunwind' confirmed"
++else
++    echo "ERROR: backtrace_method != libunwind in config.log; libunwind detection failed" >&2
++    grep -E "backtrace_method|libunwind" config.log >&2 || true
++    exit 1
++fi
++
++echo "Local jemalloc with --enable-prof-libunwind built at ${OUT_LIB_DIR}/install"
++echo "Re-run cmake with -DCK_PHDR_UNWIND_LOCAL_JEMALLOC=ON to link against it."
+diff --git a/be/cmake/thirdparty.cmake b/be/cmake/thirdparty.cmake
+index 1dba907307d..bf8c6ae87d6 100644
+--- a/be/cmake/thirdparty.cmake
++++ b/be/cmake/thirdparty.cmake
+@@ -80,7 +80,35 @@ add_thirdparty(crypto)
+ add_thirdparty(openssl LIBNAME "lib/libssl.a")
+ add_thirdparty(leveldb)
+ if (USE_JEMALLOC)
+-    add_thirdparty(jemalloc LIBNAME "lib/libjemalloc_doris.a")
++    # Reason: Tier 2 evaluations for libunwind variants need a jemalloc whose
++    # heap-profile backtracer uses libunwind, not libgcc. The prebuilt
++    # thirdparty jemalloc uses libgcc's _Unwind_Backtrace, which re-enters
++    # dl_iterate_phdr through _Unwind_Find_FDE and deadlocks against the
++    # lock-free override. The opt-in flag CK_PHDR_UNWIND_LOCAL_JEMALLOC
++    # swaps in a locally-built libjemalloc_doris.a configured with
++    # --enable-prof-libunwind (build it first via
++    # `be/cmake/build-jemalloc-prof-libunwind.sh`). Tier 1 keeps profiling
++    # OFF, so the prebuilt thirdparty jemalloc is safe under this round's
++    # gate and the flag defaults to OFF.
++    # Spec: docs/phase2-acceptance.md "Tier 2: Compatibility".
++    # Reference: <ck> contrib/jemalloc-cmake configures jemalloc with the
++    # same --enable-prof-libunwind flag.
++    option(CK_PHDR_UNWIND_LOCAL_JEMALLOC
++           "Link the locally-built jemalloc with --enable-prof-libunwind" OFF)
++    if (CK_PHDR_UNWIND_LOCAL_JEMALLOC)
++        set(_local_jemalloc_lib
++            "${CMAKE_SOURCE_DIR}/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a")
++        if (NOT EXISTS "${_local_jemalloc_lib}")
++            message(FATAL_ERROR
++                "CK_PHDR_UNWIND_LOCAL_JEMALLOC=ON but ${_local_jemalloc_lib} is missing;"
++                " run be/cmake/build-jemalloc-prof-libunwind.sh first.")
++        endif()
++        add_library(jemalloc STATIC IMPORTED)
++        set_target_properties(jemalloc PROPERTIES IMPORTED_LOCATION "${_local_jemalloc_lib}")
++        message(STATUS "Linking locally-built jemalloc with --enable-prof-libunwind: ${_local_jemalloc_lib}")
++    else()
++        add_thirdparty(jemalloc LIBNAME "lib/libjemalloc_doris.a")
++    endif()
+ else()
+     add_thirdparty(tcmalloc WHOLELIBPATH ${GPERFTOOLS_HOME}/lib/libtcmalloc.a NOTADD)
+ endif()
+-- 
+2.43.0
+
