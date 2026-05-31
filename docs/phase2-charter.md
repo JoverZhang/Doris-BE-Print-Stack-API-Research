@@ -46,8 +46,10 @@ The decision record must give:
   pointers in the Release build.
 - `ck-phdr-unwind`: run libunwind in the signal handler, with a ClickHouse-style
   PHDR cache.
-- `ob-kill60`: collect in the signal handler, OceanBase-style two-phase flow;
-  the coordinator resolves DSO offsets.
+- `ob-kill60`: collect in the signal handler, OceanBase-style with a
+  single-phase ack — the handler captures and returns, the coordinator
+  resolves DSO offsets after the handler exits. OceanBase's two-phase ack
+  (worker pauses for coordinator) is the reference, not the variant we test.
 - `snapshot-remote-unwind`: copy registers and bounded stack bytes in the
   handler; the coordinator unwinds from the snapshot.
 

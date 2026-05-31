@@ -17,7 +17,7 @@ signal handler takes.
 | --- | --- | --- | --- |
 | `fp-walk` | walk RBP chain | handler | dereferences the interrupted RBP chain |
 | `ck-phdr-unwind` | run libunwind | handler | libunwind in an async-signal context |
-| `ob-kill60` | collect PCs | handler + coordinator | handler libunwind; pause while the coordinator resolves offsets |
+| `ob-kill60` | run libunwind | handler | handler libunwind (single-phase ack; no worker pause) |
 | `snapshot-remote-unwind` | copy regs + stack bytes | coordinator | needs a working remote unwinder |
 
 The safest handler does the least. `snapshot-remote-unwind` copies bytes only.
@@ -130,17 +130,19 @@ signaling.
 
 ### ob-kill60
 
-- OceanBase-style two-phase flow: the request thread signals targets, then a
-  coordinator collects the results.
-- In OceanBase the target thread hangs in its handler while the coordinator
-  runs, then is told to exit. A per-request `req_id` rides in the signal payload.
-  Reference: `<ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:280-347`.
-- Optimization to evaluate: a single-phase flow. The handler captures and returns
-  at once; the coordinator reads the slot after the handler exits, so the worker
-  never hangs. OceanBase's two-phase ack is the reference; single-phase is the
-  variant we test.
-- Patch citations: `<ob>/deps/oblib/src/lib/signal/ob_signal_*.cpp`.
-- Open risk: the coordinator may pause workers while it resolves DSO offsets.
+- OceanBase-style collection with a single-phase ack. The request thread
+  signals targets with a per-request `req_id` in the payload; each handler
+  captures its frames into the slot and returns immediately; the coordinator
+  reads the slot after the handler exits and resolves DSO offsets. The
+  worker never hangs.
+- OceanBase's upstream form is two-phase: the target thread hangs in its
+  handler while the coordinator resolves, then is told to exit. Reference:
+  `<ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:280-347`. The
+  upstream worker-hang is the part we deliberately drop; single-phase
+  removes the coordinator-induced worker pause that is OB's main open risk.
+- Patch citations: `<ob>/deps/oblib/src/lib/signal/ob_signal_*.cpp` for
+  the signal token and slot mechanics; the variant patch supplies its own
+  single-phase coordinator instead of OB's two-phase resolver.
 
 ### snapshot-remote-unwind
 
@@ -156,7 +158,6 @@ signaling.
 - `fp-walk`: how deep are real Release-build BE stacks through the RBP chain?
 - `ck-phdr-unwind` and `ob-kill60`: can handler-side libunwind be proven
   async-signal-safe? Deferred to the next phase per the acceptance doc.
-- `ob-kill60`: does the coordinator pause workers during offset resolution?
 - `snapshot-remote-unwind`: what copied stack size gives useful depth, and is a
   real remote unwinder available?
 - All: what timeout is safe for a large, loaded BE process?
