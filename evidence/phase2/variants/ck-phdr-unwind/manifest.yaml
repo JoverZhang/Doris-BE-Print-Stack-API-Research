@@ -1,0 +1,44 @@
+variant: ck-phdr-unwind
+brief: evidence/phase2/briefs/ck-phdr-unwind.md
+branch: phase2/ck-phdr-unwind
+base_branch: phase2/common
+doris_base: c24d454f15cee2d937ef4749270a3ecb449eafe6
+common_head: cd35ea605e074f6375e778920a4c9a37e53f8f3d
+variant_head: 5bd2a45a3db43e322831a61c4ff029070aecdba5
+
+build_image: docker.io/apache/doris:build-env-ldb-toolchain-latest
+build_image_id: 7b449a709746
+
+commits:
+  - sha: 46cec6e7fd3ab915d4d673024c28d317be77f7e7
+    subject: "(be) ck-phdr-unwind enable lock-free dl_iterate_phdr override"
+    patch: patches/ck-phdr-unwind/0001-be-ck-phdr-unwind-enable-lock-free-dl_iterate_phdr-o.patch
+  - sha: a2619e494161c0bd51c016020064f2bb2e8e2690
+    subject: "(be) ck-phdr-unwind populate PHDR cache at BE startup"
+    patch: patches/ck-phdr-unwind/0002-be-ck-phdr-unwind-populate-PHDR-cache-at-BE-startup.patch
+  - sha: fef2c40bc3e430aae06d913a7aa71b173cf3fb09
+    subject: "(be) ck-phdr-unwind libunwind native stack collector"
+    patch: patches/ck-phdr-unwind/0003-be-ck-phdr-unwind-libunwind-native-stack-collector.patch
+  - sha: 5bd2a45a3db43e322831a61c4ff029070aecdba5
+    subject: "(be) ck-phdr-unwind build-system Tier 2 jemalloc rebuild hook"
+    patch: patches/ck-phdr-unwind/0004-be-ck-phdr-unwind-build-system-Tier-2-jemalloc-rebui.patch
+
+build_command: just phase2-test ck-phdr-unwind
+runtime_command: just phase2-test ck-phdr-unwind
+
+assumptions:
+  - "PHDR cache init point: be/src/service/doris_main.cpp between MemInfo::debug_string and BackendOptions::init (the existing upstream-anchored call site, uncommented). In the test binary, init runs from be/test/testutil/run_all_tests.cpp:109, also pre-existing."
+  - "jemalloc rebuild: NOT performed for this round. Tier 1 keeps profiling OFF, so the prebuilt thirdparty jemalloc (libgcc backtracer, libjemalloc_doris.a from /var/local/thirdparty/installed/lib) is safe. The reusable rebuild path lives in patch 0004 (be/cmake/build-jemalloc-prof-libunwind.sh + CK_PHDR_UNWIND_LOCAL_JEMALLOC opt-in CMake flag); see build-facts.md for the verification recipe."
+  - "libunwind link: already linked via DORIS_DEPENDENCIES (be/CMakeLists.txt:679). UNW_LOCAL_ONLY is TU-scoped at the top of be/src/service/http/action/native_stack_collect.cpp so the `_ULx86_64_*` local-only symbols resolve."
+
+patch_partition_divergence: |
+  The 4-patch partition matches the brief exactly:
+    1. phdr-cache (uncomment override in be/src/common/phdr_cache.cpp).
+    2. phdr-cache-init (uncomment updatePHDRCache() in doris_main.cpp).
+    3. native-stack-collector (libunwind walk in native_stack_collect.cpp).
+    4. build-system (Tier 2 jemalloc rebuild hook; libunwind link is already in place).
+  No per-variant test patch (5) is shipped this round: the brief listed it
+  as optional, and ck-phdr-unwind ships no variant-specific cases.
+  Case 14/15/17 are fp-walk-specific (RBP bounds, WALKING-state pause,
+  junk-RBP); libunwind handles its own bounds via DWARF, so a parallel
+  case set adds no coverage for this variant.
