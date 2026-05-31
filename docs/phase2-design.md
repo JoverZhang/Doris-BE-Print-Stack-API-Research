@@ -188,11 +188,54 @@ by design:
   async-safety review above.
 
 - **Libunwind init/get/step errors collapse into `status: ok` with
-  zero frames** (`ck-phdr-unwind`, `ob-kill60`). The collectors do not
-  distinguish unwind failure from end-of-stack. A future status-shape
-  refinement task should add an `unwind_failed` status (or equivalent
-  partial-error reason) across both variants together. Not race-class;
-  the gate is unaffected.
+  zero frames** (`ck-phdr-unwind`, `ob-kill60`, `snapshot-remote-unwind`).
+  The collectors do not distinguish unwind failure from end-of-stack.
+  A future status-shape refinement task should add an `unwind_failed`
+  status (or equivalent partial-error reason) across all three
+  variants together. Not race-class; the gate is unaffected.
+
+A second codex adversarial review (`snapshot-remote-unwind`'s handler,
+2026-06-01) surfaced four additional `snapshot-remote-unwind`-specific
+items, all deferred:
+
+- **`process_vm_readv` in the handler** (`snapshot-remote-unwind`).
+  The handler uses `process_vm_readv` to copy the stack snapshot
+  instead of plain `memcpy` + per-page `mincore` guard (the pattern
+  fp-walk uses). `process_vm_readv` is a syscall that can contend on
+  the interrupted thread's `mm->mmap_lock`, blocking or deadlocking
+  the handler under memory pressure. This is a MORE severe async-
+  safety hazard than the in-handler libunwind in `ck-phdr-unwind` /
+  `ob-kill60`, since it adds a kernel-side lock contention path. A
+  future fix should follow fp-walk's pattern: incremental page-by-
+  page copy with `mincore`-guarded reads, no syscall in the handler.
+  Bundled into the same deferred async-safety review.
+
+- **Accessor rejects DSO memory above the captured stack window**
+  (`snapshot-remote-unwind`). The variant's libunwind remote accessor
+  treats every address `>= stack_base` outside the snapshot as stale.
+  This is currently masked because the variant uses
+  `_Ux86_64_dwarf_find_proc_info`, which bypasses the accessor for
+  DWARF lookups, but it is a real latent correctness gap if a future
+  libunwind path needs accessor-mediated reads of DSO `.eh_frame`
+  data. Fix: allow accessor reads outside the stack window to fall
+  through to a direct memcpy from the coordinator's own address
+  space (the coordinator runs in-process, so DSO pages are
+  accessible).
+
+- **`page_is_mapped` rejects mapped-but-nonresident pages**
+  (`snapshot-remote-unwind` handler + accessor). The check uses
+  `mincore`'s present bit only; a page made nonresident via
+  `madvise(MADV_DONTNEED)` reports as inaccessible and terminates a
+  valid unwind. Same direction-of-error as fp-walk's `mincore`
+  guard, but the impact here is worse because the truncation is
+  silent. Tier 2 territory.
+
+- **Snapshot short-read silently truncates frames**
+  (`snapshot-remote-unwind`). The handler's `process_vm_readv`
+  short-read sets `stack_size` but does not set a truncation flag,
+  so a stack window larger than `max_stack_bytes` returns
+  `status: ok` with bottom frames missing. Bundled into the same
+  status-shape refinement task as the unwind-error issue above.
 
 ## Environment Notes
 
