@@ -162,6 +162,38 @@ signaling.
   real remote unwinder available?
 - All: what timeout is safe for a large, loaded BE process?
 
+## Known Deferred Items
+
+Codex adversarial review of `ob-kill60`'s handler (2026-05-31) surfaced
+hazards that apply to the libunwind variants as a class. Finding #4
+(slot-disarm race on the success path) was fixed across all three
+variants (commit `2a00713`); these three remain open and are deferred
+by design:
+
+- **Libunwind in handler is async-signal-unsafe** (`ck-phdr-unwind`,
+  `ob-kill60`). `unw_init_local2` / `unw_get_reg` / `unw_step` are not
+  on the POSIX async-signal-safe list. The PHDR-cache override
+  (patches `0001` + `0002`) keeps the one known `dl_iterate_phdr` path
+  lock-free but does not cover the broader libunwind contract.
+  Deferred to the next phase per
+  [phase2-acceptance.md](phase2-acceptance.md) "Deferred to the next
+  phase". The review is async-safety code review + TSan/ASan, not a
+  Tier 1 green test.
+
+- **No fault containment around libunwind reads** (`ck-phdr-unwind`,
+  `ob-kill60`). A malformed unwind state could make the handler touch
+  unmapped memory. `fp-walk` has the equivalent guard for raw RBP
+  reads (`mincore`-based `page_is_mapped`); the libunwind variants
+  would need a `sigsetjmp`/`siglongjmp` trampoline. Bundled with the
+  async-safety review above.
+
+- **Libunwind init/get/step errors collapse into `status: ok` with
+  zero frames** (`ck-phdr-unwind`, `ob-kill60`). The collectors do not
+  distinguish unwind failure from end-of-stack. A future status-shape
+  refinement task should add an `unwind_failed` status (or equivalent
+  partial-error reason) across both variants together. Not race-class;
+  the gate is unaffected.
+
 ## Environment Notes
 
 The dispatch brief records the build landmines: the `build.sh` bind-mount
