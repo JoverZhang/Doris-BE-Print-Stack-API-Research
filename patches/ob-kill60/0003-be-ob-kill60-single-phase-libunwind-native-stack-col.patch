@@ -1,0 +1,618 @@
+From 9a7f57b7927ed721cba9b68a1cc0b1b0a24121c9 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Sun, 31 May 2026 21:24:32 +0800
+Subject: [PATCH 3/4] (be) ob-kill60 single-phase libunwind native stack
+ collector
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Replace the stub collect step with an OceanBase-style single-phase
+capture: interrupt each target thread with SIGRTMIN+6 queued via
+SI_QUEUE carrying a per-request req_id in si_value.sival_ptr, seed
+libunwind from the saved ucontext with UNW_INIT_SIGNAL_FRAME, walk via
+unw_step / unw_get_reg, publish the frames into the per-sequence slot,
+and return. The coordinator reads the slot after the handler exits;
+the worker NEVER hangs waiting for the coordinator. This is the
+deliberate divergence from OceanBase's upstream two-phase: OB's
+ObSigHandler::handle (ob_signal_worker.cpp:349-385) writes a prepare-
+ack into a pipe, blocks in wait_readable until the coordinator writes
+an exit signal, then writes an exit-ack. Per docs/phase2-charter.md and
+the per-variant brief, the worker-hang is OB's main open risk in our
+evaluation, so ob-kill60 ships the single-phase form.
+
+Defines UNW_LOCAL_ONLY at the TU so the include resolves to the
+local-only _ULx86_64_* symbols the linked libunwind archive exposes
+(the only prefix it ships). Same TU-scoped #define pattern OB uses
+in ob_libunwind.c:15.
+
+The slot ring + sequence + state machine mirror fp-walk and
+ck-phdr-unwind so the safety contract is the same: the handler
+validates si_pid + seq + slot state before publishing, and a
+coordinator can only re-arm a slot in IDLE, so a late handler in
+WALKING cannot poison the next dump. ob-kill60 needs no RBP-bounds
+or junk-RBP guard because libunwind walks DWARF unwind info, not raw
+frame pointers.
+
+A defense-in-depth hasPHDRCache() check refuses to signal if the
+cache is missing — without it the handler's unw_step would call the
+libc dl_iterate_phdr and take the loader lock, which is not async-
+signal-safe. The cache is populated by the test runner's
+updatePHDRCache() call before RUN_ALL_TESTS and by doris_main after
+MemInfo::init (patch 2), so this is a guard, not the normal path.
+
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
+  (ob_signal_handler validates si_pid + req_id before dispatch),
+  <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:280-347
+  (task_process is the two-phase coordinator we collapse to single-phase),
+  <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:55-82
+  (get_stack_trace_inplace is the unwind loop shape).
+---
+ .../http/action/native_stack_collect.cpp      | 530 +++++++++++++++++-
+ 1 file changed, 510 insertions(+), 20 deletions(-)
+
+diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
+index d8cc72ae33b..6acfd1c2fa7 100644
+--- a/be/src/service/http/action/native_stack_collect.cpp
++++ b/be/src/service/http/action/native_stack_collect.cpp
+@@ -15,47 +15,537 @@
+ // specific language governing permissions and limitations
+ // under the License.
+ 
++// Reason: the linked libunwind archive exposes only the local-only
++// `_ULx86_64_*` symbols. Defining UNW_LOCAL_ONLY before <libunwind.h>
++// remaps `unw_step`/`unw_init_local2`/`unw_get_reg` to those symbols.
++// Without it the include resolves to the remote `_Ux86_64_*` symbols
++// the archive does not export, and the BE fails to link. OceanBase
++// uses the same `#define UNW_LOCAL_ONLY` ahead of `<libunwind.h>` in
++// its libunwind TU.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:15-16.
++#define UNW_LOCAL_ONLY
++
++#include <glog/logging.h>
++#include <libunwind.h>
++#include <signal.h>
++#include <sys/syscall.h>
++#include <sys/types.h>
++#include <time.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <atomic>
++#include <cerrno>
+ #include <chrono>
+ #include <cstdint>
++#include <cstring>
++#include <fstream>
++#include <mutex>
++#include <sstream>
++#include <string>
++#include <thread>
+ 
++#include "common/phdr_cache.h"
+ #include "service/http/action/native_stack.h"
+ 
+-// Reason: the per-variant collect step. The common build ships this stub;
+-// each variant patch (fp-walk, ck-phdr-unwind, ...) rewrites only this file
+-// with its real collector, so every other file in the seam stays put.
+-// Spec: docs/phase2-design.md "Common API" -> stub collect().
++// Reason: the ob-kill60 variant of the common collector seam. The
++// per-thread capture interrupts the target with a queued realtime
++// signal carrying a per-request `req_id` in `si_value.sival_ptr`. The
++// handler validates the sender and the token, walks the saved ucontext
++// via libunwind, publishes the frames into a per-sequence slot, and
++// returns. The coordinator reads the slot after the handler exits and
++// resolves DSO offsets. The worker NEVER hangs waiting for the
++// coordinator — this is the single-phase ack form, the deliberate
++// divergence from OceanBase's upstream two-phase. libunwind reaches
++// `dl_iterate_phdr` from `unw_step`; the PHDR cache override (patches
++// 1 + 2) keeps that call lock-free, so the handler stays
++// async-signal-safe on the cache fast path.
++// Spec: docs/phase2-design.md "Variant Mechanics -> ob-kill60".
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
++//   (OB's `ob_signal_handler` validates `req_id` from `si_value.sival_ptr`
++//   the same way; ob-kill60 inherits that check),
++//   <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:280-347
++//   (OB's two-phase `task_process` + `ObSigHandler::handle` is the
++//   reference; ob-kill60 collapses the prepare/process/exit pipe
++//   exchange into a single in-handler capture).
+ namespace doris::native_stack {
+ namespace {
+ 
+-// Reason: the stub proves the response shape and the single-dump gate
+-// without real signaling — every live thread reports `ok` with no frames.
+-// `run_collection` owns the gate, tid selection, and aggregation, so the
+-// stub only fills status.
+-void stub_capture(int64_t /*tid*/, const CollectOptions& /*opts*/,
+-                  std::chrono::steady_clock::time_point /*deadline*/, ThreadStack* out) {
+-    out->status = "ok";
++// Reason: a runaway libunwind walk would block the handler indefinitely.
++// This cap stops the loop and sizes each slot's frame array.
++// Local: ob-kill60-specific cap.
++constexpr int kMaxSignalFrames = 1024;
++
++// Reason: the slot ring size. Per-sequence slots prevent a late handler
++// at seq=K from clobbering the next dump's writes at seq=K+1. A ring of
++// N slots keyed by `seq % N` tolerates up to N-1 simultaneous late
++// handlers before the next coordinator arming returns `slot_busy`
++// instead of reusing an in-use slot. N=4 matches fp-walk and
++// ck-phdr-unwind so the three variants' contention envelopes stay
++// comparable.
++// Local: ob-kill60-specific bound; mirrors fp-walk's choice.
++constexpr int kSlotRingSize = 4;
++
++// Reason: budget for waiting on a late handler to drain after a
++// per-thread timeout. Bounded so a stuck handler does not extend the
++// whole dump's wall clock; the slot is reported leaked after this.
++// Local: ob-kill60-specific cadence; mirrors fp-walk.
++constexpr int64_t kHandlerDrainBudgetMs = 50;
++
++// Reason: a realtime signal queues rather than coalesces, and SI_QUEUE
++// lets the sender attach a request token in `si_value`. OB uses a
++// realtime `MP_SIG` for the same SI_QUEUE-with-`sival_ptr` shape; we
++// reuse SIGRTMIN+6 here so the test binary's `SignalBlocked` case
++// (case 10) blocks the same number every variant in this repo sends.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:306-309
++//   (OB queues `MP_SIG` via `rt_tgsigqueueinfo` with
++//   `si.si_value.sival_ptr = (void*)req_id`).
++int native_stack_signal_number() {
++    return SIGRTMIN + 6;
++}
++
++int64_t monotonic_ns() {
++    timespec ts {};
++    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
++        return 0;
++    }
++    return static_cast<int64_t>(ts.tv_sec) * 1000000000LL + static_cast<int64_t>(ts.tv_nsec);
++}
++
++// Reason: the slot's state machine. The coordinator owns IDLE -> PENDING
++// (arm) and WALKING/DONE -> IDLE (release). The handler owns
++// PENDING -> WALKING (entry) and WALKING -> DONE / WALKING -> IDLE
++// (publish or drop). Per-slot state is what makes the per-sequence
++// ring safe: a coordinator can only arm a slot in IDLE, so a slot held
++// by a late WALKING handler is never re-armed under it.
++// Local: ob-kill60-specific state machine; mirrors fp-walk.
++enum SlotState : int {
++    SLOT_IDLE = 0,
++    SLOT_PENDING = 1,
++    SLOT_WALKING = 2,
++    SLOT_DONE = 3,
++};
++
++// Reason: one libunwind capture slot. Slots live for the process
++// lifetime so a late handler that reaches the write step never
++// dereferences a dangling pointer. Frame storage is a flat array sized
++// by `kMaxSignalFrames`; libunwind writes one PC per `unw_step`. OB's
++// upstream two-phase publishes captured frames into pipes
++// (`ObSigHandlerCtx.fd_`/`fd2_`) the coordinator reads; ob-kill60
++// publishes into a per-sequence slot so the worker never hangs and
++// the coordinator picks the result up after the handler returns.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_struct.h
++//   (OB's `ObSigHandlerCtx` carries per-request state; we transcribe
++//   the `req_id` token field as `expected_seq` here and the in-progress
++//   bookkeeping as `state`).
++struct CaptureSlot {
++    // Reason: the request token. A handler whose `seq` does not match
++    // this value drops at entry, mirroring OB's `req_id` check.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:113-114.
++    std::atomic<uint64_t> expected_seq {0};
++    // Reason: the slot's state machine field. See SlotState above.
++    std::atomic<int> state {SLOT_IDLE};
++    int max_frames = 0;
++    uintptr_t frames[kMaxSignalFrames] {};
++    int frame_count = 0;
++    bool truncated = false;
++    std::atomic<int64_t> handler_ns {0};
++};
++
++// Reason: the per-sequence slot ring. A coordinator arming at seq=K
++// targets `g_slots[(K-1) % N]`, so seqs K and K+1 cannot collide.
++// Local: ob-kill60-specific storage; see kSlotRingSize.
++CaptureSlot g_slots[kSlotRingSize];
++
++// Reason: a monotonic sequence number that rides in the signal payload
++// as the dump's request token. OB calls this `req_id` and increments
++// it via ATOMIC_AAF in `task_process`; the handler matches it against
++// the per-handler context's `req_id_` before publishing.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:293-294
++//   (`static int64_t req_id = 0; ctx->atomic_set_req_id(ATOMIC_AAF(&req_id, 1));`).
++std::atomic<uint64_t> g_seq {0};
++
++std::once_flag g_install_once;
++std::atomic<bool> g_installed {false};
++
++CaptureSlot& slot_for_seq(uint64_t seq) {
++    return g_slots[(seq - 1) % kSlotRingSize];
++}
++
++bool parse_hex_u64(const std::string& value, uint64_t* parsed) {
++    try {
++        size_t consumed = 0;
++        unsigned long long result = std::stoull(value, &consumed, 16);
++        if (consumed != value.size()) {
++            return false;
++        }
++        *parsed = static_cast<uint64_t>(result);
++        return true;
++    } catch (const std::exception&) {
++        return false;
++    }
++}
++
++// Reason: a thread that blocks the collector signal would never run the
++// handler. Report it as `signal_blocked` so the dump distinguishes it
++// from a slow thread that should time out. OB does not check this
++// (its target threads never block MP_SIG by design); ob-kill60 keeps
++// the check because Doris workers are heterogeneous.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:294-326
++//   (CK's `isSignalBlocked` reads `SigBlk:` from /proc the same way).
++// Local: ob-kill60-specific safety check (no OB precedent).
++bool is_signal_blocked(int64_t tid, int signal_number) {
++    if (signal_number <= 0 || signal_number > 64) {
++        return false;
++    }
++    std::ifstream status("/proc/self/task/" + std::to_string(tid) + "/status");
++    std::string line;
++    while (std::getline(status, line)) {
++        constexpr char kSigBlkPrefix[] = "SigBlk:";
++        if (line.rfind(kSigBlkPrefix, 0) != 0) {
++            continue;
++        }
++        std::istringstream iss(line.substr(sizeof(kSigBlkPrefix) - 1));
++        std::string hex_mask;
++        if (!(iss >> hex_mask)) {
++            return false;
++        }
++        uint64_t mask = 0;
++        if (!parse_hex_u64(hex_mask, &mask)) {
++            return false;
++        }
++        return (mask & (uint64_t {1} << (signal_number - 1))) != 0;
++    }
++    return false;
++}
++
++// Reason: the realtime-signal handler. It validates the sender and the
++// request token, transitions the slot from PENDING to WALKING, walks
++// the interrupted thread's stack via libunwind seeded from the
++// `ucontext_t`, records handler time, then publishes DONE or releases
++// the slot if the dump moved on. The CAS into WALKING is the safety
++// hand-off: a coordinator can never re-arm a slot whose state is
++// WALKING, so the handler's mid-walk frame writes cannot land in the
++// next dump's payload.
++//
++// This is the single-phase form: the handler captures and returns. The
++// coordinator picks up the slot after the handler exits; the worker
++// never hangs waiting for the coordinator. OceanBase's upstream form is
++// two-phase: the worker thread runs `processor_->prepare()`, writes an
++// ack into a pipe, then blocks in a wait_readable() loop until the
++// coordinator finishes its `processor_->process()` call and tells the
++// worker to exit via the second pipe. We deliberately drop the worker-
++// hang because it is OB's main open risk in this evaluation: a worker
++// pinned in its handler cannot make progress and prolongs latency for
++// every other RPC the BE serves. The single-phase form captures
++// everything inline so the worker resumes immediately.
++// Spec: docs/phase2-design.md "Variant Mechanics -> ob-kill60".
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
++//   (OB's `ob_signal_handler` does the same validate + lock + dispatch
++//   beats; ob-kill60 inlines the capture in place of OB's
++//   `ctx.handler_->handle(ctx)` two-phase invocation),
++//   <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:349-385
++//   (`ObSigHandler::handle` is the two-phase form ob-kill60 drops).
++void native_stack_signal_handler(int /*sig*/, siginfo_t* info, void* raw_context) {
++    const int saved_errno = errno;
++
++    // 1. Ignore any signal this process did not queue for a dump. OB's
++    //    `ob_signal_handler` relies on the `MP_SIG` channel being
++    //    private to its own infrastructure; Doris's BE may receive
++    //    SIGRTMIN+6 from elsewhere, so the SI_QUEUE + getpid() guard
++    //    keeps stray signals out of the slot.
++    if (info == nullptr || info->si_code != SI_QUEUE || info->si_pid != getpid()) {
++        errno = saved_errno;
++        return;
++    }
++    // 2. Drop a handler whose request token no longer matches the live
++    //    dump. OB does the same `if (ctx.req_id_ != req_id) return;` at
++    //    the top of its handler.
++    const uint64_t seq = reinterpret_cast<uintptr_t>(info->si_value.sival_ptr);
++    if (seq == 0) {
++        errno = saved_errno;
++        return;
++    }
++    CaptureSlot& slot = slot_for_seq(seq);
++    if (seq != slot.expected_seq.load(std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++    // 3. Claim the slot for WALKING. Fail closed if the coordinator
++    //    already transitioned it away (e.g. timeout drove PENDING -> IDLE).
++    int expected_state = SLOT_PENDING;
++    if (!slot.state.compare_exchange_strong(expected_state, SLOT_WALKING,
++                                            std::memory_order_acq_rel)) {
++        errno = saved_errno;
++        return;
++    }
++
++    const int64_t start_ns = monotonic_ns();
++#if defined(__x86_64__)
++    // Reason: unw_init_local2 with UNW_INIT_SIGNAL_FRAME seeds the
++    // cursor from the interrupted thread's saved registers (not the
++    // handler's own stack), so the first `unw_get_reg(IP)` returns the
++    // RIP at the point the signal interrupted. OB's `safe_backtrace`
++    // calls `unw_getcontext` + `unw_init_local` instead, which would
++    // capture the handler's own stack — fine when the goal is to log
++    // "where am I" for a crash but wrong when we want the interrupted
++    // worker's frames. The UNW_INIT_SIGNAL_FRAME flag tells libunwind
++    // to skip the kernel's synthetic signal frame so the first reported
++    // IP is the interrupted PC.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:55-82
++    //   (`get_stack_trace_inplace` is the unwind loop shape; ob-kill60
++    //   transcribes it but seeds from the saved ucontext instead of
++    //   `unw_getcontext`).
++    auto* signal_context = static_cast<ucontext_t*>(raw_context);
++    unw_cursor_t cursor;
++    unw_context_t unw_ctx;
++    std::memcpy(&unw_ctx, signal_context, sizeof(unw_ctx));
++    const int max_frames = slot.max_frames;
++    int n = 0;
++    if (unw_init_local2(&cursor, &unw_ctx, UNW_INIT_SIGNAL_FRAME) == 0) {
++        do {
++            if (n >= max_frames) {
++                break;
++            }
++            unw_word_t ip = 0;
++            if (unw_get_reg(&cursor, UNW_REG_IP, &ip) != 0) {
++                break;
++            }
++            if (ip == 0) {
++                break;
++            }
++            slot.frames[n++] = static_cast<uintptr_t>(ip);
++        } while (unw_step(&cursor) > 0);
++    }
++    slot.frame_count = n;
++    // Reason: mark truncated only when the walk hit the user's cap AND
++    // a further step would have returned a frame. We cannot tell from
++    // inside the handler whether the loop exited because `unw_step`
++    // returned 0 (end of stack) or because `n` hit `max_frames`. Setting
++    // `truncated = (n == max_frames)` over-reports when the chain
++    // happens to be exactly `max_frames` deep; this is the same
++    // approximation fp-walk and ck-phdr-unwind use.
++    slot.truncated = n == max_frames;
++#else
++    slot.frame_count = 0;
++    slot.truncated = false;
++#endif
++    const int64_t end_ns = monotonic_ns();
++    if (start_ns > 0 && end_ns >= start_ns) {
++        slot.handler_ns.store(end_ns - start_ns, std::memory_order_relaxed);
++    }
++
++    // 4. Publish DONE if the dump still wants us; otherwise release the
++    //    slot so a future coordinator can reclaim it. Either way we
++    //    leave state != WALKING so the coordinator's drain loop can
++    //    break.
++    if (seq == slot.expected_seq.load(std::memory_order_acquire)) {
++        slot.state.store(SLOT_DONE, std::memory_order_release);
++    } else {
++        slot.state.store(SLOT_IDLE, std::memory_order_release);
++    }
++    errno = saved_errno;
++}
++
++void install_handler_once() {
++    std::call_once(g_install_once, [] {
++        struct sigaction action {};
++        sigemptyset(&action.sa_mask);
++        action.sa_sigaction = native_stack_signal_handler;
++        action.sa_flags = SA_SIGINFO | SA_RESTART;
++        if (sigaction(native_stack_signal_number(), &action, nullptr) == 0) {
++            g_installed.store(true, std::memory_order_release);
++        } else {
++            LOG(ERROR) << "failed to install native stack signal handler: " << std::strerror(errno);
++        }
++    });
++}
++
++// Reason: the per-thread `CaptureFn` `run_collection` drives. Claims a
++// per-sequence slot, queues the signal with the request token in
++// `si_value.sival_ptr`, polls the slot until the handler publishes or
++// the deadline expires, then copies the frames out. On timeout it
++// drains briefly so a late handler can transition out of WALKING
++// before the slot is reported leaked. The worker thread never hangs
++// in the handler (single-phase ack) — the polling loop is the
++// coordinator's only wait point, bounded by the dump deadline.
++// Spec: docs/phase2-design.md "Variant Mechanics -> ob-kill60".
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:280-347
++//   (`task_process` is the OB coordinator; ob-kill60 collapses its
++//   prepare/process/exit pipe protocol into a single
++//   queue-signal-then-poll-slot beat),
++//   <ck>/src/Storages/System/StorageSystemStackTrace.cpp:381-384
++//   (sequential per-thread signaling shape inherited from the
++//   fp-walk / ck-phdr-unwind template).
++void ob_kill60_capture(int64_t tid, const CollectOptions& opts,
++                       std::chrono::steady_clock::time_point deadline, ThreadStack* out) {
++    // 0. Defense-in-depth deadline guard. `run_collection` short-
++    //    circuits expired deadlines before reaching here, but a direct
++    //    caller that skipped the guard would otherwise queue a signal
++    //    the wait loop has no time to receive — creating exactly the
++    //    stale-handler hazard the per-sequence slot was added to defend
++    //    against.
++    if (std::chrono::steady_clock::now() >= deadline) {
++        out->status = "timeout";
++        out->error_reason = "dump deadline expired before signaling this thread";
++        return;
++    }
++
++    // 1. A thread that blocks the collector signal would never run the
++    //    handler. Report `signal_blocked` so the dump distinguishes it
++    //    from a slow thread that should time out.
++    if (is_signal_blocked(tid, native_stack_signal_number())) {
++        out->status = "signal_blocked";
++        out->error_reason = "thread blocks the native stack signal";
++        return;
++    }
++    install_handler_once();
++    if (!g_installed.load(std::memory_order_acquire)) {
++        out->status = "signal_failed";
++        out->error_reason = "native stack signal handler is unavailable";
++        return;
++    }
++
++    // 1a. Refuse to signal if the PHDR cache is not populated. Without
++    //     it the handler's `unw_step` would call the libc
++    //     `dl_iterate_phdr` and take the loader lock, which is not
++    //     async-signal-safe. The test runner calls `updatePHDRCache()`
++    //     before RUN_ALL_TESTS and `doris_main` calls it after
++    //     MemInfo::init (patch 2), so this is a defense-in-depth guard,
++    //     not the normal path.
++    if (!hasPHDRCache()) {
++        out->status = "phdr_cache_missing";
++        out->error_reason = "PHDR cache not populated; refusing to enter libunwind handler";
++        return;
++    }
++
++    // 2. Claim a per-sequence slot via CAS IDLE -> PENDING. Failure
++    //    means a late handler from seq-N still holds this slot.
++    const uint64_t seq = g_seq.fetch_add(1, std::memory_order_relaxed) + 1;
++    CaptureSlot& slot = slot_for_seq(seq);
++    int expected_state = SLOT_IDLE;
++    if (!slot.state.compare_exchange_strong(expected_state, SLOT_PENDING,
++                                            std::memory_order_acq_rel)) {
++        out->status = "slot_busy";
++        out->error_reason = "ob-kill60 slot held by a late handler from a prior dump";
++        return;
++    }
++    slot.max_frames = static_cast<int>(std::min<int64_t>(opts.max_frames, kMaxSignalFrames));
++    slot.frame_count = 0;
++    slot.truncated = false;
++    slot.handler_ns.store(0, std::memory_order_relaxed);
++    // Reason: the release on `expected_seq` publishes all the slot
++    // setup above so the handler's acquire load sees a fully
++    // initialized slot.
++    slot.expected_seq.store(seq, std::memory_order_release);
++
++    // 3. Queue the signal with the token in `si_value.sival_ptr`
++    //    (SI_QUEUE, this process). OB queues `MP_SIG` the same way.
++    // Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:304-309.
++    siginfo_t info {};
++    info.si_signo = native_stack_signal_number();
++    info.si_code = SI_QUEUE;
++    info.si_pid = getpid();
++    info.si_uid = getuid();
++    info.si_value.sival_ptr = reinterpret_cast<void*>(static_cast<uintptr_t>(seq));
++    const long rc = syscall(SYS_rt_tgsigqueueinfo, getpid(), static_cast<pid_t>(tid),
++                            native_stack_signal_number(), &info);
++    if (rc != 0) {
++        const int err = errno;
++        slot.expected_seq.store(0, std::memory_order_release);
++        int from = SLOT_PENDING;
++        slot.state.compare_exchange_strong(from, SLOT_IDLE, std::memory_order_acq_rel);
++        out->status = err == ESRCH ? "exited_thread" : "signal_failed";
++        out->error_reason = std::string("rt_tgsigqueueinfo failed: ") + std::strerror(err);
++        return;
++    }
++
++    // 4. Wait for the handler to publish DONE, or for the dump deadline.
++    //    This is the single coordinator-side wait (no two-phase pipe
++    //    exchange); OB's `wait_readable(fd_[0])` + `wait_readable(fd_[0])`
++    //    pair collapses to one polling loop on the slot state.
++    while (std::chrono::steady_clock::now() < deadline) {
++        if (slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
++            break;
++        }
++        // Reason: 200 microseconds polls often enough to keep the next
++        // thread moving without burning a core on a busy yield. OB
++        // waits on a pipe with a 50 ms timeout; ob-kill60 polls so the
++        // wait stays signal-safe-symmetric with the handler's atomic
++        // publish and bounded by the request's overall deadline.
++        // Local: ob-kill60-specific cadence; mirrors fp-walk and
++        // ck-phdr-unwind.
++        std::this_thread::sleep_for(std::chrono::microseconds(200));
++    }
++
++    // 5. Pick up the result on success, or drain briefly and release on
++    //    timeout. Disarming `expected_seq` first ensures any handler
++    //    still racing toward its post-walk re-check will see the
++    //    mismatch and transition WALKING -> IDLE on its own.
++    if (slot.state.load(std::memory_order_acquire) == SLOT_DONE) {
++        out->frames.reserve(static_cast<size_t>(slot.frame_count));
++        for (int i = 0; i < slot.frame_count; ++i) {
++            Frame frame;
++            frame.pc = slot.frames[i];
++            out->frames.push_back(frame);
++        }
++        out->truncated = slot.truncated;
++        out->handler_time_ns = slot.handler_ns.load(std::memory_order_relaxed);
++        out->status = "ok";
++        slot.state.store(SLOT_IDLE, std::memory_order_release);
++    } else {
++        slot.expected_seq.store(0, std::memory_order_release);
++        // 5a. If the handler is mid-walk (state == WALKING), drain
++        //     briefly so it can finish and transition out of WALKING.
++        //     The handler's post-walk re-check will see `seq != expected_seq`
++        //     and store SLOT_IDLE.
++        const auto drain_deadline = std::chrono::steady_clock::now() +
++                                    std::chrono::milliseconds(kHandlerDrainBudgetMs);
++        while (std::chrono::steady_clock::now() < drain_deadline) {
++            const int s = slot.state.load(std::memory_order_acquire);
++            if (s == SLOT_IDLE || s == SLOT_DONE || s == SLOT_PENDING) {
++                break;
++            }
++            std::this_thread::sleep_for(std::chrono::microseconds(200));
++        }
++        // 5b. If the handler never entered, the state is still PENDING.
++        //     CAS it back to IDLE. If CAS fails the handler just
++        //     entered; it will transition the state on its own.
++        int from_pending = SLOT_PENDING;
++        slot.state.compare_exchange_strong(from_pending, SLOT_IDLE,
++                                           std::memory_order_acq_rel);
++        // 5c. If the handler published DONE during the drain, release
++        //     the slot. We still report timeout because the dump
++        //     deadline already passed.
++        int from_done = SLOT_DONE;
++        slot.state.compare_exchange_strong(from_done, SLOT_IDLE,
++                                           std::memory_order_acq_rel);
++        out->status = "timeout";
++        out->error_reason = "thread did not run the native stack handler before the deadline";
++    }
+ }
+ 
+ } // namespace
+ 
+ NativeStackReport collect_native_stacks(const CollectOptions& opts) {
+-    return run_collection(opts, "stub", stub_capture);
++    return run_collection(opts, "ob-kill60", ob_kill60_capture);
+ }
+ 
+-// Reason: stub side of the fp-walk RBP-safety test hook. The test gates
+-// every call on `collector_is_stub()` and skips, so the stub's return
+-// value is never inspected. Defining it here keeps the test file
+-// linkable on the common build, where no fp-walk-specific code exists.
++// Reason: ob-kill60 has no fp-walk RBP-safety check, so this
++// test-only hook is a no-op. Case 14 is fp-walk-specific and ships in
++// patches/fp-walk/, not patches/ob-kill60/, so the hook is never
++// called for this variant.
+ // Local: test hook.
+ bool rbp_can_read_for_test(uintptr_t /*initial_rbp*/, uintptr_t /*rbp*/,
+                            uintptr_t /*max_stack_bytes*/) {
+     return false;
+ }
+ 
+-// Reason: stub side of the fp-walk handler-pause hook. The stub has no
+-// signal handler to pause; the late-handler corruption test gates on
+-// `collector_is_stub()` and skips, so this no-op only exists to keep
+-// the test file linkable on the common build.
++// Reason: ob-kill60 ships no parallel of case 15 this round, so the
++// handler-pause hook is a no-op. The header (native_stack.h) declares
++// it because fp-walk does export a real version; every variant must
++// define the symbol so the test binary links.
+ // Local: test hook.
+ void pause_handler_for_tid_for_test(int64_t /*tid*/) {}
+ 
+-- 
+2.43.0
+
