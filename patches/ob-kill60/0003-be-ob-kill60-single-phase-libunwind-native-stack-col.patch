@@ -1,4 +1,4 @@
-From 9a7f57b7927ed721cba9b68a1cc0b1b0a24121c9 Mon Sep 17 00:00:00 2001
+From 2a57f712354106c7a1fa0ad328c2abdfc3075ca2 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sun, 31 May 2026 21:24:32 +0800
 Subject: [PATCH 3/4] (be) ob-kill60 single-phase libunwind native stack
@@ -48,14 +48,14 @@ Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103-120
   <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:55-82
   (get_stack_trace_inplace is the unwind loop shape).
 ---
- .../http/action/native_stack_collect.cpp      | 530 +++++++++++++++++-
- 1 file changed, 510 insertions(+), 20 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 536 +++++++++++++++++-
+ 1 file changed, 516 insertions(+), 20 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index d8cc72ae33b..6acfd1c2fa7 100644
+index d8cc72ae33b..6d3e2a2f04b 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,47 +15,537 @@
+@@ -15,47 +15,543 @@
  // specific language governing permissions and limitations
  // under the License.
  
@@ -548,6 +548,12 @@ index d8cc72ae33b..6acfd1c2fa7 100644
 +        out->truncated = slot.truncated;
 +        out->handler_time_ns = slot.handler_ns.load(std::memory_order_relaxed);
 +        out->status = "ok";
++        // Reason: disarm `expected_seq` before releasing the slot to IDLE
++        // so a stale late-handler from this request cannot claim the next
++        // coordinator's PENDING slot through the IDLE -> PENDING -> store(NEW)
++        // window. Mirrors the timeout path below.
++        // Local: codex finding #4 (success path) — symmetric to timeout disarm.
++        slot.expected_seq.store(0, std::memory_order_release);
 +        slot.state.store(SLOT_IDLE, std::memory_order_release);
 +    } else {
 +        slot.expected_seq.store(0, std::memory_order_release);

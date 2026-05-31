@@ -1,4 +1,4 @@
-From fe3a3d86fedd5487b8b948b14aefd1d4ab4670a6 Mon Sep 17 00:00:00 2001
+From f486ab786c0cc5e2d1a0ff40eb2e9134eb13207b Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sat, 30 May 2026 13:38:42 +0800
 Subject: [PATCH 1/2] (be) fp-walk native stack collector
@@ -18,14 +18,14 @@ dl_iterate_phdr, so it never collides with the jemalloc allocator path.
 Reference: docs/phase2-design.md "Variant Mechanics -> fp-walk";
 <ck>/src/Storages/System/StorageSystemStackTrace.cpp.
 ---
- .../http/action/native_stack_collect.cpp      | 546 +++++++++++++++++-
- 1 file changed, 522 insertions(+), 24 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 551 +++++++++++++++++-
+ 1 file changed, 527 insertions(+), 24 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index d8cc72ae33b..dec4c63f17a 100644
+index d8cc72ae33b..eb17950317d 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,48 +15,546 @@
+@@ -15,48 +15,551 @@
  // specific language governing permissions and limitations
  // under the License.
  
@@ -525,7 +525,12 @@ index d8cc72ae33b..dec4c63f17a 100644
 +        out->truncated = slot.truncated;
 +        out->handler_time_ns = slot.handler_ns.load(std::memory_order_relaxed);
 +        out->status = "ok";
-+        // Release the slot back to IDLE for the next coordinator.
++        // Reason: disarm `expected_seq` before releasing the slot to IDLE
++        // so a stale late-handler from this request cannot claim the next
++        // coordinator's PENDING slot through the IDLE -> PENDING -> store(NEW)
++        // window. Mirrors the timeout path below.
++        // Local: codex finding #4 (success path) — symmetric to timeout disarm.
++        slot.expected_seq.store(0, std::memory_order_release);
 +        slot.state.store(SLOT_IDLE, std::memory_order_release);
 +    } else {
 +        slot.expected_seq.store(0, std::memory_order_release);

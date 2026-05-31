@@ -1,6 +1,6 @@
-From 156437b4de45462337ad8649837ed511795116ec Mon Sep 17 00:00:00 2001
+From eb1faf00100cac9cf0bb0366b5880ac23653abc4 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
-Date: Sun, 31 May 2026 20:33:24 +0800
+Date: Sun, 31 May 2026 21:53:26 +0800
 Subject: [PATCH 4/4] (be) ob-kill60 build-system Tier 2 jemalloc rebuild hook
 
 Provide a reusable, opt-in path for swapping the prebuilt thirdparty

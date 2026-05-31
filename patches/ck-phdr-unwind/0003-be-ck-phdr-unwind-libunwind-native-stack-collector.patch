@@ -1,4 +1,4 @@
-From fef2c40bc3e430aae06d913a7aa71b173cf3fb09 Mon Sep 17 00:00:00 2001
+From 6af929f1430af049c3f3066f01e610beb229d7ab Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Sun, 31 May 2026 20:29:22 +0800
 Subject: [PATCH 3/4] (be) ck-phdr-unwind libunwind native stack collector
@@ -32,14 +32,14 @@ MemInfo::init (patch 2), so this is a guard, not the normal path.
 Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp;
 <ck>/base/base/phdr_cache.cpp; <ck>/src/Common/StackTrace.cpp:470-498.
 ---
- .../http/action/native_stack_collect.cpp      | 469 +++++++++++++++++-
- 1 file changed, 449 insertions(+), 20 deletions(-)
+ .../http/action/native_stack_collect.cpp      | 475 +++++++++++++++++-
+ 1 file changed, 455 insertions(+), 20 deletions(-)
 
 diff --git a/be/src/service/http/action/native_stack_collect.cpp b/be/src/service/http/action/native_stack_collect.cpp
-index d8cc72ae33b..2e20dd59f91 100644
+index d8cc72ae33b..3b67c459b08 100644
 --- a/be/src/service/http/action/native_stack_collect.cpp
 +++ b/be/src/service/http/action/native_stack_collect.cpp
-@@ -15,47 +15,476 @@
+@@ -15,47 +15,482 @@
  // specific language governing permissions and limitations
  // under the License.
  
@@ -471,6 +471,12 @@ index d8cc72ae33b..2e20dd59f91 100644
 +        out->truncated = slot.truncated;
 +        out->handler_time_ns = slot.handler_ns.load(std::memory_order_relaxed);
 +        out->status = "ok";
++        // Reason: disarm `expected_seq` before releasing the slot to IDLE
++        // so a stale late-handler from this request cannot claim the next
++        // coordinator's PENDING slot through the IDLE -> PENDING -> store(NEW)
++        // window. Mirrors the timeout path below.
++        // Local: codex finding #4 (success path) — symmetric to timeout disarm.
++        slot.expected_seq.store(0, std::memory_order_release);
 +        slot.state.store(SLOT_IDLE, std::memory_order_release);
 +    } else {
 +        slot.expected_seq.store(0, std::memory_order_release);
