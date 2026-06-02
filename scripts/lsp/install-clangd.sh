@@ -6,14 +6,20 @@
 # into each submodule so clangd can jump-to-def and find-references within the
 # tree without a real build.
 #
+# For doris-master the build IS real (phase2-test produces a host-path
+# compile_commands.json under be/ut_build_ASAN/), but the upstream .clangd
+# only wires that up for be/test/*. We add a symlink at be/compile_commands.json
+# so clangd's walk-up discovery finds the database for the rest of be/.
+#
 # Local: idempotent. The submodule .gitmodules entries use `ignore = untracked`
-# so these files do not appear in `git status`. Re-run after a fresh submodule
-# checkout.
+# or `dirty` so these files do not appear in `git status`. Re-run after a fresh
+# submodule checkout.
 set -euo pipefail
 
 ROOT="${1:-$(git rev-parse --show-toplevel)}"
 OB_DIR="${ROOT}/repos/source/oceanbase-v4.5.0_CE"
 CK_DIR="${ROOT}/repos/source/ClickHouse-v26.3.10.62-lts"
+DORIS_BE_DIR="${ROOT}/repos/source/doris-master/be"
 
 write_ob_clangd() {
   cat >"${OB_DIR}/.clangd" <<EOF
@@ -70,5 +76,15 @@ EOF
   echo "wrote ${CK_DIR}/.clangd"
 }
 
+link_doris_compile_commands() {
+  # Relative target so the link survives if the project root moves. If
+  # ut_build_ASAN/ does not yet exist (no phase2-test run yet), the link
+  # is dangling — clangd silently skips it and starts resolving once a
+  # build populates the file.
+  ln -sfn ut_build_ASAN/compile_commands.json "${DORIS_BE_DIR}/compile_commands.json"
+  echo "linked ${DORIS_BE_DIR}/compile_commands.json -> ut_build_ASAN/compile_commands.json"
+}
+
 [[ -d "${OB_DIR}" ]] && write_ob_clangd || echo "skip: ${OB_DIR} not present"
 [[ -d "${CK_DIR}" ]] && write_ck_clangd || echo "skip: ${CK_DIR} not present"
+[[ -d "${DORIS_BE_DIR}" ]] && link_doris_compile_commands || echo "skip: ${DORIS_BE_DIR} not present"
