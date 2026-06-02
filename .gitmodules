@@ -1,7 +1,7 @@
 [submodule "repos/source/ClickHouse-v26.3.10.62-lts"]
 	path = repos/source/ClickHouse-v26.3.10.62-lts
 	url = https://github.com/ClickHouse/ClickHouse.git
-	ignore = untracked
+	ignore = dirty
 
 [submodule "repos/source/oceanbase-v4.5.0_CE"]
 	path = repos/source/oceanbase-v4.5.0_CE
