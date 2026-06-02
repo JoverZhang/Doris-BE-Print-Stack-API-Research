@@ -10,16 +10,11 @@ repos-sync:
 repos-check:
     ./scripts/validate_repos.sh
 
-# Set up clangd LSP for every tree under repos/source/.
-repos-lsp: repos-lsp-static repos-lsp-doris
-
 # Install static .clangd into repos/source/{oceanbase,ClickHouse}.
-repos-lsp-static:
+# (Doris LSP is a side effect of `just phase2-test <variant>`, which writes
+# be/ut_build_ASAN/compile_commands.json with host paths inside the submodule.)
+repos-lsp:
     ./scripts/lsp/install-clangd.sh "{{justfile_directory()}}"
-
-# Regenerate doris-master compile_commands via in-container cmake configure.
-repos-lsp-doris:
-    @./scripts/in-container ./scripts/lsp/build-doris.sh
 
 # Bootstrap the phase2/* branch stack in repos/source/doris-master from patches/.
 phase2-bootstrap:
