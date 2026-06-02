@@ -13,5 +13,6 @@ exec podman run --rm \
     -w "${ROOT}" \
     -e DORIS_THIRDPARTY=/var/local/thirdparty \
     -e PROJECT_ROOT="${ROOT}" \
+    -e BUILD_TYPE_UT="${BUILD_TYPE_UT:-}" \
     docker.io/apache/doris:build-env-ldb-toolchain-latest \
     bash "$@"

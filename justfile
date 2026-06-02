@@ -25,8 +25,29 @@ phase2-teardown:
     @./scripts/in-container ./scripts/phase2/teardown.sh
 
 # Switch to phase2/<variant> and run NativeStackActionTest in the container.
+# Uses Doris's default ASAN UT build (be/ut_build_ASAN). Sibling recipes
+# below run the same suite under RELEASE and TSAN.
 phase2-test variant:
     @./scripts/in-container ./scripts/phase2/test.sh "{{variant}}"
+
+# Same as phase2-test but with cmake RELEASE flags (-O3 -DNDEBUG, no ASan).
+# Build lands at be/ut_build_RELEASE; production codegen check for fp-walk.
+phase2-test-release variant:
+    @BUILD_TYPE_UT=RELEASE ./scripts/in-container ./scripts/phase2/test.sh "{{variant}}"
+
+# Same as phase2-test but with ThreadSanitizer (-O1 -fsanitize=thread).
+# Build lands at be/ut_build_TSAN; best-effort, signal-handler/atomic
+# instrumentation may flag or block (see docs/phase2-test-plan.md).
+phase2-test-tsan variant:
+    @BUILD_TYPE_UT=TSAN ./scripts/in-container ./scripts/phase2/test.sh "{{variant}}"
+
+# Run the suite under all three build types (ASAN, RELEASE, TSAN) in
+# sequence on the same variant branch. Each mode uses its own sibling
+# build dir, so this only re-runs cmake/ninja per mode, not the others.
+phase2-test-all variant:
+    @just phase2-test "{{variant}}"
+    @just phase2-test-release "{{variant}}"
+    @just phase2-test-tsan "{{variant}}"
 
 # Round-trip verify: tree(phase2/<variant>) == tree(re-apply patches at DORIS_BASE).
 phase2-verify variant:

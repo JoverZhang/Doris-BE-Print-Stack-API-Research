@@ -15,8 +15,13 @@ assert_clean_worktree "$DORIS_REPO"
 git -C "$DORIS_REPO" switch "phase2/$variant"
 
 # 3. Build and run the suite. run-be-ut.sh lives at the doris-master root.
+# BUILD_TYPE_UT picks the cmake build type and the parallel build dir
+# (be/ut_build_${BUILD_TYPE_UT}); empty falls back to run-be-ut.sh's
+# default ASAN. Supported: ASAN, RELEASE, TSAN, DEBUG, UBSAN, LSAN.
 # The filter catches both the common `NativeStackActionTest` suite and per-
 # variant suites named `<Variant>NativeStackActionTest` (e.g. `FpWalk…`),
 # whose fixtures cannot share a class with common's at file scope.
+build_type="${BUILD_TYPE_UT:-ASAN}"
+echo "phase2-test: variant=${variant} build_type=${build_type}"
 cd "$DORIS_REPO"
 ./run-be-ut.sh --run --filter="*NativeStackActionTest.*" -j "$(nproc)"

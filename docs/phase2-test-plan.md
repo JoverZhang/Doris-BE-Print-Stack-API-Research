@@ -120,8 +120,51 @@ git's `.git` pointers (worktree and submodules) resolve the same way on both
 sides — no PATH shim is needed. `DORIS_THIRDPARTY=/var/local/thirdparty` reuses
 the image's prebuilt thirdparty; it is never rebuilt.
 
-The ASan UT build already enables `-fno-omit-frame-pointer`, so fp-walk needs no
-build-flag patch.
+`be/CMakeLists.txt` puts `-fno-omit-frame-pointer` in the global
+`add_compile_options()`, so fp-walk's RBP walk works under every build type
+without a patch.
+
+## Build matrix
+
+`run-be-ut.sh` reads `BUILD_TYPE_UT` and forwards it as `CMAKE_BUILD_TYPE`,
+auto-deriving `be/ut_build_${BUILD_TYPE_UT}` as the parallel build dir. Three
+modes are wired into the justfile:
+
+```
+just phase2-test-release <variant>   # -O3 -DNDEBUG, no sanitizer
+just phase2-test-tsan    <variant>   # -O1 -fsanitize=thread
+just phase2-test-all     <variant>   # ASAN, RELEASE, TSAN in sequence
+```
+
+| Mode | Flags (`be/CMakeLists.txt`) | Build dir | What it catches that ASan misses |
+| --- | --- | --- | --- |
+| ASAN (default) | `-O0 -fsanitize=address` (`ASAN_UT`, L458) | `ut_build_ASAN` | memory bugs in the collector itself |
+| RELEASE | `-O3 -DNDEBUG` (L450) | `ut_build_RELEASE` | inlining-induced chain-shape drift, frame-pointer reliance under optimization, prod codegen |
+| TSAN | `-O1 -fsanitize=thread` (L468) | `ut_build_TSAN` | concurrent writes to the per-sequence ring slot; Tier 2's "late-handler race under TSan" |
+
+The patches are not `#ifdef`-gated by build type. Test fixtures use
+`__attribute__((noinline))` and trailing `asm volatile("")` on every recorded
+chain level, and `volatile int sink` in spin loops, so `-O3` cannot collapse
+the call boundaries the chain-match assertions depend on. Implementation
+atomics use explicit `memory_order_*`, which TSAN instruments without
+behavior change. RELEASE on this Doris pin requires an upstream link fix
+(`patches/common/0000-upstream-drop-inline-from-SegmentWriter-_is_mow-defs.patch`,
+applied first so the design patches build on top of it): the upstream
+header declares two `SegmentWriter` members non-inline but the .cpp
+defines them with `inline`, which `-O0` masks and `-O3` exposes as
+undefined-symbol link errors against the test subclass. The patch removes
+the keyword; no semantic change. Expect to treat TSAN as best-effort (its
+atomic instrumentation is not guaranteed async-signal-safe inside our
+signal handler).
+
+Baseline timings observed under fp-walk:
+
+| Case | ASAN (`-O0`) | RELEASE (`-O3`) |
+| --- | --- | --- |
+| Full suite (17 tests) | ~1100 ms | 1136 ms |
+| `DumpLoopNoCrashNoStuck` | ~933 ms | 852 ms |
+| `LateHandlerCannotCorruptNextDumpUnderLoad` | ~131 ms | 129 ms |
+| `DeadlineGuardSkipsExpiredSignaling` | ~80 ms | 80 ms |
 
 ## Tier 2 (deferred, not in this file)
 

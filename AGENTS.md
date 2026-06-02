@@ -39,6 +39,11 @@ Do this:
   minutes for submodule init.
 - Run `just phase2-test <variant>` to switch, build, and run the
   NativeStackActionTest suite. `<variant>` is `common`, `fp-walk`, etc.
+- Run `just phase2-test-release <variant>` or `just phase2-test-tsan
+  <variant>` to run the same suite under RELEASE (`-O3 -DNDEBUG`) or
+  TSAN (`-O1 -fsanitize=thread`). Each mode uses its own sibling build
+  dir (`be/ut_build_{RELEASE,TSAN}`). `just phase2-test-all <variant>`
+  runs all three modes in sequence.
 - Run `just phase2-verify <variant>` to confirm `patches/<variant>`
   round-trips against the branch.
 - Run `just phase2-export [variant]` after committing on a branch to
