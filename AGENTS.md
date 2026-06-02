@@ -27,15 +27,16 @@ tests pass under the acceptance doc.
 
 ## Phase 2 Workflow
 
-`patches/` is the source of truth for review. The single worktree
-`.worktree/phase2` holds the applied state on branches `phase2/base`,
-`phase2/common`, and `phase2/<variant>`. All git and build operations run
-inside the build container; never invoke them on the host.
+`patches/` is the source of truth for review. The `repos/source/doris-master`
+submodule holds the applied state on branches `phase2/base`, `phase2/common`,
+and `phase2/<variant>`. All git and build operations run inside the build
+container; never invoke them on the host.
 
 Do this:
 
-- Run `just phase2-bootstrap` on first setup to create `.worktree/phase2` and
-  the branch stack from `patches/`. Cold cost: a few minutes for submodule init.
+- Run `just phase2-bootstrap` on first setup to create the phase2/* branch
+  stack in `repos/source/doris-master` from `patches/`. Cold cost: a few
+  minutes for submodule init.
 - Run `just phase2-test <variant>` to switch, build, and run the
   NativeStackActionTest suite. `<variant>` is `common`, `fp-walk`, etc.
 - Run `just phase2-verify <variant>` to confirm `patches/<variant>`

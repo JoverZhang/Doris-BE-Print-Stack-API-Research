@@ -99,8 +99,8 @@ Cases worth adding once the baseline is green:
 
 ## The recipe
 
-`just phase2-test <variant>` switches `.worktree/phase2` to `phase2/<variant>`,
-then builds and runs the tests in the build-env image
+`just phase2-test <variant>` switches `repos/source/doris-master` to
+`phase2/<variant>`, then builds and runs the tests in the build-env image
 (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```

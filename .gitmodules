@@ -15,4 +15,4 @@
 [submodule "repos/source/doris-master"]
 	path = repos/source/doris-master
 	url = https://github.com/apache/doris.git
-	ignore = untracked
+	ignore = dirty

@@ -8,15 +8,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 variant="${1:?usage: test.sh <variant>}"
 
-# 1. Refuse on dirty worktree; a switch would corrupt state.
-assert_clean_worktree "$WORKTREE"
+# 1. Refuse on a dirty tree; a switch would corrupt state.
+assert_clean_worktree "$DORIS_REPO"
 
 # 2. Switch to the variant branch.
-git -C "$WORKTREE" switch "phase2/$variant"
+git -C "$DORIS_REPO" switch "phase2/$variant"
 
-# 3. Build and run the suite. run-be-ut.sh lives at the worktree root.
+# 3. Build and run the suite. run-be-ut.sh lives at the doris-master root.
 # The filter catches both the common `NativeStackActionTest` suite and per-
 # variant suites named `<Variant>NativeStackActionTest` (e.g. `FpWalk…`),
 # whose fixtures cannot share a class with common's at file scope.
-cd "$WORKTREE"
+cd "$DORIS_REPO"
 ./run-be-ut.sh --run --filter="*NativeStackActionTest.*" -j "$(nproc)"

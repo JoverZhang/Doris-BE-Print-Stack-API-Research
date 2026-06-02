@@ -19,7 +19,6 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
 fi
 
 DORIS_REPO="${PROJECT_ROOT}/repos/source/doris-master"
-WORKTREE="${PROJECT_ROOT}/.worktree/phase2"
 
 # Reason: every git op inside this submodule's worktree needs a committer
 # identity for git am. The values are local-only; produced commits never

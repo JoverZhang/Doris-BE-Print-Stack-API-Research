@@ -21,11 +21,11 @@ repos-lsp-static:
 repos-lsp-doris:
     @./scripts/in-container ./scripts/lsp/build-doris.sh
 
-# Bootstrap the .worktree/phase2 stack from patches/.
+# Bootstrap the phase2/* branch stack in repos/source/doris-master from patches/.
 phase2-bootstrap:
     @./scripts/in-container ./scripts/phase2/bootstrap.sh
 
-# Remove the worktree and every phase2/* branch.
+# Remove every phase2/* branch from repos/source/doris-master.
 phase2-teardown:
     @./scripts/in-container ./scripts/phase2/teardown.sh
 
@@ -49,11 +49,11 @@ phase2-rebase-all:
 phase2-status:
     @./scripts/in-container ./scripts/phase2/status.sh
 
-# Drop into bash inside the build container, cwd at the worktree.
+# Drop into bash inside the build container, cwd at the doris-master submodule.
 phase2-shell:
     @podman run --rm -it \
         -v "{{justfile_directory()}}:{{justfile_directory()}}" \
-        -w "{{justfile_directory()}}/.worktree/phase2" \
+        -w "{{justfile_directory()}}/repos/source/doris-master" \
         -e DORIS_THIRDPARTY=/var/local/thirdparty \
         docker.io/apache/doris:build-env-ldb-toolchain-latest \
         bash
@@ -63,7 +63,7 @@ phase2-shell-host host_port='8040':
     @podman run --rm -it \
         -p "127.0.0.1:{{host_port}}:8040" \
         -v "{{justfile_directory()}}:{{justfile_directory()}}" \
-        -w "{{justfile_directory()}}/.worktree/phase2" \
+        -w "{{justfile_directory()}}/repos/source/doris-master" \
         -e DORIS_THIRDPARTY=/var/local/thirdparty \
         docker.io/apache/doris:build-env-ldb-toolchain-latest \
         bash

@@ -8,12 +8,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 variant="${1:-}"
 
-# 1. Refuse on dirty worktree.
-assert_clean_worktree "$WORKTREE"
+# 1. Refuse on a dirty tree.
+assert_clean_worktree "$DORIS_REPO"
 
 # 2. Regenerate patches/common from phase2/base..phase2/common.
 rm -f "$PROJECT_ROOT/patches/common/"*.patch
-git -C "$WORKTREE" format-patch \
+git -C "$DORIS_REPO" format-patch \
     --output-directory "$PROJECT_ROOT/patches/common/" \
     phase2/base..phase2/common >/dev/null
 
@@ -28,7 +28,7 @@ for v in $targets; do
         continue
     fi
     rm -f "$PROJECT_ROOT/patches/$v/"*.patch
-    git -C "$WORKTREE" format-patch \
+    git -C "$DORIS_REPO" format-patch \
         --output-directory "$PROJECT_ROOT/patches/$v/" \
         "phase2/common..phase2/$v" >/dev/null
 done

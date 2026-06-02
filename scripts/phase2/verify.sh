@@ -9,7 +9,7 @@ variant="${1:?usage: verify.sh <variant>}"
 verify_dir="$PROJECT_ROOT/.tmp/verify-$variant"
 
 # 1. VTREE = tree of the working branch.
-vtree=$(git -C "$WORKTREE" rev-parse "phase2/$variant^{tree}")
+vtree=$(git -C "$DORIS_REPO" rev-parse "phase2/$variant^{tree}")
 
 # 2. Cleanup any stale verify worktree before creating a fresh one.
 cleanup_worktree "$verify_dir"

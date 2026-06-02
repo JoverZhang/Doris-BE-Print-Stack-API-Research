@@ -7,11 +7,7 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-# 1. Refuse if the worktree or any phase2/* branch already exists.
-if [[ -d "$WORKTREE" ]]; then
-    echo "error: $WORKTREE already exists; run phase2-teardown first" >&2
-    exit 1
-fi
+# 1. Refuse if any phase2/* branch already exists.
 if git -C "$DORIS_REPO" show-ref --verify --quiet refs/heads/phase2/base; then
     echo "error: phase2/* branches already exist in $DORIS_REPO" >&2
     exit 1
@@ -20,38 +16,37 @@ fi
 # 2. Make sure the submodule has a committer identity for git am.
 ensure_git_identity "$DORIS_REPO"
 
-# 3. Create the worktree on a new phase2/base branch at DORIS_BASE.
-git -C "$DORIS_REPO" worktree add -b phase2/base "$WORKTREE" "$DORIS_BASE"
+# 3. Create phase2/base at DORIS_BASE and switch to it.
+git -C "$DORIS_REPO" switch -c phase2/base "$DORIS_BASE"
 
-# 4. Initialize submodules in the worktree. Doris build needs contrib/faiss,
-#    contrib/openblas, and others; a fresh worktree starts with them empty.
-#    Recursive so nested submodules (e.g. apache-orc) check out too.
+# 4. Initialize submodules so the build has contrib/faiss, contrib/openblas,
+#    and others. Recursive so nested submodules (e.g. apache-orc) check out too.
 echo "initializing submodules (may take a few minutes on cold cache)..."
-git -C "$WORKTREE" submodule update --init --recursive
+git -C "$DORIS_REPO" submodule update --init --recursive
 
 # 5. Create phase2/common; apply patches/common/*.patch strictly.
-git -C "$WORKTREE" switch -c phase2/common
-git -C "$WORKTREE" am "$PROJECT_ROOT/patches/common/"*.patch
+git -C "$DORIS_REPO" switch -c phase2/common
+git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/common/"*.patch
 
 # 6. For each variant: branch from phase2/common; try to apply. On failure
 #    abort cleanly so the next variant can still run.
 clean=()
 broken=()
 for v in $VARIANTS; do
-    git -C "$WORKTREE" switch phase2/common
-    git -C "$WORKTREE" switch -c "phase2/$v"
-    if git -C "$WORKTREE" am "$PROJECT_ROOT/patches/$v/"*.patch; then
+    git -C "$DORIS_REPO" switch phase2/common
+    git -C "$DORIS_REPO" switch -c "phase2/$v"
+    if git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/$v/"*.patch; then
         clean+=("$v")
     else
-        git -C "$WORKTREE" am --abort 2>/dev/null || true
-        git -C "$WORKTREE" switch phase2/common
-        git -C "$WORKTREE" branch -D "phase2/$v"
+        git -C "$DORIS_REPO" am --abort 2>/dev/null || true
+        git -C "$DORIS_REPO" switch phase2/common
+        git -C "$DORIS_REPO" branch -D "phase2/$v"
         broken+=("$v")
     fi
 done
 
 # 7. Leave on phase2/common as the natural default.
-git -C "$WORKTREE" switch phase2/common
+git -C "$DORIS_REPO" switch phase2/common
 
 echo
 echo "bootstrap summary:"
@@ -60,7 +55,7 @@ if [[ ${#broken[@]} -gt 0 ]]; then
     echo "  broken:  ${broken[*]}"
     echo
     echo "broken variants need patch regeneration. Investigate with:"
-    echo "  cd $WORKTREE && git am --3way \"$PROJECT_ROOT/patches/<v>/\"*.patch"
+    echo "  cd $DORIS_REPO && git am --3way \"$PROJECT_ROOT/patches/<v>/\"*.patch"
 else
     echo "  broken:  none"
 fi
