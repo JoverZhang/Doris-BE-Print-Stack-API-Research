@@ -12,8 +12,11 @@ variant="${1:-}"
 assert_clean_worktree "$DORIS_REPO"
 
 # 2. Regenerate patches/common from phase2/base..phase2/common.
+#    --start-number 0 reserves 0000- for upstream/pre-design workaround
+#    patches; the stack-collection design patches start at 0001-.
 rm -f "$PROJECT_ROOT/patches/common/"*.patch
 git -C "$DORIS_REPO" format-patch \
+    --start-number 0 \
     --output-directory "$PROJECT_ROOT/patches/common/" \
     phase2/base..phase2/common >/dev/null
 

@@ -1,0 +1,46 @@
+From a30ffdd87f49df8daf5c2a430dba229a59ac7e4e Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Tue, 2 Jun 2026 11:48:07 +0000
+Subject: [PATCH 0/5] upstream: drop inline from SegmentWriter::_is_mow defs
+
+UPSTREAM WORKAROUND, not part of the stack-collection design.
+
+be/src/storage/segment/segment_writer.h declares _is_mow() and
+_is_mow_with_cluster_key() as plain (non-inline) member functions; the
+definitions in segment_writer.cpp were marked inline. Under -O0 (ASAN_UT)
+the compiler emits the symbols anyway, so external callers (the test
+subclass in be/test/storage/segment/test_segment_writer.h) link fine.
+Under -O3 (RELEASE) the compiler elides the standalone symbol and the
+test binary fails to link with:
+
+  ld.lld: error: undefined symbol: doris::segment_v2::SegmentWriter::_is_mow()
+  ld.lld: error: undefined symbol: doris::segment_v2::SegmentWriter::_is_mow_with_cluster_key()
+
+The fix is to remove the inline keyword from the two out-of-line
+definitions. No semantic change in any build mode. Carry this on
+phase2/common so RELEASE and TSAN UT builds can link.
+---
+ be/src/storage/segment/segment_writer.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/be/src/storage/segment/segment_writer.cpp b/be/src/storage/segment/segment_writer.cpp
+index 917777f24eb..b5f3e2d5b4d 100644
+--- a/be/src/storage/segment/segment_writer.cpp
++++ b/be/src/storage/segment/segment_writer.cpp
+@@ -1252,11 +1252,11 @@ Status SegmentWriter::_generate_short_key_index(std::vector<IOlapColumnDataAcces
+     return Status::OK();
+ }
+ 
+-inline bool SegmentWriter::_is_mow() {
++bool SegmentWriter::_is_mow() {
+     return _tablet_schema->keys_type() == UNIQUE_KEYS && _opts.enable_unique_key_merge_on_write;
+ }
+ 
+-inline bool SegmentWriter::_is_mow_with_cluster_key() {
++bool SegmentWriter::_is_mow_with_cluster_key() {
+     return _is_mow() && !_tablet_schema->cluster_key_uids().empty();
+ }
+ 
+-- 
+2.43.0
+
