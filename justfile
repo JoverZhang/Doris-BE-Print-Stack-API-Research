@@ -47,9 +47,12 @@ phase2-shell:
         docker.io/apache/doris:build-env-ldb-toolchain-latest \
         bash
 
-validate:
-    just repos-check
-    just phase1 validate
-
-phase1 *args:
-    @just --justfile archive/phase1/justfile "$@"
+# Drop into the build container and expose BE HTTP on host localhost.
+phase2-shell-host host_port='8040':
+    @podman run --rm -it \
+        -p "127.0.0.1:{{host_port}}:8040" \
+        -v "{{justfile_directory()}}:{{justfile_directory()}}" \
+        -w "{{justfile_directory()}}/.worktree/phase2" \
+        -e DORIS_THIRDPARTY=/var/local/thirdparty \
+        docker.io/apache/doris:build-env-ldb-toolchain-latest \
+        bash
