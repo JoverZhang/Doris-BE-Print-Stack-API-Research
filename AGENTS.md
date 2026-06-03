@@ -12,10 +12,12 @@ The Phase 2 spec is split by owner:
 
 - [docs/phase2-charter.md](docs/phase2-charter.md): goal and constraints.
   Human-owned.
-- [docs/phase2-acceptance.md](docs/phase2-acceptance.md): pass/fail gates.
-  Human-owned.
-- [docs/phase2-design.md](docs/phase2-design.md): API and variant mechanics.
-  Agent-owned. Keep it in sync with the patches.
+- [docs/phase2-acceptance.md](docs/phase2-acceptance.md): baseline gate and
+  work checklist. Human-owned Gate; agent-owned checklist.
+- [docs/architecture.md](docs/architecture.md): variant-agnostic contract
+  and structure for the print_stack API. Agent-owned.
+- [docs/phase2-test-plan.md](docs/phase2-test-plan.md): the three CK-shape
+  test cases for the fp-walk baseline. Agent-owned.
 
 Do not edit the human-owned files. If a human-owned file seems wrong, stop and
 report instead of changing it.

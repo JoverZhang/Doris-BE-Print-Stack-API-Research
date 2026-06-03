@@ -155,8 +155,8 @@ comments for body beats. The case number cross-references
 // Reason: [case 1] catches drift in the JSON contract. Required keys are
 // present. No symbol-like keys leak. Frames carry only dso and
 // dso_offset.
-TEST_F(PrintStackActionTest, SerializeClickHouseLikeShape) {
-    // 1. Run the full pipeline.
+TEST_F(PrintStackActionTest, ContractJsonShape) {
+    // 1. Issue GET /api/print_stack and parse the JSON body.
     ...
 
     // 2. Required root and thread keys are present.

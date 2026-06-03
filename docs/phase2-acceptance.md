@@ -1,120 +1,103 @@
-# Doris BE Stack Collection Acceptance
+# Phase 2 Baseline Acceptance — fp-walk
 
-> Owner: human. Frozen spec.
-> Agents must not edit this file. If it seems wrong, stop and report.
+> Owner: human for the Gate; agent updates the work checklist as patches land.
+> Follow [writing-guidelines.md](writing-guidelines.md) when you edit this file.
+> Scope: fp-walk only. The other three variants stay frozen this phase.
+> Append-only. Tick boxes as work lands. Add notes below. Do not delete past
+> entries.
 
-## Rule
+## Gate
 
-A variant is accepted when a command proves it, not when a document describes it.
+The baseline is accepted when all three commands return green from the base
+commit `c24d454f15cee2d937ef4749270a3ecb449eafe6`:
 
-The baseline gate is one command. It runs from the base commit, applies the
-patches, builds `doris_be`, and runs the variant tests. A green run is the only
-proof that counts.
+- [ ] `just phase2-test new-ut fp-walk asan "*"`
+- [ ] `just phase2-test new-ut fp-walk release "*"`
+- [ ] `just phase2-test new-ut fp-walk tsan "*"`
 
-A variant without a `tests-` patch in `patches/common/` cannot pass.
+The three cases that must run green are defined in
+[phase2-test-plan.md](phase2-test-plan.md).
 
-## Tiers
+## Work to reach the gate
 
-Acceptance has two tiers this phase. Both are commands. The baseline is Tier 1
-alone.
+Other variants (`ck-phdr-unwind`, `ob-kill60`, `snapshot-remote-unwind`) are
+out of scope. Their existing patches stay frozen.
 
-- Tier 1: correctness. Fast in-process tests. This is the baseline gate.
-- Tier 2: compatibility. The same tests under jemalloc profiling and
-  address-space churn. Required before any production claim.
+The patch series follows the layers in [architecture.md](architecture.md).
+One patch per logical change; split or merge as needed for review.
 
-Handler async-signal-safety is deferred to the next phase. See "Deferred to the
-next phase" below.
+### patches/common/
 
-## Tier 1: Correctness (Baseline Gate)
+- [ ] `0000-upstream-drop-inline-from-SegmentWriter-_is_mow-defs.patch`
+      Upstream link fix needed for RELEASE. Already present; no rewrite.
+- [ ] `0001-be-add-print-stack-types-and-process-startup.patch`
+      Layer 1. `print_stack.h`, `print_stack_globals.h`,
+      `print_stack_init.cpp`. `main()` calls `print_stack_init()`.
+- [ ] `0002-be-add-print-stack-coordinator-and-handler.patch`
+      Layer 3 + 4. `print_stack.cpp`, `print_stack_signal_handler.cpp`,
+      `print_stack_capture.h` (declaration only).
+- [ ] `0003-be-add-print-stack-http-action.patch`
+      Layer 2 + 5. `print_stack_action.{h,cpp}`. Parser, serializer,
+      `handle`.
+- [ ] `0004-be-register-print-stack-http-route.patch`
+      Route `/api/print_stack`.
+- [ ] `0005-be-add-print-stack-action-tests.patch`
+      Three cases per [phase2-test-plan.md](phase2-test-plan.md). Fixture
+      runs `EvHttpServer` on port 0 and uses `HttpClient`.
 
-Run one command. Example: `just phase2-test new-ut <variant> asan '*'`.
+### patches/fp-walk/
 
-It must:
+- [ ] `0001-be-add-fp-walk-capture-into-slot.patch`
+      Layer 3d. `capture_into_slot` definition. Signal-safe RBP walk.
+      `mincore` guard.
 
-1. Apply `patches/common/*` and `patches/<variant>/*` from the base commit.
-2. Build `doris_be` and the test target.
-3. Run `be/test/service/http/print_stack_action_test`.
+No fp-walk-specific test patch this phase. The capture is exercised through
+the three common cases.
 
-The test binary spawns its own known-stack threads and dumps itself. It needs no
-FE, no cluster, and no Docker runtime.
+## Dev workflow
 
-Contract checks:
+The recommended flow when implementing the patches above:
 
-- All-thread dump returns the agreed JSON shape: root `threads`; per thread
-  `thread_id`, `thread_name`, and `trace`; per frame `dso` and `dso_offset`.
-- One-`thread_id` dump returns only the target thread.
-- Two concurrent dumps serialize: the second blocks until the first
-  completes; neither corrupts the other. Contention is not visible in the
-  public response.
-- Each thread has a bounded wait. A thread that does not respond within the
-  bound carries internal `ThreadStackStatus::Timeout`; its public `trace` is
-  empty. The process stays healthy.
-- An absent `thread_id` returns an empty `threads` array.
-- Every frame has `dso` and `dso_offset` only.
-- No response has a function name, file name, line number, raw PC, or
-  demangled name.
+1. `just phase2-bootstrap fp-walk` to land the current `patches/` on
+   `phase2/fp-walk`.
+2. `just phase2-shell` to enter the build container.
+3. Edit code on the `phase2/fp-walk` branch (or `phase2/common` for shared
+   code). Run BE UT manually inside the container.
+4. Commit on the right branch.
+5. `just phase2-export` to regenerate `patches/`.
+6. `just phase2-reset` then `just phase2-bootstrap fp-walk` to confirm the
+   patches re-apply on a clean tree.
+7. Run the three gate commands.
 
-Correctness checks, in-process:
+`patches/` is the source of truth for review.
 
-- Each active spawned thread returns at least one frame with non-empty `dso`
-  and non-zero `dso_offset`.
-- A known-stack thread returns the expected function chain after offline
-  symbolization against the test binary.
-- A stack deeper than `kMaxSignalFrames` is capped at the slot's frame array
-  length. The cap is an internal contract; the public JSON has no `truncated`
-  field.
+## References
 
-Stability check:
+Implementer entry points into the upstream sources:
 
-- A dump loop of N iterations causes no crash, no deadlock, and no stuck thread.
-- A thread that runs the handler after the deadline does not corrupt a later
-  dump. The stale response is dropped.
+- [`.mira/steps/clickhouse-system-stack-trace.mira.step`](../.mira/steps/clickhouse-system-stack-trace.mira.step):
+  trace of the ClickHouse `system.stack_trace` path. Use it to find the
+  layer-3 protocol code paths cited in `architecture.md` Reference lines.
+- [`.mira/steps/oceanbase-kill60-stack-trace.mira.step`](../.mira/steps/oceanbase-kill60-stack-trace.mira.step):
+  trace of the OceanBase kill-60 collection path. Background only; OB is
+  not in baseline scope.
 
-## Tier 2: Compatibility
+The Doris HTTP integration test pattern to copy is
+`be/test/service/http/http_client_test.cpp` (real `EvHttpServer` +
+`HttpClient`).
 
-Run the same kind of test under the conditions that break these designs.
-Scripted and replayable. One process or one BE. No cluster, no FE. Not part of
-the baseline.
+## Verification
 
-The shared risk is the allocator. Doris BE runs jemalloc. With profiling on,
-allocation paths hold internal locks and take their own backtraces through
-`dl_iterate_phdr`. A handler that also unwinds can deadlock against that path.
-This tier proves a variant survives it. The design doc explains the mechanism.
+Run from a clean tree, in order:
 
-Required gates. A variant cannot be production-recommended if one fails:
+- [ ] `just phase2-test new-ut fp-walk asan "*"` → green.
+- [ ] `just phase2-test new-ut fp-walk release "*"` → green.
+- [ ] `just phase2-test new-ut fp-walk tsan "*"` → green.
 
-- jemalloc profiling on, then off. The key gate. The collector must survive a
-  dump loop with profiling on. The variants that unwind in the handler carry the
-  risk and must show their mitigation works. `fp-walk` uses no libunwind, so it
-  should pass without one.
-- Allocation pressure during the dump loop.
-- High-rate thread create and exit churn.
-- Controlled `dlopen` and `dlclose` churn.
+## Log
 
-## Deferred to the next phase
+Append progress, blockers, and decisions below. Do not delete past entries.
 
-Handler async-signal-safety. The handler must not allocate memory, take locks,
-call libunwind, call symbolization, log, or inspect the loader.
-
-This cannot be a green test. A passing test proves good behavior on the paths it
-ran. It says nothing about a path it did not run. The proof is code review
-against the list above, plus a TSan or ASan run of the dump loop.
-
-The risk lives in the variants that unwind in the handler, which this phase does
-not evaluate. `fp-walk` does none of those operations, so its handler is
-low-risk. The review moves to the phase that evaluates the libunwind variants.
-
-## Verdicts
-
-- `baseline-pass`: Tier 1 is green.
-- `production-pass`: Tier 1 and Tier 2 are green.
-- `hold`: a required check is skipped, flaky, or unmeasured.
-- `fail`: a crash, deadlock, stuck worker, corrupt frame, or no useful frames.
-
-A skipped Tier 1 check, or a skipped required Tier 2 gate, blocks the production
-claim. `production-pass` is this phase's bar. A real production ship also needs
-the deferred async-signal-safety review.
-
----
-
-These docs follow [writing-guidelines.md](writing-guidelines.md).
+- 2026-06-04: file created. Prior spec is in `archive/phase2-spec/`. The
+  contract is `architecture.md`. Test scope is three CK-shape cases. No
+  patches rewritten yet.

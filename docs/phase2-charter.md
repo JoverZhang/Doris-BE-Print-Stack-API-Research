@@ -3,8 +3,8 @@
 > Owner: human. Frozen spec.
 > Agents must not edit this file. If it seems wrong, stop and report.
 > This file holds the goal and the constraints. Gates live in
-> [phase2-acceptance.md](phase2-acceptance.md). Mechanics live in
-> [phase2-design.md](phase2-design.md).
+> [phase2-acceptance.md](phase2-acceptance.md). The contract and structure
+> live in [architecture.md](architecture.md).
 
 ## Goal
 
@@ -87,10 +87,12 @@ See [AGENTS.md](../AGENTS.md) for the patch-first workflow.
 
 ## Related Documents
 
-- [phase2-acceptance.md](phase2-acceptance.md): pass/fail gates. Human-owned.
+- [phase2-acceptance.md](phase2-acceptance.md): baseline gate and work
+  checklist. Human-owned Gate; agent-owned checklist.
 - [architecture.md](architecture.md): variant-agnostic contract and structure
   for the print_stack API. Agent-owned.
-- [phase2-design.md](phase2-design.md): variant mechanics. Agent-owned.
+- [phase2-test-plan.md](phase2-test-plan.md): three CK-shape test cases for
+  the fp-walk baseline. Agent-owned.
 - [writing-guidelines.md](writing-guidelines.md): house style for these docs.
 - [../evidence/phase2/subagent-brief-template.md](../evidence/phase2/subagent-brief-template.md):
   per-variant dispatch brief. Agent-owned.
