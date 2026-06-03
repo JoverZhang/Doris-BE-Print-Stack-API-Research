@@ -1,0 +1,337 @@
+From a2b7df499dc261b5de0f990198fa94c6ecc06e7b Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 4 Jun 2026 01:44:19 +0800
+Subject: [PATCH 2/2] phase2/common: add print_stack action tests (3 cases)
+
+PrintStackActionTest fixture:
+- SetUpTestCase: EvHttpServer(0), register PrintStackAction on
+  /api/print_stack, start, record real port, call print_stack_init(),
+  start one parked marker thread.
+- TearDownTestCase: stop marker, delete server + action.
+
+Cases (mirror CK system.stack_trace regressions):
+- ContractJsonShape: GET /api/print_stack; required keys threads
+  per row (thread_id int64, thread_name string, trace array) and per
+  frame (dso string, dso_offset string); forbidden keys nowhere
+  (pc/status/collector/timeout_ms/max_frames/target_tid/truncated/
+  function/file/line/symbol/demangled).
+- ThreadIdSelector: self-tid returns one row; absent tid returns
+  empty threads array.
+- BestEffortFrameObserved: 100-attempt loop against the marker tid;
+  break when one frame's dso contains 'doris_be_test' and dso_offset
+  != "0x0". Asserts at least one success.
+
+Spec: docs/phase2-test-plan.md, docs/architecture.md.
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ .../http/action/print_stack_action.cpp        |   2 +-
+ .../service/http/action/print_stack_action.h  |   3 -
+ .../service/http/print_stack_action_test.cpp  | 268 ++++++++++++++++++
+ 3 files changed, 269 insertions(+), 4 deletions(-)
+ create mode 100644 be/test/service/http/print_stack_action_test.cpp
+
+diff --git a/be/src/service/http/action/print_stack_action.cpp b/be/src/service/http/action/print_stack_action.cpp
+index 8f08112d7e6..8df968bc8a0 100644
+--- a/be/src/service/http/action/print_stack_action.cpp
++++ b/be/src/service/http/action/print_stack_action.cpp
+@@ -82,7 +82,7 @@ std::string serialize_print_stack_result(const PrintStackResult& result) {
+ 
+ } // namespace
+ 
+-PrintStackAction::PrintStackAction(ExecEnv* exec_env) : _exec_env(exec_env) {}
++PrintStackAction::PrintStackAction(ExecEnv* /*exec_env*/) {}
+ 
+ void PrintStackAction::handle(HttpRequest* req) {
+     PrintStackOptions options;
+diff --git a/be/src/service/http/action/print_stack_action.h b/be/src/service/http/action/print_stack_action.h
+index 5b67d0ea1ec..9374dbecac9 100644
+--- a/be/src/service/http/action/print_stack_action.h
++++ b/be/src/service/http/action/print_stack_action.h
+@@ -30,9 +30,6 @@ public:
+     ~PrintStackAction() override = default;
+ 
+     void handle(HttpRequest* req) override;
+-
+-private:
+-    ExecEnv* _exec_env = nullptr;
+ };
+ 
+ } // namespace doris
+diff --git a/be/test/service/http/print_stack_action_test.cpp b/be/test/service/http/print_stack_action_test.cpp
+new file mode 100644
+index 00000000000..692cfa78ce1
+--- /dev/null
++++ b/be/test/service/http/print_stack_action_test.cpp
+@@ -0,0 +1,268 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include "service/http/action/print_stack_action.h"
++
++#include <gtest/gtest.h>
++#include <rapidjson/document.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++
++#include <atomic>
++#include <chrono>
++#include <condition_variable>
++#include <cstring>
++#include <mutex>
++#include <string>
++#include <string_view>
++#include <thread>
++
++#include "common/status.h"
++#include "service/http/action/print_stack_globals.h"
++#include "service/http/ev_http_server.h"
++#include "service/http/http_client.h"
++#include "service/http/http_method.h"
++
++namespace doris {
++namespace {
++
++constexpr std::string_view kRoute = "/api/print_stack";
++
++class ParkedMarkerThread {
++public:
++    ParkedMarkerThread() = default;
++
++    void start() {
++        _ready = false;
++        _stop.store(false);
++        _thread = std::thread([this] { this->run(); });
++        std::unique_lock lock(_mu);
++        _cv.wait(lock, [this] { return _ready; });
++    }
++
++    void stop() {
++        _stop.store(true);
++        if (_thread.joinable()) {
++            _thread.join();
++        }
++    }
++
++    pid_t tid() const { return _tid.load(); }
++
++private:
++    void run() {
++        _tid.store(static_cast<pid_t>(::syscall(SYS_gettid)));
++        {
++            std::lock_guard lock(_mu);
++            _ready = true;
++        }
++        _cv.notify_all();
++        while (!_stop.load(std::memory_order_relaxed)) {
++            std::this_thread::sleep_for(std::chrono::milliseconds(5));
++        }
++    }
++
++    std::thread _thread;
++    std::atomic<pid_t> _tid {0};
++    std::atomic<bool> _stop {false};
++    std::mutex _mu;
++    std::condition_variable _cv;
++    bool _ready = false;
++};
++
++class PrintStackActionTest : public testing::Test {
++public:
++    static void SetUpTestCase() {
++        s_action = new PrintStackAction(nullptr);
++        s_server = new EvHttpServer(0);
++        s_server->register_handler(HttpMethod::GET, std::string(kRoute), s_action);
++        static_cast<void>(s_server->start());
++        s_port = s_server->get_real_port();
++        ASSERT_NE(0, s_port);
++        s_hostname = "http://127.0.0.1:" + std::to_string(s_port);
++
++        print_stack::print_stack_init();
++
++        s_marker.start();
++    }
++
++    static void TearDownTestCase() {
++        s_marker.stop();
++        delete s_server;
++        s_server = nullptr;
++        delete s_action;
++        s_action = nullptr;
++    }
++
++    static std::string get_url(const std::string& url) {
++        HttpClient client;
++        Status st = client.init(url);
++        EXPECT_TRUE(st.ok()) << st;
++        client.set_method(HttpMethod::GET);
++        std::string body;
++        st = client.execute(&body);
++        EXPECT_TRUE(st.ok()) << st;
++        return body;
++    }
++
++    static EvHttpServer* s_server;
++    static PrintStackAction* s_action;
++    static int s_port;
++    static std::string s_hostname;
++    static ParkedMarkerThread s_marker;
++};
++
++EvHttpServer* PrintStackActionTest::s_server = nullptr;
++PrintStackAction* PrintStackActionTest::s_action = nullptr;
++int PrintStackActionTest::s_port = 0;
++std::string PrintStackActionTest::s_hostname;
++ParkedMarkerThread PrintStackActionTest::s_marker;
++
++bool object_has_forbidden_key(const rapidjson::Value& v);
++
++bool array_has_forbidden_key(const rapidjson::Value& v) {
++    for (const auto& el : v.GetArray()) {
++        if (el.IsObject() && object_has_forbidden_key(el)) {
++            return true;
++        }
++        if (el.IsArray() && array_has_forbidden_key(el)) {
++            return true;
++        }
++    }
++    return false;
++}
++
++bool object_has_forbidden_key(const rapidjson::Value& v) {
++    static constexpr const char* kForbidden[] = {"pc",         "status",     "collector",
++                                                 "timeout_ms", "max_frames", "target_tid",
++                                                 "truncated",  "function",   "file",
++                                                 "line",       "symbol",     "demangled"};
++    for (auto it = v.MemberBegin(); it != v.MemberEnd(); ++it) {
++        for (const char* bad : kForbidden) {
++            if (std::strcmp(it->name.GetString(), bad) == 0) {
++                return true;
++            }
++        }
++        const auto& child = it->value;
++        if (child.IsObject() && object_has_forbidden_key(child)) {
++            return true;
++        }
++        if (child.IsArray() && array_has_forbidden_key(child)) {
++            return true;
++        }
++    }
++    return false;
++}
++
++TEST_F(PrintStackActionTest, ContractJsonShape) {
++    std::string body = get_url(s_hostname + std::string(kRoute));
++    rapidjson::Document doc;
++    doc.Parse(body.c_str());
++    ASSERT_FALSE(doc.HasParseError()) << "body: " << body;
++    ASSERT_TRUE(doc.IsObject());
++    ASSERT_TRUE(doc.HasMember("threads"));
++    ASSERT_TRUE(doc["threads"].IsArray());
++    EXPECT_FALSE(doc["threads"].Empty()) << "expected at least one captured thread";
++
++    for (const auto& t : doc["threads"].GetArray()) {
++        ASSERT_TRUE(t.IsObject());
++        ASSERT_TRUE(t.HasMember("thread_id"));
++        ASSERT_TRUE(t["thread_id"].IsInt64());
++        ASSERT_TRUE(t.HasMember("thread_name"));
++        ASSERT_TRUE(t["thread_name"].IsString());
++        ASSERT_TRUE(t.HasMember("trace"));
++        ASSERT_TRUE(t["trace"].IsArray());
++
++        for (const auto& f : t["trace"].GetArray()) {
++            ASSERT_TRUE(f.IsObject());
++            ASSERT_TRUE(f.HasMember("dso"));
++            ASSERT_TRUE(f["dso"].IsString());
++            ASSERT_TRUE(f.HasMember("dso_offset"));
++            ASSERT_TRUE(f["dso_offset"].IsString());
++        }
++    }
++
++    EXPECT_FALSE(object_has_forbidden_key(doc));
++}
++
++TEST_F(PrintStackActionTest, ThreadIdSelector) {
++    {
++        pid_t self_tid = static_cast<pid_t>(::syscall(SYS_gettid));
++        std::string body =
++                get_url(s_hostname + std::string(kRoute) +
++                        "?thread_id=" + std::to_string(static_cast<int64_t>(self_tid)));
++        rapidjson::Document doc;
++        doc.Parse(body.c_str());
++        ASSERT_FALSE(doc.HasParseError()) << "body: " << body;
++        ASSERT_TRUE(doc.HasMember("threads"));
++        ASSERT_TRUE(doc["threads"].IsArray());
++        ASSERT_EQ(1u, doc["threads"].Size()) << "body: " << body;
++        EXPECT_EQ(static_cast<int64_t>(self_tid), doc["threads"][0]["thread_id"].GetInt64());
++    }
++
++    {
++        std::string body = get_url(s_hostname + std::string(kRoute) + "?thread_id=999999999");
++        rapidjson::Document doc;
++        doc.Parse(body.c_str());
++        ASSERT_FALSE(doc.HasParseError()) << "body: " << body;
++        ASSERT_TRUE(doc.HasMember("threads"));
++        ASSERT_TRUE(doc["threads"].IsArray());
++        EXPECT_TRUE(doc["threads"].Empty()) << "body: " << body;
++    }
++}
++
++TEST_F(PrintStackActionTest, BestEffortFrameObserved) {
++    ASSERT_NE(0, s_marker.tid());
++
++    bool observed = false;
++    for (int attempt = 0; attempt < 100 && !observed; ++attempt) {
++        std::string body =
++                get_url(s_hostname + std::string(kRoute) +
++                        "?thread_id=" + std::to_string(static_cast<int64_t>(s_marker.tid())));
++        rapidjson::Document doc;
++        doc.Parse(body.c_str());
++        if (doc.HasParseError() || !doc.HasMember("threads") || !doc["threads"].IsArray() ||
++            doc["threads"].Empty()) {
++            continue;
++        }
++        const auto& trace = doc["threads"][0]["trace"];
++        if (!trace.IsArray()) {
++            continue;
++        }
++        for (const auto& frame : trace.GetArray()) {
++            if (!frame.IsObject() || !frame.HasMember("dso") || !frame.HasMember("dso_offset")) {
++                continue;
++            }
++            std::string_view dso(frame["dso"].GetString(), frame["dso"].GetStringLength());
++            std::string_view dso_offset(frame["dso_offset"].GetString(),
++                                        frame["dso_offset"].GetStringLength());
++            // Reason: the test process is `doris_be_test`; the marker
++            // thread is running in this binary so at least one frame's
++            // DSO should resolve to it.
++            const bool dso_matches = dso.find("doris_be_test") != std::string_view::npos;
++            const bool offset_nonzero = dso_offset != "0x0";
++            if (dso_matches && offset_nonzero) {
++                observed = true;
++                break;
++            }
++        }
++    }
++    EXPECT_TRUE(observed) << "no frame mapped to the test binary across 100 attempts";
++}
++
++} // namespace
++} // namespace doris
+-- 
+2.43.0
+

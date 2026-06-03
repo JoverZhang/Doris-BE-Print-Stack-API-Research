@@ -1,7 +1,7 @@
-From a30ffdd87f49df8daf5c2a430dba229a59ac7e4e Mon Sep 17 00:00:00 2001
+From 68e316412354f7cfd322c224f867eadbd55f9e71 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Tue, 2 Jun 2026 11:48:07 +0000
-Subject: [PATCH 0/5] upstream: drop inline from SegmentWriter::_is_mow defs
+Subject: [PATCH 0/2] upstream: drop inline from SegmentWriter::_is_mow defs
 
 UPSTREAM WORKAROUND, not part of the stack-collection design.
 

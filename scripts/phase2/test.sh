@@ -69,7 +69,7 @@ case "$mode" in
 esac
 
 if [[ "$suite" == "new-ut" && "$filter" == "*" ]]; then
-    effective_filter="*NativeStackActionTest.*"
+    effective_filter="*PrintStackActionTest.*"
 fi
 
 clean=0

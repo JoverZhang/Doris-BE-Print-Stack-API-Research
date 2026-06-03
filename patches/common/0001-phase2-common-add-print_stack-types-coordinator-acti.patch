@@ -1,0 +1,937 @@
+From b7f403248d8243a27292e59eb3f017231948025f Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 4 Jun 2026 01:42:12 +0800
+Subject: [PATCH 1/2] phase2/common: add print_stack types, coordinator,
+ action, signal handler
+
+Layer 1 (startup):
+- print_stack_globals.h: kServiceSignal=SIGRTMIN+6, kMaxSignalFrames=1024,
+  kPipeReadTimeoutMs=100, StackCaptureSlot, atomic state externs.
+- print_stack_init.cpp: define state, install sigaction(SA_SIGINFO|SA_RESTART)
+  on kServiceSignal, open notification pipe with O_CLOEXEC. Called at end of
+  doris::init_signals().
+
+Layer 2 + 5 (action):
+- print_stack_action.{h,cpp}: PrintStackAction parses optional thread_id,
+  invokes collect_print_stack, serializes the CK-shape JSON
+  {threads:[{thread_id, thread_name, trace:[{dso, dso_offset}]}]} with
+  dso_offset as a hex string.
+
+Layer 3 (coordinator+handler):
+- print_stack_signal_handler.cpp: signal-safe; rejects foreign pids, checks
+  sequence, single-writer latch CAS, calls capture_into_slot,
+  publishes data_ready_num, writes the sequence to the notification pipe.
+- print_stack.cpp: single-dump mutex; list_target_thread_ids enumerates
+  /proc/self/task with selector validation; read_thread_names from
+  /proc/<tid>/comm; is_signal_blocked via SigBlk; rt_tgsigqueueinfo wrapper;
+  bounded poll on pipe with EINTR drain; pc_to_frame via SymbolIndex.
+
+Layer 3d (variant seam):
+- print_stack_capture.h: declares capture_into_slot. Variant ships .cpp.
+
+Route:
+- http_service.cpp: register PrintStackAction on GET /api/print_stack.
+
+Spec: docs/architecture.md.
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ be/src/service/doris_main.cpp                 |   2 +
+ be/src/service/http/action/print_stack.cpp    | 277 ++++++++++++++++++
+ be/src/service/http/action/print_stack.h      |  69 +++++
+ .../http/action/print_stack_action.cpp        | 105 +++++++
+ .../service/http/action/print_stack_action.h  |  38 +++
+ .../service/http/action/print_stack_capture.h |  36 +++
+ .../service/http/action/print_stack_globals.h |  99 +++++++
+ .../service/http/action/print_stack_init.cpp  |  79 +++++
+ .../action/print_stack_signal_handler.cpp     |  82 ++++++
+ be/src/service/http_service.cpp               |   5 +
+ 10 files changed, 792 insertions(+)
+ create mode 100644 be/src/service/http/action/print_stack.cpp
+ create mode 100644 be/src/service/http/action/print_stack.h
+ create mode 100644 be/src/service/http/action/print_stack_action.cpp
+ create mode 100644 be/src/service/http/action/print_stack_action.h
+ create mode 100644 be/src/service/http/action/print_stack_capture.h
+ create mode 100644 be/src/service/http/action/print_stack_globals.h
+ create mode 100644 be/src/service/http/action/print_stack_init.cpp
+ create mode 100644 be/src/service/http/action/print_stack_signal_handler.cpp
+
+diff --git a/be/src/service/doris_main.cpp b/be/src/service/doris_main.cpp
+index fd534bc77f0..7102d326a19 100644
+--- a/be/src/service/doris_main.cpp
++++ b/be/src/service/doris_main.cpp
+@@ -75,6 +75,7 @@
+ #include "service/backend_options.h"
+ #include "service/backend_service.h"
+ #include "service/brpc_service.h"
++#include "service/http/action/print_stack_globals.h"
+ #include "service/http_service.h"
+ #include "storage/options.h"
+ #include "storage/storage_engine.h"
+@@ -127,6 +128,7 @@ void init_signals() {
+     if (ret < 0) {
+         exit(-1);
+     }
++    doris::print_stack::print_stack_init();
+ }
+ 
+ static void thrift_output(const char* x) {
+diff --git a/be/src/service/http/action/print_stack.cpp b/be/src/service/http/action/print_stack.cpp
+new file mode 100644
+index 00000000000..bd5703371ee
+--- /dev/null
++++ b/be/src/service/http/action/print_stack.cpp
+@@ -0,0 +1,277 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include "service/http/action/print_stack.h"
++
++#include <dirent.h>
++#include <poll.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++
++#include <atomic>
++#include <cerrno>
++#include <chrono>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <fstream>
++#include <mutex>
++#include <sstream>
++#include <string>
++#include <unordered_map>
++#include <utility>
++#include <vector>
++
++#include "common/symbol_index.h"
++#include "service/http/action/print_stack_globals.h"
++#include "util/defer_op.h"
++
++namespace doris {
++namespace {
++
++// Reason: only one dump can run at a time. Two would fight over the
++// signal channel and the capture slot.
++// Spec: docs/architecture.md "Layer 3a invariants".
++std::mutex s_dump_mutex;
++
++// Reason: enumerate /proc/self/task. With a selector, return the
++// selector only if /proc/self/task lists it; otherwise an empty
++// vector. Without a selector, return every tid.
++// Spec: docs/architecture.md "Layer 3a invariants".
++std::vector<int64_t> list_target_thread_ids(const PrintStackOptions& options) {
++    DIR* dir = ::opendir("/proc/self/task");
++    if (dir == nullptr) {
++        return {};
++    }
++
++    std::vector<int64_t> all_tids;
++    while (auto* ent = ::readdir(dir)) {
++        if (ent->d_name[0] == '.') {
++            continue;
++        }
++        char* end = nullptr;
++        long parsed = std::strtol(ent->d_name, &end, 10);
++        if (end == ent->d_name || *end != '\0' || parsed <= 0) {
++            continue;
++        }
++        all_tids.push_back(static_cast<int64_t>(parsed));
++    }
++    ::closedir(dir);
++
++    if (!options.target_thread_id.has_value()) {
++        return all_tids;
++    }
++
++    int64_t want = *options.target_thread_id;
++    for (int64_t tid : all_tids) {
++        if (tid == want) {
++            return {tid};
++        }
++    }
++    return {};
++}
++
++// Reason: thread names come from /proc/<tid>/comm. Best-effort.
++std::unordered_map<int64_t, std::string> read_thread_names(const std::vector<int64_t>& tids) {
++    std::unordered_map<int64_t, std::string> names;
++    names.reserve(tids.size());
++    for (int64_t tid : tids) {
++        char path[64];
++        std::snprintf(path, sizeof(path), "/proc/self/task/%lld/comm",
++                      static_cast<long long>(tid));
++        std::ifstream in(path);
++        std::string name;
++        if (in.is_open()) {
++            std::getline(in, name);
++        }
++        names.emplace(tid, std::move(name));
++    }
++    return names;
++}
++
++// Reason: skip threads that block the service signal. Reads SigBlk
++// from /proc/<tid>/status and checks bit (signal_number - 1).
++bool is_signal_blocked(int64_t tid, int signal_number) {
++    char path[64];
++    std::snprintf(path, sizeof(path), "/proc/self/task/%lld/status",
++                  static_cast<long long>(tid));
++    std::ifstream in(path);
++    if (!in.is_open()) {
++        return false;
++    }
++    std::string line;
++    while (std::getline(in, line)) {
++        if (line.compare(0, 7, "SigBlk:") != 0) {
++            continue;
++        }
++        // Format: "SigBlk:\t<hex64>".
++        std::string hex = line.substr(7);
++        // Trim leading whitespace.
++        size_t start = hex.find_first_not_of(" \t");
++        if (start == std::string::npos) {
++            return false;
++        }
++        hex = hex.substr(start);
++        unsigned long long mask = 0;
++        try {
++            mask = std::stoull(hex, nullptr, 16);
++        } catch (...) {
++            return false;
++        }
++        return (mask & (1ULL << (signal_number - 1))) != 0;
++    }
++    return false;
++}
++
++int remaining_ms_until(std::chrono::steady_clock::time_point deadline) {
++    auto now = std::chrono::steady_clock::now();
++    if (now >= deadline) {
++        return 0;
++    }
++    auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
++    if (diff <= 0) {
++        return 0;
++    }
++    return static_cast<int>(diff);
++}
++
++// Reason: thin wrapper over the rt_tgsigqueueinfo syscall.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:114-118.
++int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t* info) {
++    return static_cast<int>(::syscall(__NR_rt_tgsigqueueinfo, tgid, tid, sig, info));
++}
++
++// Reason: map one captured PC to a (dso, dso_offset) pair.
++// SymbolIndex is built lazily by MultiVersion<SymbolIndex>::instance()
++// on first call; its construction reads dl_iterate_phdr and is not
++// signal-safe, so this resolution runs in the coordinator.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:560-563.
++StackFrame pc_to_frame(uintptr_t pc) {
++    const auto* obj =
++            doris::SymbolIndex::instance()->findObject(reinterpret_cast<const void*>(pc));
++    if (obj == nullptr) {
++        return {};
++    }
++    return {obj->name, pc - reinterpret_cast<uintptr_t>(obj->address_begin)};
++}
++
++// Reason: bounded read of the notification pipe. Drains notifications
++// whose sequence is not the current one.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:186-228.
++bool wait_on_pipe(int timeout_ms) {
++    while (true) {
++        pollfd pfd {print_stack::g_notification_pipe_rw[0], POLLIN, 0};
++        int rc = ::poll(&pfd, 1, timeout_ms);
++
++        if (rc < 0 && errno == EINTR) {
++            if (--timeout_ms <= 0) {
++                return false;
++            }
++            continue;
++        }
++        if (rc < 0) {
++            return false;
++        }
++        if (rc == 0) {
++            return false;
++        }
++
++        int seq = 0;
++        ssize_t n = ::read(print_stack::g_notification_pipe_rw[0], &seq, sizeof(seq));
++        if (n < 0 && errno == EINTR) {
++            continue;
++        }
++        if (n != static_cast<ssize_t>(sizeof(seq))) {
++            return false;
++        }
++        if (seq == print_stack::g_sequence_num.load(std::memory_order_relaxed)) {
++            return true;
++        }
++    }
++}
++
++// Reason: send one signal, wait bounded, copy out on match. Sequence
++// advances on every exit so a late handler cannot publish into the
++// next target's slot.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:484-518.
++void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
++                 ThreadStackTrace* out) {
++    if (is_signal_blocked(tid, print_stack::kServiceSignal)) {
++        out->status = ThreadStackStatus::SignalBlocked;
++        return;
++    }
++
++    auto bump_seq = [] { ++print_stack::g_sequence_num; };
++    Defer<decltype(bump_seq)> on_exit(std::move(bump_seq));
++
++    siginfo_t si {};
++    si.si_code = SI_QUEUE;
++    si.si_pid = print_stack::g_server_pid.load(std::memory_order_relaxed);
++    si.si_value.sival_int = print_stack::g_sequence_num.load(std::memory_order_acquire);
++
++    if (rt_tgsigqueueinfo(si.si_pid, static_cast<pid_t>(tid), print_stack::kServiceSignal, &si) !=
++        0) {
++        if (errno == ESRCH) {
++            out->status = ThreadStackStatus::ThreadExited;
++            return;
++        }
++        out->status = ThreadStackStatus::CaptureFailed;
++        return;
++    }
++
++    if (!wait_on_pipe(remaining_ms_until(deadline)) ||
++        si.si_value.sival_int != print_stack::g_data_ready_num.load(std::memory_order_acquire)) {
++        out->status = ThreadStackStatus::Timeout;
++        return;
++    }
++
++    out->status = print_stack::g_slot.status;
++    out->frames.reserve(print_stack::g_slot.frame_count);
++    for (size_t i = 0; i < print_stack::g_slot.frame_count; ++i) {
++        out->frames.push_back(pc_to_frame(print_stack::g_slot.pcs[i]));
++    }
++}
++
++} // namespace
++
++// Reason: orchestration shared by every variant. The per-variant step
++// is the capture hook the handler invokes.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:424-599.
++PrintStackResult collect_print_stack(const PrintStackOptions& options) {
++    std::scoped_lock dump_lock(s_dump_mutex);
++
++    std::vector<int64_t> tids = list_target_thread_ids(options);
++    auto names = read_thread_names(tids);
++
++    PrintStackResult result;
++    result.threads.reserve(tids.size());
++    for (int64_t tid : tids) {
++        ThreadStackTrace row;
++        row.thread_id = tid;
++        row.thread_name = names[tid];
++
++        auto deadline = std::chrono::steady_clock::now() +
++                        std::chrono::milliseconds(print_stack::kPipeReadTimeoutMs);
++        capture_one(tid, deadline, &row);
++
++        result.threads.push_back(std::move(row));
++    }
++
++    return result;
++}
++
++} // namespace doris
+diff --git a/be/src/service/http/action/print_stack.h b/be/src/service/http/action/print_stack.h
+new file mode 100644
+index 00000000000..e24547b1917
+--- /dev/null
++++ b/be/src/service/http/action/print_stack.h
+@@ -0,0 +1,69 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#pragma once
++
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <vector>
++
++namespace doris {
++
++// Reason: status carries why a row has no frames. Stays in the typed
++// result; the public JSON contract drops it.
++// Spec: docs/architecture.md "Layer 5".
++enum class ThreadStackStatus {
++    // Reason: capture succeeded; frames hold the resolved trace.
++    OK,
++    // Reason: handler did not publish before the bounded wait expired.
++    Timeout,
++    // Reason: target thread had the service signal in its blocked
++    //         mask. Coordinator did not send the signal.
++    SignalBlocked,
++    // Reason: target thread no longer exists. Send returned ESRCH.
++    ThreadExited,
++    // Reason: send failed for a reason other than ESRCH, or the
++    //         handler stored a failure status in the slot.
++    CaptureFailed,
++};
++
++// Reason: one resolved frame. (dso, dso_offset) is the canonical
++// input to addr2line and llvm-symbolizer.
++struct StackFrame {
++    std::string dso;
++    uint64_t dso_offset = 0;
++};
++
++struct ThreadStackTrace {
++    int64_t thread_id = 0;
++    std::string thread_name;
++    ThreadStackStatus status = ThreadStackStatus::OK;
++    std::vector<StackFrame> frames;
++};
++
++struct PrintStackOptions {
++    std::optional<int64_t> target_thread_id;
++};
++
++struct PrintStackResult {
++    std::vector<ThreadStackTrace> threads;
++};
++
++PrintStackResult collect_print_stack(const PrintStackOptions& options);
++
++} // namespace doris
+diff --git a/be/src/service/http/action/print_stack_action.cpp b/be/src/service/http/action/print_stack_action.cpp
+new file mode 100644
+index 00000000000..8f08112d7e6
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_action.cpp
+@@ -0,0 +1,105 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include "service/http/action/print_stack_action.h"
++
++#include <fmt/format.h>
++
++#include <cstdint>
++#include <exception>
++#include <string>
++
++#include "common/status.h"
++#include "service/http/action/print_stack.h"
++#include "service/http/http_channel.h"
++#include "service/http/http_headers.h"
++#include "service/http/http_request.h"
++#include "service/http/http_status.h"
++#include "util/easy_json.h"
++
++namespace doris {
++namespace {
++
++// Reason: parse only the public selector. `thread_id` is optional and
++// must be a positive integer.
++Status parse_print_stack_options(HttpRequest* req, PrintStackOptions* out) {
++    const auto& params = req->query_params();
++    auto it = params.find("thread_id");
++    if (it == params.end()) {
++        return Status::OK();
++    }
++
++    int64_t parsed = 0;
++    try {
++        parsed = std::stoll(it->second);
++    } catch (const std::exception&) {
++        return Status::InvalidArgument("thread_id must be an integer");
++    }
++    if (parsed <= 0) {
++        return Status::InvalidArgument("thread_id must be positive");
++    }
++    out->target_thread_id = parsed;
++    return Status::OK();
++}
++
++// Reason: drop status and any internal field; emit the public JSON
++// contract: { "threads": [ { "thread_id", "thread_name", "trace":
++// [ { "dso", "dso_offset" } ] } ] }. `dso_offset` is a hex string so
++// it round-trips losslessly through clients that lack uint64.
++std::string serialize_print_stack_result(const PrintStackResult& result) {
++    EasyJson root;
++    EasyJson threads = root.Set("threads", EasyJson::kArray);
++    for (const auto& trace : result.threads) {
++        EasyJson row = threads.PushBack(EasyJson::kObject);
++        row.Set("thread_id", trace.thread_id);
++        row.Set("thread_name", trace.thread_name);
++        EasyJson frames = row.Set("trace", EasyJson::kArray);
++        for (const auto& f : trace.frames) {
++            if (f.dso.empty()) {
++                continue;
++            }
++            EasyJson frame = frames.PushBack(EasyJson::kObject);
++            frame.Set("dso", f.dso);
++            frame.Set("dso_offset", fmt::format("0x{:x}", f.dso_offset));
++        }
++    }
++    return root.ToString();
++}
++
++} // namespace
++
++PrintStackAction::PrintStackAction(ExecEnv* exec_env) : _exec_env(exec_env) {}
++
++void PrintStackAction::handle(HttpRequest* req) {
++    PrintStackOptions options;
++    if (auto s = parse_print_stack_options(req, &options); !s.ok()) {
++        EasyJson err;
++        err.Set("status", "bad_request");
++        err.Set("message", std::string(s.to_string()));
++        req->add_output_header(HttpHeaders::CONTENT_TYPE, "application/json");
++        HttpChannel::send_reply(req, HttpStatus::BAD_REQUEST, err.ToString());
++        return;
++    }
++
++    PrintStackResult result = collect_print_stack(options);
++    std::string body = serialize_print_stack_result(result);
++
++    req->add_output_header(HttpHeaders::CONTENT_TYPE, "application/json");
++    HttpChannel::send_reply(req, HttpStatus::OK, body);
++}
++
++} // namespace doris
+diff --git a/be/src/service/http/action/print_stack_action.h b/be/src/service/http/action/print_stack_action.h
+new file mode 100644
+index 00000000000..5b67d0ea1ec
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_action.h
+@@ -0,0 +1,38 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#pragma once
++
++#include "service/http/http_handler.h"
++
++namespace doris {
++
++class ExecEnv;
++class HttpRequest;
++
++class PrintStackAction final : public HttpHandler {
++public:
++    explicit PrintStackAction(ExecEnv* exec_env);
++    ~PrintStackAction() override = default;
++
++    void handle(HttpRequest* req) override;
++
++private:
++    ExecEnv* _exec_env = nullptr;
++};
++
++} // namespace doris
+diff --git a/be/src/service/http/action/print_stack_capture.h b/be/src/service/http/action/print_stack_capture.h
+new file mode 100644
+index 00000000000..ebe57b7e7d6
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_capture.h
+@@ -0,0 +1,36 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#pragma once
++
++#include <ucontext.h>
++
++#include "service/http/action/print_stack_globals.h"
++
++namespace doris::print_stack {
++
++// Reason: every variant supplies this function. The body runs inside
++// the signal handler on the interrupted thread, between latch acquire
++// and data_ready publish. The function MUST:
++//   - not allocate, log, take locks, read /proc, or touch Doris TLS;
++//   - write at most kMaxSignalFrames PCs into out->pcs;
++//   - set out->frame_count to the number of valid entries;
++//   - set out->status to OK on success or CaptureFailed on failure.
++// Spec: docs/architecture.md "Layer 3d".
++void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out);
++
++} // namespace doris::print_stack
+diff --git a/be/src/service/http/action/print_stack_globals.h b/be/src/service/http/action/print_stack_globals.h
+new file mode 100644
+index 00000000000..e19660436ed
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_globals.h
+@@ -0,0 +1,99 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#pragma once
++
++#include <sys/types.h>
++
++#include <array>
++#include <atomic>
++#include <csignal>
++#include <cstddef>
++#include <cstdint>
++
++#include "service/http/action/print_stack.h"
++
++namespace doris::print_stack {
++
++// Reason: an RT signal is queued, not coalesced, so the coordinator
++// drives one target after another without losing the signal in
++// flight. The BE has no other SIGRT* user, and glibc reserves
++// SIGRTMIN..SIGRTMIN+2. Any slot >= SIGRTMIN+3 would work; SIGRTMIN+6
++// is the chosen one. `inline const` (not `constexpr`) because glibc
++// expands SIGRTMIN to a function call.
++// Spec: docs/architecture.md "Layer 1".
++inline const int kServiceSignal = SIGRTMIN + 6;
++
++// Reason: a runaway walk would block the handler. This cap sizes the
++// slot's frame array.
++// Spec: docs/architecture.md "Layer 1".
++constexpr size_t kMaxSignalFrames = 1024;
++
++// Reason: bounded wait the coordinator gives the handler to publish
++// on the notification pipe. Short enough that one stuck thread does
++// not dominate wall clock; long enough that a non-stuck thread
++// always publishes. Per-thread, applied sequentially.
++// Spec: docs/architecture.md "Layer 1".
++constexpr int kPipeReadTimeoutMs = 100;
++
++// Reason: handler writes frames here; coordinator reads them after
++// the wait succeeds. One slot suffices because capture is sequential.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:103.
++struct StackCaptureSlot {
++    // Reason: outcome the handler stored. Coordinator may overwrite
++    // on Timeout, SignalBlocked, or ThreadExited.
++    ThreadStackStatus status {ThreadStackStatus::CaptureFailed};
++
++    // Reason: number of valid entries in `pcs`. Variant writes this.
++    size_t frame_count {0};
++
++    // Reason: runtime PCs the variant captured. Resolved in the
++    // coordinator.
++    std::array<uintptr_t, kMaxSignalFrames> pcs {};
++};
++
++// Reason: identifies signals sent by this process. A manual signal
++// from another process cannot publish into the slot.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:75.
++extern std::atomic<pid_t> g_server_pid;
++
++// Reason: every capture attempt gets a fresh sequence. Signal
++// payload and pipe both carry this value.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:83.
++extern std::atomic<int> g_sequence_num;
++
++// Reason: handler stores the sequence after frames are visible. The
++// coordinator checks it before reading the slot.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:84.
++extern std::atomic<int> g_data_ready_num;
++
++// Reason: single-writer gate for the slot.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:85.
++extern std::atomic<bool> g_signal_latch;
++
++extern StackCaptureSlot g_slot;
++
++// Reason: pipe carries only the sequence number. Frames travel
++// through g_slot.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:111.
++extern int g_notification_pipe_rw[2];
++
++void print_stack_signal_handler(int sig, siginfo_t* info, void* context);
++
++void print_stack_init();
++
++} // namespace doris::print_stack
+diff --git a/be/src/service/http/action/print_stack_init.cpp b/be/src/service/http/action/print_stack_init.cpp
+new file mode 100644
+index 00000000000..cc4369092c4
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_init.cpp
+@@ -0,0 +1,79 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include "service/http/action/print_stack_globals.h"
++
++#include <fcntl.h>
++#include <unistd.h>
++
++#include <cerrno>
++#include <csignal>
++#include <cstring>
++
++#include "common/logging.h"
++
++namespace doris::print_stack {
++
++std::atomic<pid_t> g_server_pid {0};
++std::atomic<int> g_sequence_num {0};
++std::atomic<int> g_data_ready_num {0};
++std::atomic<bool> g_signal_latch {false};
++StackCaptureSlot g_slot;
++int g_notification_pipe_rw[2] = {-1, -1};
++
++namespace {
++
++// Reason: open the notification pipe with close-on-exec. The pipe is
++// the only wakeup channel for the coordinator.
++// Reference: <ck>/src/Common/PipeFDs.cpp:30-38.
++void open_notification_pipe_once() {
++    if (pipe2(g_notification_pipe_rw, O_CLOEXEC) != 0) {
++        LOG(FATAL) << "print_stack: pipe2 failed: " << std::strerror(errno);
++    }
++}
++
++// Reason: install the service signal handler with SA_SIGINFO so the
++// payload carries the sequence. SA_RESTART avoids EINTR on unrelated
++// syscalls in target threads.
++// Spec: docs/architecture.md "Layer 1".
++void install_signal_handler_once() {
++    struct sigaction sa {};
++    sa.sa_flags = SA_SIGINFO | SA_RESTART;
++    sa.sa_sigaction = print_stack_signal_handler;
++    sigemptyset(&sa.sa_mask);
++
++    if (sigaction(kServiceSignal, &sa, nullptr) != 0) {
++        LOG(FATAL) << "print_stack: sigaction failed: " << std::strerror(errno);
++    }
++}
++
++} // namespace
++
++void print_stack_init() {
++    // 1. Record this process's pid so the handler can reject foreign
++    //    signals.
++    g_server_pid.store(getpid());
++
++    // 2. Open the notification pipe before installing the handler so
++    //    the handler always has a valid write fd.
++    open_notification_pipe_once();
++
++    // 3. Install the signal handler last.
++    install_signal_handler_once();
++}
++
++} // namespace doris::print_stack
+diff --git a/be/src/service/http/action/print_stack_signal_handler.cpp b/be/src/service/http/action/print_stack_signal_handler.cpp
+new file mode 100644
+index 00000000000..bfbd6df749c
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_signal_handler.cpp
+@@ -0,0 +1,82 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include <ucontext.h>
++#include <unistd.h>
++
++#include <cerrno>
++
++#include "service/http/action/print_stack_capture.h"
++#include "service/http/action/print_stack_globals.h"
++
++namespace doris::print_stack {
++
++// Reason: publish one interrupted thread's frames, then notify the
++// coordinator. Body runs on the interrupted worker thread and must
++// stay signal-safe.
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:120-183.
++void print_stack_signal_handler(int /*sig*/, siginfo_t* info, void* context) {
++    // 1. The handler body must stay allocation-free. CK enforces
++    //    this with `DENY_ALLOCATIONS_IN_SCOPE`, backed by their
++    //    allocator's overload hooks. Doris jemalloc has no such
++    //    hook, so the marker is kept commented out as documentation;
++    //    review enforces the rule.
++    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:121.
++    // DENY_ALLOCATIONS_IN_SCOPE;
++
++    // 2. Save errno so the interrupted thread does not observe a
++    //    change.
++    auto saved_errno = errno;
++
++    // 3. Reject signals not sent by this process.
++    if (info->si_pid != g_server_pid.load(std::memory_order_relaxed)) {
++        errno = saved_errno;
++        return;
++    }
++
++    // 4. Read the sequence from the payload.
++    int seq = info->si_value.sival_int;
++
++    // 5. Discard late deliveries.
++    if (seq != g_sequence_num.load(std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++
++    // 6. Single writer enters the slot.
++    bool expected = false;
++    if (!g_signal_latch.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
++        errno = saved_errno;
++        return;
++    }
++
++    // 7. Variant fills the slot from the interrupted ucontext.
++    capture_into_slot(*reinterpret_cast<ucontext_t*>(context), &g_slot);
++
++    // 8. Publish the sequence after frames are visible.
++    g_data_ready_num.store(seq, std::memory_order_release);
++
++    // 9. Wake the coordinator. Pipe carries only the sequence.
++    ssize_t res = ::write(g_notification_pipe_rw[1], &seq, sizeof(seq));
++    (void)res;
++
++    // 10. Restore errno and release the latch.
++    errno = saved_errno;
++    g_signal_latch.store(false, std::memory_order_release);
++}
++
++} // namespace doris::print_stack
+diff --git a/be/src/service/http_service.cpp b/be/src/service/http_service.cpp
+index 93a50a81cc1..2cacc312e83 100644
+--- a/be/src/service/http_service.cpp
++++ b/be/src/service/http_service.cpp
+@@ -61,6 +61,7 @@
+ #include "service/http/action/pad_rowset_action.h"
+ #include "service/http/action/pipeline_task_action.h"
+ #include "service/http/action/pprof_actions.h"
++#include "service/http/action/print_stack_action.h"
+ #include "service/http/action/reload_tablet_action.h"
+ #include "service/http/action/report_action.h"
+ #include "service/http/action/reset_rpc_channel_action.h"
+@@ -164,6 +165,10 @@ Status HttpService::start() {
+     HealthAction* health_action = _pool.add(new HealthAction(_env));
+     _ev_http_server->register_handler(HttpMethod::GET, "/api/health", health_action);
+ 
++    // Register print_stack debug action
++    PrintStackAction* print_stack_action = _pool.add(new PrintStackAction(_env));
++    _ev_http_server->register_handler(HttpMethod::GET, "/api/print_stack", print_stack_action);
++
+     // Clear cache action
+     ClearCacheAction* clear_cache_action = _pool.add(new ClearCacheAction(_env));
+     _ev_http_server->register_handler(HttpMethod::GET, "/api/clear_cache/{type}",
+-- 
+2.43.0
+

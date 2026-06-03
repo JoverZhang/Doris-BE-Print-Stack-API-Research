@@ -1,0 +1,168 @@
+From 8f7109d5ae3308fcb99e9546c3962d39a9676997 Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 4 Jun 2026 01:42:49 +0800
+Subject: [PATCH 1/2] phase2/fp-walk: add capture_into_slot RBP-chain walker
+
+Signal-safe implementation of the variant capture hook:
+- Extract RIP/RBP from ucontext_t.uc_mcontext.gregs.
+- Seed pcs[0] = RIP, then walk *(rbp+8) for return addresses and
+  *(rbp) for the next frame pointer.
+- Bounds: 8-aligned RBP, monotonically growing toward higher
+  addresses, within a 16 MiB span of the first RBP, with mincore()
+  verifying both probed words live on a resident page.
+- Stops at kMaxSignalFrames or when bounds fail.
+
+mincore is AS-safe per POSIX, so the handler does not risk
+SIGSEGV during the walk. Uses no allocations, no /proc, no locks,
+no Doris TLS.
+
+Spec: docs/architecture.md "Layer 3d".
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ .../http/action/print_stack_fp_walk.cpp       | 133 ++++++++++++++++++
+ 1 file changed, 133 insertions(+)
+ create mode 100644 be/src/service/http/action/print_stack_fp_walk.cpp
+
+diff --git a/be/src/service/http/action/print_stack_fp_walk.cpp b/be/src/service/http/action/print_stack_fp_walk.cpp
+new file mode 100644
+index 00000000000..2b2da291365
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_fp_walk.cpp
+@@ -0,0 +1,133 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++#include <sys/mman.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#include <cstddef>
++#include <cstdint>
++
++#include "service/http/action/print_stack_capture.h"
++#include "service/http/action/print_stack_globals.h"
++
++namespace doris::print_stack {
++namespace {
++
++// Reason: the BE binary is built with `-fno-omit-frame-pointer`. RBP
++// chains a stack of saved-frame-pointers: at each `[rbp]` is the
++// caller's RBP; at `[rbp + 8]` is the return address.
++// Reference: System V AMD64 ABI, "Stack Frame Pointer".
++constexpr ptrdiff_t kReturnAddressOffset = sizeof(uintptr_t);
++
++// Reason: mincore takes a page-aligned address. Round down to the
++// host page boundary.
++uintptr_t page_floor(uintptr_t addr, long page_size) {
++    return addr & ~static_cast<uintptr_t>(page_size - 1);
++}
++
++// Reason: the handler must not segfault on a stack walk. mincore
++// reports whether the page is resident (and therefore at least
++// mapped). A non-resident page would crash us on dereference.
++// Signal-safety: mincore is AS-safe per POSIX. Reference:
++// <ck>/base/base/StackTrace.cpp uses the same idea via a sigsetjmp
++// guard; we use the cheaper mincore probe.
++bool page_is_mapped(uintptr_t addr, long page_size) {
++    unsigned char vec = 0;
++    if (::mincore(reinterpret_cast<void*>(page_floor(addr, page_size)),
++                  static_cast<size_t>(page_size), &vec) != 0) {
++        return false;
++    }
++    return true;
++}
++
++// Reason: an RBP that is not 8-aligned or that points outside the
++// stack region is meaningless. We cap the range with a generous 16 MiB
++// span — large enough for any sane thread, small enough that a stray
++// RBP cannot point a long way into the heap.
++constexpr uintptr_t kMaxStackSpan = static_cast<uintptr_t>(16) << 20; // 16 MiB
++
++bool rbp_can_read(uintptr_t rbp, uintptr_t first_rbp, long page_size) {
++    if (rbp == 0) {
++        return false;
++    }
++    if ((rbp & (sizeof(uintptr_t) - 1)) != 0) {
++        return false;
++    }
++    if (rbp <= first_rbp) {
++        // Frame pointers must monotonically grow toward higher addresses.
++        return false;
++    }
++    if (rbp - first_rbp > kMaxStackSpan) {
++        return false;
++    }
++    if (!page_is_mapped(rbp, page_size)) {
++        return false;
++    }
++    if (!page_is_mapped(rbp + kReturnAddressOffset, page_size)) {
++        return false;
++    }
++    return true;
++}
++
++uintptr_t read_word(uintptr_t addr) {
++    return *reinterpret_cast<const uintptr_t*>(addr);
++}
++
++} // namespace
++
++void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
++    // 1. Default to failure; success path overwrites both fields.
++    out->status = ThreadStackStatus::CaptureFailed;
++    out->frame_count = 0;
++
++    // 2. Extract RIP and RBP from the interrupted machine context.
++    const auto& mc = uc.uc_mcontext;
++    const uintptr_t rip = static_cast<uintptr_t>(mc.gregs[REG_RIP]);
++    uintptr_t rbp = static_cast<uintptr_t>(mc.gregs[REG_RBP]);
++
++    long page_size = ::sysconf(_SC_PAGESIZE);
++    if (page_size <= 0) {
++        return;
++    }
++
++    size_t n = 0;
++    if (rip != 0) {
++        out->pcs[n++] = rip;
++    }
++
++    const uintptr_t first_rbp = rbp;
++
++    // 3. Walk the saved-frame-pointer chain.
++    for (; n < kMaxSignalFrames; ++n) {
++        if (!rbp_can_read(rbp, first_rbp, page_size)) {
++            break;
++        }
++        const uintptr_t return_addr = read_word(rbp + kReturnAddressOffset);
++        const uintptr_t next_rbp = read_word(rbp);
++        if (return_addr == 0) {
++            break;
++        }
++        out->pcs[n] = return_addr;
++        rbp = next_rbp;
++    }
++
++    out->frame_count = n;
++    out->status = ThreadStackStatus::OK;
++}
++
++} // namespace doris::print_stack
+-- 
+2.43.0
+

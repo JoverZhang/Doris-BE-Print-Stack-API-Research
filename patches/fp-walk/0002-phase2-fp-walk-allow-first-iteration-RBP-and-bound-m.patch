@@ -1,0 +1,55 @@
+From 4dc23e0177952890a258918d8b54e33ca30d01b5 Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 4 Jun 2026 01:50:26 +0800
+Subject: [PATCH 2/2] phase2/fp-walk: allow first-iteration RBP and bound
+ monotonic growth
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The bound `rbp <= first_rbp` rejected the initial RBP because the loop
+starts with `rbp = first_rbp`. Switched to `rbp < first_rbp` so equality
+is allowed on the first iteration. After reading the next RBP, break if it
+is not strictly greater than the current — that catches broken or looping
+chains before they get dereferenced.
+
+Without this fix, the walk added only the leaf RIP (pcs[0]) and stopped,
+so observed frames mapped to libc / vdso instead of the test binary.
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ be/src/service/http/action/print_stack_fp_walk.cpp | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/be/src/service/http/action/print_stack_fp_walk.cpp b/be/src/service/http/action/print_stack_fp_walk.cpp
+index 2b2da291365..cba622321b9 100644
+--- a/be/src/service/http/action/print_stack_fp_walk.cpp
++++ b/be/src/service/http/action/print_stack_fp_walk.cpp
+@@ -68,8 +68,9 @@ bool rbp_can_read(uintptr_t rbp, uintptr_t first_rbp, long page_size) {
+     if ((rbp & (sizeof(uintptr_t) - 1)) != 0) {
+         return false;
+     }
+-    if (rbp <= first_rbp) {
+-        // Frame pointers must monotonically grow toward higher addresses.
++    if (rbp < first_rbp) {
++        // Frame pointers walk toward higher addresses; equality is allowed
++        // on the first iteration where rbp == first_rbp.
+         return false;
+     }
+     if (rbp - first_rbp > kMaxStackSpan) {
+@@ -123,6 +124,12 @@ void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
+             break;
+         }
+         out->pcs[n] = return_addr;
++        // The next RBP must be strictly greater than the current one,
++        // else the chain is broken or loops. Stop before dereferencing.
++        if (next_rbp <= rbp) {
++            ++n;
++            break;
++        }
+         rbp = next_rbp;
+     }
+ 
+-- 
+2.43.0
+

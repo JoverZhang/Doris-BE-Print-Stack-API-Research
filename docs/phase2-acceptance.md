@@ -11,9 +11,9 @@
 The baseline is accepted when all three commands return green from the base
 commit `c24d454f15cee2d937ef4749270a3ecb449eafe6`:
 
-- [ ] `just phase2-test new-ut fp-walk asan "*"`
-- [ ] `just phase2-test new-ut fp-walk release "*"`
-- [ ] `just phase2-test new-ut fp-walk tsan "*"`
+- [x] `just phase2-test new-ut fp-walk asan "*"`
+- [x] `just phase2-test new-ut fp-walk release "*"`
+- [x] `just phase2-test new-ut fp-walk tsan "*"`
 
 The three cases that must run green are defined in
 [phase2-test-plan.md](phase2-test-plan.md).
@@ -36,27 +36,33 @@ One patch per logical change; split or merge as needed for review.
 `patches/common/0000-upstream-drop-inline-from-SegmentWriter-_is_mow-defs.patch`
 is the upstream link fix needed for RELEASE. Already present; no rewrite.
 
+The series shipped landed bundled rather than split per the planned
+1-patch-per-layer breakdown — small enough that one commit per branch
+is easier to review than five tiny ones. The result is identical at
+the file level; only the commit granularity differs.
+
 ### patches/common/
 
-- [ ] `0001-be-add-print-stack-types-and-process-startup.patch`
-      Layer 1. `print_stack.h`, `print_stack_globals.h`,
-      `print_stack_init.cpp`. `main()` calls `print_stack_init()`.
-- [ ] `0002-be-add-print-stack-coordinator-and-handler.patch`
-      Layer 3 + 4. `print_stack.cpp`, `print_stack_signal_handler.cpp`,
-      `print_stack_capture.h` (declaration only).
-- [ ] `0003-be-add-print-stack-http-action.patch`
-      Layer 2 + 5. `print_stack_action.{h,cpp}`.
-- [ ] `0004-be-register-print-stack-http-route.patch`
-      Route `/api/print_stack`.
-- [ ] `0005-be-add-print-stack-action-tests.patch`
+- [x] `0001-phase2-common-add-print_stack-types-coordinator-acti.patch`
+      Layers 1 + 2 + 3 + 4 + 5. `print_stack.h`, `print_stack_globals.h`,
+      `print_stack_capture.h`, `print_stack_init.cpp`,
+      `print_stack_signal_handler.cpp`, `print_stack.cpp`,
+      `print_stack_action.{h,cpp}`. `init_signals()` calls
+      `print_stack_init()`. Route `/api/print_stack` registered in
+      `http_service.cpp`.
+- [x] `0002-phase2-common-add-print_stack-action-tests-3-cases.patch`
       Three cases per [phase2-test-plan.md](phase2-test-plan.md). Fixture
       runs `EvHttpServer` on port 0 and uses `HttpClient`.
 
 ### patches/fp-walk/
 
-- [ ] `0001-be-add-fp-walk-capture-into-slot.patch`
+- [x] `0001-phase2-fp-walk-add-capture_into_slot-RBP-chain-walke.patch`
       Layer 3d. `capture_into_slot` definition. Signal-safe RBP walk.
       `mincore` guard.
+- [x] `0002-phase2-fp-walk-allow-first-iteration-RBP-and-bound-m.patch`
+      Bug-fix follow-up: the original bound rejected the initial
+      `rbp == first_rbp`, which dropped the chain to one frame. Allow
+      equality on the first iteration; bound monotonic growth.
 
 ## Dev workflow
 
@@ -97,3 +103,9 @@ Append progress, blockers, and decisions below. Do not delete past entries.
 - 2026-06-04: file created. Prior spec is in `archive/phase2-spec/`. The
   contract is `architecture.md`. Test scope is three CK-shape cases. No
   patches rewritten yet.
+- 2026-06-04: baseline accepted. All three gate commands green from base
+  `c24d454f15c` with submodule `phase2/fp-walk` at `7b7a3dbcd44d`. The
+  series wholesale-replaced the prior `native_stack_*` patches in
+  `patches/common/` and `patches/fp-walk/`. Other variants
+  (`ck-phdr-unwind`, `ob-kill60`, `snapshot-remote-unwind`) stay frozen
+  and broken-on-bootstrap, as planned.
