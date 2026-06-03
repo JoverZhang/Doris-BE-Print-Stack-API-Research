@@ -1,0 +1,123 @@
+---
+schema_version: 2
+created_at: 2026-06-03T17:55:42+08:00
+project_path: /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/repos/source/oceanbase-v4.5.0_CE
+branch: HEAD
+commit: 0e8d5ad012baf0953b2032a35a88bdf8886e9a7a
+title: OceanBase kill-60 stack path
+thread.T0: pre-main static init
+thread.T1: main and observer startup
+thread.T2: SignalWorker coordinator
+thread.T3: SignalHandle kill-60 receiver
+thread.T4: target worker signal handler
+---
+
+T0 - deps/oblib/src/lib/allocator/ob_tc_malloc.cpp:127 | pre-main global memory constructor
+T0 > deps/oblib/src/lib/allocator/ob_tc_malloc.cpp:136 | install common signal handler
+T0 > deps/oblib/src/lib/signal/ob_signal_handlers.cpp:73 | enter signal handler installer
+T0 - deps/oblib/src/lib/signal/ob_signal_handlers.cpp:47 | signal set includes SIGURG
+T0 - deps/oblib/src/lib/signal/ob_signal_handlers.cpp:78 | route signals to wrapper handler
+T0 - deps/oblib/src/lib/signal/ob_signal_handlers.cpp:80 | iterate registered signal set
+T0 - deps/oblib/src/lib/signal/ob_signal_handlers.cpp:81 | install sigaction for each signal
+T1 - src/observer/main.cpp:687 | observer process entrypoint
+T1 > src/observer/main.cpp:701 | enter inner_main on new stack
+T1 > src/observer/main.cpp:503 | start observer inner_main
+T1 - src/observer/main.cpp:529 | install alt signal stack for main thread
+T1 - src/observer/main.cpp:531 | enable redirect handler branch
+T1 > src/observer/main.cpp:562 | block external control signals before start
+T1 > src/observer/ob_signal_handle.cpp:67 | enter change_signal_mask
+T1 - src/observer/ob_signal_handle.cpp:73 | apply pthread signal mask
+T1 < src/observer/main.cpp:654 | resume startup and get observer singleton
+T1 > src/observer/ob_server.h:510 | enter ObServer singleton accessor
+T1 - src/observer/ob_server.h:512 | static singleton constructs server
+T1 > src/observer/ob_server.cpp:132 | construct ObServer
+T1 - src/observer/ob_server.cpp:133 | construct SignalWorker object
+T1 - src/observer/ob_server.cpp:134 | construct SignalHandle object
+T1 < src/observer/main.cpp:659 | resume inner_main and initialize observer
+T1 > src/observer/ob_server.cpp:234 | enter ObServer init
+T1 - src/observer/ob_server.cpp:236 | start observer init body
+T1 < src/observer/main.cpp:662 | resume inner_main and start observer
+T1 > src/observer/ob_server.cpp:931 | enter ObServer start
+T1 > src/observer/ob_server.cpp:958 | call signal thread startup
+T1 > src/observer/ob_server.cpp:918 | enter signal worker and handle startup
+T1 > src/observer/ob_server.cpp:921 | start SignalWorker thread
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:264 | enter SignalWorker start override
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:266 | delegate to Threads start
+T2 > deps/oblib/src/lib/thread/threads.cpp:193 | enter generic Threads start
+T2 > deps/oblib/src/lib/thread/threads.cpp:226 | create worker thread object
+T2 > deps/oblib/src/lib/thread/threads.cpp:252 | enter create_thread
+T2 > deps/oblib/src/lib/thread/threads.cpp:261 | start created Thread wrapper
+T2 > deps/oblib/src/lib/thread/thread.cpp:73 | enter Thread start
+T2 - deps/oblib/src/lib/thread/thread.cpp:102 | create pthread
+T2 > deps/oblib/src/lib/thread/thread.cpp:283 | pthread entrypoint begins
+T2 > deps/oblib/src/lib/thread/thread.cpp:343 | enter Thread run method
+T2 > deps/oblib/src/lib/thread/thread.cpp:170 | enter Thread run
+T2 > deps/oblib/src/lib/thread/thread.cpp:187 | call owning Threads run
+T2 > deps/oblib/src/lib/thread/threads.cpp:242 | enter Threads run
+T2 > deps/oblib/src/lib/thread/threads.cpp:249 | dispatch virtual run1
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:164 | enter SignalWorker run1
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:175 | publish request pipe writer
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:183 | wait for signal requests
+T1 < src/observer/ob_server.cpp:923 | resume startup and start SignalHandle thread
+T3 > deps/oblib/src/lib/thread/threads.cpp:193 | enter generic Threads start for SignalHandle
+T3 > deps/oblib/src/lib/thread/threads.cpp:226 | create signal handle thread object
+T3 > deps/oblib/src/lib/thread/threads.cpp:252 | enter create_thread
+T3 > deps/oblib/src/lib/thread/threads.cpp:261 | start created Thread wrapper
+T3 > deps/oblib/src/lib/thread/thread.cpp:73 | enter Thread start
+T3 - deps/oblib/src/lib/thread/thread.cpp:102 | create pthread
+T3 > deps/oblib/src/lib/thread/thread.cpp:283 | pthread entrypoint begins
+T3 > deps/oblib/src/lib/thread/thread.cpp:343 | enter Thread run method
+T3 > deps/oblib/src/lib/thread/thread.cpp:170 | enter Thread run
+T3 > deps/oblib/src/lib/thread/thread.cpp:187 | call owning Threads run
+T3 > deps/oblib/src/lib/thread/threads.cpp:242 | enter Threads run
+T3 > deps/oblib/src/lib/thread/threads.cpp:249 | dispatch virtual run1
+T3 > src/observer/ob_signal_handle.cpp:37 | enter SignalHandle run1
+T3 - src/observer/ob_signal_handle.cpp:54 | wait for blocked signal
+T3 > src/observer/ob_signal_handle.cpp:58 | dispatch received signal
+T3 > src/observer/ob_signal_handle.cpp:105 | enter deal_signals
+T3 - src/observer/ob_signal_handle.cpp:235 | select kill signal 60 branch
+T3 > src/observer/ob_signal_handle.cpp:237 | request stack collection and wait
+T3 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:31 | enter send_request_and_wait
+T3 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:66 | create request pipe
+T3 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:74 | send request pointer to SignalWorker
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:164 | SignalWorker handles queued request
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:183 | request pipe becomes readable
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:192 | read request pointer
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:226 | allocate backtrace-only processor
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:247 | start processor
+T2 > deps/oblib/src/lib/signal/ob_signal_processor.cpp:43 | enter processor start
+T2 - deps/oblib/src/lib/signal/ob_signal_processor.cpp:47 | write proc maps header
+T2 < deps/oblib/src/lib/signal/ob_signal_worker.cpp:248 | iterate process tasks
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:99 | enter iter_task
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:109 | open proc self task
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:131 | call task_process for each tid
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:280 | enter task_process
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:284 | bind shared handler context
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:294 | publish request id
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:297 | create per-target ack pipes
+T2 - deps/oblib/src/lib/signal/ob_signal_struct.cpp:25 | define MP_SIG as SIGURG
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:309 | send MP_SIG to target tid
+T4 > deps/oblib/src/lib/signal/ob_signal_handlers.cpp:103 | target thread enters ob_signal_handler
+T4 - deps/oblib/src/lib/signal/ob_signal_handlers.cpp:109 | take MP_SIG redirect branch
+T4 - deps/oblib/src/lib/signal/ob_signal_handlers.cpp:113 | read request id from signal payload
+T4 > deps/oblib/src/lib/signal/ob_signal_handlers.cpp:115 | delegate to ObSigHandler handle
+T4 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:349 | enter target-side signal handler
+T4 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:356 | prepare target stack payload
+T4 > deps/oblib/src/lib/signal/ob_signal_processor.cpp:51 | enter backtrace prepare
+T4 - deps/oblib/src/lib/signal/ob_signal_processor.cpp:56 | record target tid
+T4 - deps/oblib/src/lib/signal/ob_signal_processor.cpp:63 | capture target backtrace
+T4 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:360 | notify coordinator prepare done
+T2 < deps/oblib/src/lib/signal/ob_signal_worker.cpp:316 | coordinator waits for prepare ack
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:319 | coordinator reads prepare ack
+T2 > deps/oblib/src/lib/signal/ob_signal_worker.cpp:330 | coordinator runs processor output
+T2 > deps/oblib/src/lib/signal/ob_signal_processor.cpp:70 | enter processor process
+T2 - deps/oblib/src/lib/signal/ob_signal_processor.cpp:75 | write captured stack buffer
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:332 | notify target handler process done
+T4 < deps/oblib/src/lib/signal/ob_signal_worker.cpp:366 | target waits for process done
+T4 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:369 | target reads process result
+T4 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:384 | target notifies exit done
+T2 < deps/oblib/src/lib/signal/ob_signal_worker.cpp:334 | coordinator reads exit ack
+T2 < deps/oblib/src/lib/signal/ob_signal_worker.cpp:249 | coordinator ends processor
+T2 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:254 | notify SignalHandle request done
+T3 < deps/oblib/src/lib/signal/ob_signal_worker.cpp:80 | SignalHandle waits for worker ack
+T3 - deps/oblib/src/lib/signal/ob_signal_worker.cpp:83 | SignalHandle reads worker ack

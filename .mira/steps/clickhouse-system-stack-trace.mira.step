@@ -1,0 +1,78 @@
+---
+schema_version: 2
+created_at: 2026-06-03T17:55:42+08:00
+project_path: /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/repos/source/ClickHouse-v26.3.10.62-lts
+branch: HEAD
+commit: e1c11930c28196f954a93287e43c1aa112c8c607
+title: ClickHouse system.stack_trace path
+thread.T1: server startup and system table registration
+thread.T2: query coordinator
+thread.T3: sampled worker signal handler
+---
+
+T1 - programs/main.cpp:309 | process entrypoint
+T1 - programs/main.cpp:338 | choose clickhouse app mode
+T1 > programs/main.cpp:402 | dispatch selected app entrypoint
+T1 > programs/server/Server.cpp:478 | enter server main wrapper
+T1 - programs/server/Server.cpp:480 | construct DB::Server application
+T1 > programs/server/Server.cpp:501 | run Poco application
+T1 > base/poco/Util/src/ServerApplication.cpp:110 | enter Poco server run with argv
+T1 > base/poco/Util/src/ServerApplication.cpp:131 | delegate to Application run
+T1 > base/poco/Util/src/Application.cpp:307 | enter Poco application run
+T1 > base/poco/Util/src/Application.cpp:310 | virtual initialize dispatch
+T1 > programs/server/Server.cpp:717 | enter DB::Server initialize
+T1 > programs/server/Server.cpp:720 | call BaseDaemon initialization
+T1 > src/Daemon/BaseDaemon.cpp:234 | initialize daemon base
+T1 < base/poco/Util/src/Application.cpp:315 | resume Poco run and dispatch main
+T1 > programs/server/Server.cpp:1110 | enter DB::Server main
+T1 - programs/server/Server.cpp:2845 | attach system tables during startup
+T1 > src/Storages/System/attachSystemTables.cpp:146 | enter server system table attach
+T1 > src/Storages/System/attachSystemTables.cpp:213 | request stack trace table attach
+T1 > src/Storages/System/attachSystemTablesImpl.h:59 | enter attachNoDescription helper
+T1 > src/Storages/System/attachSystemTablesImpl.h:61 | delegate to attachImpl
+T1 > src/Storages/System/attachSystemTablesImpl.h:13 | enter attachImpl template
+T1 > src/Storages/System/attachSystemTablesImpl.h:40 | construct system table storage
+T1 > src/Storages/System/StorageSystemStackTrace.cpp:724 | construct StorageSystemStackTrace
+T1 - src/Storages/System/StorageSystemStackTrace.cpp:740 | prepare signal handler action
+T1 - src/Storages/System/StorageSystemStackTrace.cpp:756 | install stack trace service signal handler
+T2 - src/Storages/System/StorageSystemStackTrace.cpp:761 | query read entry for system.stack_trace
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:774 | create ReadFromSystemStackTrace pipe
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:688 | initialize read pipeline
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:690 | create StackTraceSource
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:388 | construct StackTraceSource
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:424 | enter coordinator generate
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:434 | call thread id enumeration
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:656 | enter getFilteredThreadIds
+T2 - src/Storages/System/StorageSystemStackTrace.cpp:663 | iterate proc self task
+T2 < src/Storages/System/StorageSystemStackTrace.cpp:484 | resume coordinator and check signal mask
+T2 - src/Storages/System/StorageSystemStackTrace.cpp:508 | send signal to target tid
+T3 > src/Storages/System/StorageSystemStackTrace.cpp:120 | target thread enters signalHandler
+T3 - src/Storages/System/StorageSystemStackTrace.cpp:128 | validate sender pid
+T3 - src/Storages/System/StorageSystemStackTrace.cpp:133 | validate sequence number
+T3 - src/Storages/System/StorageSystemStackTrace.cpp:163 | capture stack trace in target thread
+T3 > src/Common/StackTrace.cpp:470 | enter StackTrace constructor from signal context
+T3 > src/Common/StackTrace.cpp:472 | call tryCapture before signal context fallback
+T3 > src/Common/StackTrace.cpp:507 | enter StackTrace tryCapture
+T3 > src/Common/StackTrace.cpp:512 | call bundled libunwind unw_backtrace
+T3 > contrib/llvm-project/libunwind/include/libunwind.h:118 | enter ClickHouse libunwind addition declaration
+T3 - contrib/llvm-project/libunwind/include/libunwind.h:119 | declare unw_backtrace helper
+T3 > contrib/llvm-project/libunwind/src/libunwind.cpp:221 | enter ClickHouse added unw_backtrace helper
+T3 - contrib/llvm-project/libunwind/src/libunwind.cpp:225 | initialize unwind context and cursor
+T3 - contrib/llvm-project/libunwind/src/libunwind.cpp:231 | walk frames with unw_step
+T3 > contrib/llvm-project/libunwind/src/libunwind.cpp:179 | enter __unw_step implementation
+T3 > contrib/llvm-project/libunwind/src/UnwindCursor.hpp:3120 | enter x86_64 signal trampoline unwind
+T3 - contrib/llvm-project/libunwind/src/UnwindCursor.hpp:3165 | apply signal return instruction pointer adjustment
+T3 - contrib/llvm-project/libunwind/src/DwarfInstructions.hpp:411 | apply DWARF signal frame instruction pointer fix
+T3 < src/Common/StackTrace.cpp:474 | resume constructor and unpoison signal context
+T3 - src/Common/StackTrace.cpp:477 | read interrupted caller address
+T3 > src/Common/StackTrace.cpp:283 | enter getCallerAddress from ucontext
+T3 - src/Common/StackTrace.cpp:292 | read Linux x86_64 RIP from signal context
+T3 < src/Common/StackTrace.cpp:489 | match interrupted caller in captured frames
+T3 - src/Common/StackTrace.cpp:492 | compensate libunwind signal return adjustment
+T3 - src/Storages/System/StorageSystemStackTrace.cpp:175 | notify coordinator through pipe
+T3 - src/Storages/System/StorageSystemStackTrace.cpp:180 | restore errno before leaving handler
+T2 < src/Storages/System/StorageSystemStackTrace.cpp:518 | coordinator waits for handler notification
+T2 > src/Storages/System/StorageSystemStackTrace.cpp:186 | enter wait helper
+T2 - src/Storages/System/StorageSystemStackTrace.cpp:193 | poll notification pipe with timeout
+T2 - src/Storages/System/StorageSystemStackTrace.cpp:222 | accept matching sequence notification
+T2 < src/Storages/System/StorageSystemStackTrace.cpp:572 | insert stack trace row
