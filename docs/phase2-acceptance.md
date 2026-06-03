@@ -27,36 +27,42 @@ next phase" below.
 
 ## Tier 1: Correctness (Baseline Gate)
 
-Run one command. Example: `just phase2-test <variant>`.
+Run one command. Example: `just phase2-test new-ut <variant> asan '*'`.
 
 It must:
 
 1. Apply `patches/common/*` and `patches/<variant>/*` from the base commit.
 2. Build `doris_be` and the test target.
-3. Run `be/test/service/http/native_stack_action_test`.
+3. Run `be/test/service/http/print_stack_action_test`.
 
 The test binary spawns its own known-stack threads and dumps itself. It needs no
 FE, no cluster, and no Docker runtime.
 
 Contract checks:
 
-- All-thread dump returns the agreed JSON shape.
-- One-TID dump returns only the target TID.
-- Two concurrent dumps serialize: the second waits, then both finish, and
-  neither corrupts the other. A dump that cannot start within its `timeout_ms`
-  returns `timeout`.
-- A low timeout returns best-effort partial results: the threads that responded
-  carry frames, the rest are marked `timeout`, and the process stays healthy.
-- A missing TID returns the `missing_tid` status.
-- Every frame has raw `pc`, `dso`, and `dso_offset`.
-- No response has a function name, file name, line number, or demangled name.
+- All-thread dump returns the agreed JSON shape: root `threads`; per thread
+  `thread_id`, `thread_name`, and `trace`; per frame `dso` and `dso_offset`.
+- One-`thread_id` dump returns only the target thread.
+- Two concurrent dumps serialize: the second blocks until the first
+  completes; neither corrupts the other. Contention is not visible in the
+  public response.
+- Each thread has a bounded wait. A thread that does not respond within the
+  bound carries internal `ThreadStackStatus::Timeout`; its public `trace` is
+  empty. The process stays healthy.
+- An absent `thread_id` returns an empty `threads` array.
+- Every frame has `dso` and `dso_offset` only.
+- No response has a function name, file name, line number, raw PC, or
+  demangled name.
 
 Correctness checks, in-process:
 
-- Each active spawned thread returns at least one non-zero PC.
+- Each active spawned thread returns at least one frame with non-empty `dso`
+  and non-zero `dso_offset`.
 - A known-stack thread returns the expected function chain after offline
   symbolization against the test binary.
-- A stack deeper than `max_frames` is marked `truncated: true`.
+- A stack deeper than `kMaxSignalFrames` is capped at the slot's frame array
+  length. The cap is an internal contract; the public JSON has no `truncated`
+  field.
 
 Stability check:
 

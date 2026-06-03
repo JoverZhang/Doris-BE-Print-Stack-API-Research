@@ -66,11 +66,11 @@ Namespace-scope state whose policy comes from the design doc.
 
 ```cpp
 // Reason: only one dump can run at a time. Two would fight over the
-// signal channel and the capture slot. A contended request waits up to
-// timeout_ms, then returns `timeout`. CK blocks. OB spins. We bound the
-// wait.
-// Spec: docs/phase2-design.md "Common API" -> Mechanics.
-std::timed_mutex s_dump_mutex;
+// signal channel and the capture slot. A contended request blocks on
+// this gate until the in-flight dump finishes; contention is not
+// visible in the public response.
+// Spec: docs/architecture.md "Layer 3a invariants".
+std::mutex s_dump_mutex;
 ```
 
 #### Local choice in a variant patch
@@ -219,8 +219,8 @@ A scratch variable the body explains.
 
 ```cpp
 int n = 0;
-if (pc != 0 && n < max_frames) {
-    g_slot.frames[n++] = pc;
+if (pc != 0 && n < kMaxSignalFrames) {
+    g_slot.pcs[n++] = pc;
 }
 ```
 

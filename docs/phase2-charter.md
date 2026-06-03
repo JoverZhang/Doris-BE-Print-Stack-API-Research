@@ -57,26 +57,21 @@ The decision record must give:
 
 The debug API is the same for every variant.
 
-- Route: `GET /api/debug/native_stack`.
-- Returns raw PCs and DSO offsets only.
+- Route: `GET /api/print_stack`.
+- Returns DSO paths and DSO offsets only. No raw PC, no symbols.
 - Returns no function names, file names, line numbers, or demangled names.
-- Supports all threads by default, or one thread by TID.
-- Allows one active dump at a time. A second request waits up to its
-  `timeout_ms` for the active dump to finish. If it cannot start in time, it
-  returns `timeout`.
+- Supports all threads by default, or one thread by `thread_id`.
+- Allows one active dump at a time. A second request blocks until the
+  first completes. Contention is not visible in the public response.
 - Targets Linux x86_64 Release builds.
 
-Defaults: timeout `100ms`, max frames `64`, max copied stack bytes `8KiB`.
+Collection is sequential. Each thread has a bounded wait; a thread that does
+not respond within the bound returns with an empty trace. One slow thread does
+not fail the whole dump. The process stays healthy.
 
-`timeout_ms` is the budget for the whole request, not for one thread. Collection
-is sequential, so an all-thread dump may not reach every thread inside the
-budget. The dump returns best effort: it reports the threads it collected, marks
-the rest `timeout`, and keeps the process healthy. One slow thread does not fail
-the whole dump.
-
-For each frame, `dso_offset` is the value offline tools resolve. The raw `pc` is
-a runtime address for in-process correlation only; it does not survive across
-runs.
+For each frame, `(dso, dso_offset)` is the value offline tools resolve.
+`dso_offset` is the captured PC minus the DSO's runtime load base, so ASLR is
+already stripped out.
 
 Only offline tools may add symbols, file names, and line numbers.
 
@@ -93,7 +88,9 @@ See [AGENTS.md](../AGENTS.md) for the patch-first workflow.
 ## Related Documents
 
 - [phase2-acceptance.md](phase2-acceptance.md): pass/fail gates. Human-owned.
-- [phase2-design.md](phase2-design.md): API and variant mechanics. Agent-owned.
+- [architecture.md](architecture.md): variant-agnostic contract and structure
+  for the print_stack API. Agent-owned.
+- [phase2-design.md](phase2-design.md): variant mechanics. Agent-owned.
 - [writing-guidelines.md](writing-guidelines.md): house style for these docs.
 - [../evidence/phase2/subagent-brief-template.md](../evidence/phase2/subagent-brief-template.md):
   per-variant dispatch brief. Agent-owned.
