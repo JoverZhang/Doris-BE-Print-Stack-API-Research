@@ -4,7 +4,8 @@
 > Follow [writing-guidelines.md](writing-guidelines.md) when you edit this file.
 > This file maps each acceptance check to a concrete test. The gates live in
 > [phase2-acceptance.md](phase2-acceptance.md). The mechanics live in
-> [phase2-design.md](phase2-design.md).
+> [phase2-design.md](phase2-design.md) and the variant-agnostic contract in
+> [architecture.md](architecture.md).
 
 ## Goal
 
@@ -19,84 +20,89 @@ collector or only against a real one.
 Tests call the common free functions directly. They do not forge an
 `HttpRequest`.
 
-- `parse_collect_options(params)` returns `CollectOptions` or an error. This is
-  where `bad_request` is decided.
-- `collect_native_stacks(opts)` returns a `NativeStackReport` with raw PCs. This
-  is the only per-variant step: a stub in common, the real walk in `fp-walk`.
-- `resolve_dsos(report)` fills `dso` and `dso_offset` from `/proc/self/maps`.
-- `serialize(report)` writes the JSON.
+- `parse_print_stack_options(req, options)` returns `Status`. This is where
+  HTTP `bad_request` is decided.
+- `collect_print_stack(options)` runs the full orchestration: takes the
+  single-dump gate, lists target tids, signals each one, waits bounded on the
+  notification pipe, and resolves the captured PCs to `(dso, dso_offset)`
+  through `SymbolIndex`. The per-variant seam is `capture_into_slot`, which
+  the signal handler invokes; tests pick a variant by linking its `.o`.
+- `serialize_print_stack_result(result)` writes the public JSON.
 
-Test-only hooks in common:
+Test-only hooks in the stub variant of `capture_into_slot`:
 
-- `set_unresponsive_tid_for_test(tid)` marks one tid unresponsive, so the
-  timeout and partial paths run without real signaling.
-- `hold_dump_lock_for_test()` returns a guard that holds the dump lock, so the
-  contended path is deterministic.
+- `set_unresponsive_tid_for_test(tid)` makes the stub skip publishing for one
+  tid, so the coordinator times out for that thread. Drives the timeout and
+  partial paths without real signaling.
+- `hold_dump_lock_for_test()` returns a guard that holds the dump gate, so
+  the contended path is deterministic.
 - `consume_deadline_budget_for_test(ms)` sleeps `ms` milliseconds after the
-  dump lock is acquired but before the per-tid loop, so the deadline guard
+  dump gate is acquired but before the per-tid loop, so the deadline guard
   case is deterministic.
 - `pause_handler_for_tid_for_test(tid)` makes the fp-walk handler busy-wait
-  in `WALKING` if the running thread's tid matches `tid`, so case 15 can
-  hold one ring slot deterministically. Pass 0 to clear; the common stub
-  is a no-op.
+  if the running thread's tid matches `tid`, so case 15 can hold one ring
+  slot deterministically. Pass 0 to clear; the common stub is a no-op.
 
 ## File and partition
 
 - Two files, partitioned by where the fixture mechanics live:
-  - `be/test/service/http/native_stack_action_test.cpp` ships in
+  - `be/test/service/http/print_stack_action_test.cpp` ships in
     `patches/common/`, holds the 14 variant-agnostic cases (1-13, 16),
-    fixture `NativeStackActionTest`.
-  - `be/test/service/http/native_stack_action_test_<variant>.cpp` ships in
+    fixture `PrintStackActionTest`.
+  - `be/test/service/http/print_stack_action_test_<variant>.cpp` ships in
     `patches/<variant>/`, holds the cases whose fixtures only exist in that
     variant (fp-walk: cases 14, 15, 17; fixture
-    `FpWalkNativeStackActionTest`). Variant-specific tests duplicate the
+    `FpWalkPrintStackActionTest`). Variant-specific tests duplicate the
     small helpers they need (`self_tid`, `collector_is_stub`, fixture
     threads) because each variant's test file links independently.
 - A case that needs a real collector starts with
-  `if (report.collector == "stub") GTEST_SKIP();` (variant-agnostic file) or
-  `if (collector_is_stub()) GTEST_SKIP();` (variant file). So
+  `if (collector_is_stub()) GTEST_SKIP();`. So
   `just phase2-test new-ut common asan '*'` runs the variant-agnostic subset
   (8 pass, 6 skip), and `just phase2-test new-ut fp-walk asan '*'` runs
   everything (14 + 3 = 17 pass). In `new-ut`, `'*'` maps to
-  `*NativeStackActionTest.*` to catch both suites.
+  `*PrintStackActionTest.*` to catch both suites.
 
 ## Categories
 
-- Contract: the shared API shape and status rules. Runs on the stub and on a
-  real collector.
+- Contract: the shared API shape and the public JSON rules. Runs on the stub
+  and on a real collector.
+- Coordinator: orchestration logic exercised through the stub.
 - Correctness: real frames. Runs on a real collector only.
 - Boundary: the late-responder guarantee. Runs on a real collector only.
 - Stability: repeated dumps do not break the process. Runs on both.
+- Variant safety: handler-internal safety checks. Runs on a real collector
+  in the owning variant only.
 
 ## Tier 1 cases
 
 | # | Category | Test | Setup and assertion | Runs on |
 | --- | --- | --- | --- | --- |
-| 1 | Contract | `Schema` | collect all, resolve, serialize, parse. Required keys are present (root: `collector`, `status`, `timeout_ms`, `max_frames_per_thread`, `max_copied_stack_bytes`, `elapsed_ms`, `threads`; per thread: `tid`, `status`, `truncated`, `frames`). No `target_tid` on an all-thread dump. No key in {function, func, file, line, symbol, demangled, name} anywhere. Frame objects hold only `pc`, `dso`, `dso_offset`. | stub + real |
-| 2 | Contract | `ShapeOneTid` | park one thread T; collect `{tid:T}`. Exactly one thread entry, `tid == T`, root `target_tid == T`. | stub + real |
-| 3 | Contract | `MissingTid` | collect `{tid: absent}`. Status `missing_tid`, an error reason, no frames. | stub + real |
-| 4 | Contract | `BadRequest` | `parse_collect_options` on `tid<=0`, `timeout_ms` 0 or over 60000, `max_frames` 0, non-numeric. Each is rejected as `bad_request` with a reason. No collection. | stub + real |
-| 5 | Contract | `ContendedDumpReturnsTimeout` | hold the dump lock; collect `{timeout_ms: small}`. Status `timeout`. Release the lock; the next collect succeeds. Deterministic, no extra threads. | stub + real |
-| 6 | Contract | `Timeout` | `set_unresponsive_tid(T)`; collect `{tid:T, timeout_ms: small}`. Thread T status `timeout`, overall `timeout`. A later normal dump still works. | stub + real |
-| 7 | Correctness | `NonZeroPcPerActiveThread` | spawn K spin-parked threads; collect all. Each spawned thread returns at least one non-zero `pc`. | real |
-| 8 | Correctness | `KnownChainResolved` | spawn the marker chain (entry, c, b, a, spin); collect `{tid:T}`. The walked frames contain the four recorded `__builtin_return_address(0)` values as a contiguous subsequence in caller order, beginning at `frames[1..4]` (the chain_offset window). The test plan originally targeted `frames[1..2]`, but a 10×10 stress in 2026-06 showed ~10% of runs across all four variants landing the chain at `frames[3]` because -O0 + ASan occasionally inserts an extra interceptor frame (`__asan::*` handlers, pthread internals from `clone`/`start_thread`) ahead of the recorded chain. The window was widened to `frames[1..4]` to absorb this stochastic insertion while still catching a sideways walk. The chain-match assertion and the dso_offset formula assertion stay tight; addr2line consumes dso_offset, not chain_offset. `frames[0].pc` is non-zero. Every frame has a non-empty `dso` (the test binary) and a `dso_offset` such that `segment_base + dso_offset == pc`. `handler_time_ns` is present and non-negative. | real |
-| 9 | Correctness | `Truncated` | spawn a chain deeper than N; collect `{tid:T, max_frames:N}`. `frames.size() == N`, `truncated == true`. Control: a large N gives `truncated == false`. | real |
-| 10 | Correctness | `SignalBlocked` | a thread blocks `SIGRTMIN+6` with `pthread_sigmask`, then parks; collect `{tid:T}`. Status `signal_blocked`, not `timeout`. | real |
-| 11 | Correctness | `PartialResults` | spawn responsive parked threads plus one unresponsive (`set_unresponsive_tid`); collect all. Responsive threads carry frames, the unresponsive one is `timeout`, overall status `partial`, process healthy. | real |
-| 12 | Boundary | `LateResponderDoesNotCorruptNextDump` | dump `{tid:T}`, then dump `{tid:T}` again. With fp-walk's per-sequence slot ring, the two dumps land in distinct slots, so the shared-slot hazard does not exist. The handler also validates the request token on entry and re-checks it before publishing. Forcing an actually-late handler is case 15; the deterministic use-after-free check is the Tier 2 TSan deepening below. | real |
-| 13 | Stability | `DumpLoopNoCrashNoStuck` | collect all in a loop of N iterations (about 200) with the marker threads alive. Every iteration returns, the loop finishes within a wall-clock bound, all workers stay joinable. | stub + real |
-| 14 | Correctness | `RbpBoundsRejectOutOfStackRBP` | drive the per-handler RBP safety check (`rbp_can_read_for_test`) over an accept/reject table: an RBP above the `[initial_rbp, initial_rbp + max_stack_bytes)` window, below it, at a position whose read crosses the upper bound, misaligned, zero anchor, aligned and inside, and equal to the anchor. Rejects every bad input; accepts the valid ones. This is the precondition that bounds the walk from reading past the stack. Case 17 covers the complementary mincore-based unmapped-page check; PROT_NONE pages (e.g., stack guard pages) are still a residual case until a sigsetjmp/siglongjmp trampoline is added. | real |
-| 15 | Boundary | `LateHandlerCannotCorruptNextDumpUnderLoad` | use `pause_handler_for_tid_for_test(bait.tid())` to hold one ring slot in WALKING after the bait's handler enters; dump the bait with a tight timeout so the coordinator times out and leaves that slot WALKING; then loop 12 marker-chain arms. Every fourth arm targets the same ring slot as the bait — its CAS `IDLE`->`PENDING` must fail and report `slot_busy`. The other arms hit free slots and must report `ok` with marker-chain frames intact (no cross-slot corruption). Release the pause hook; a follow-up loop must report all `ok` (every slot reclaimable). This exercises the per-sequence ring's safety contract directly; the underlying kernel signal-delivery race remains the Tier 2 TSan deepening below. | real |
-| 16 | Correctness | `DeadlineGuardSkipsExpiredSignaling` | drain the dump's deadline budget with `consume_deadline_budget_for_test(80)` before a `timeout_ms = 50` collect of all live threads. Every per-thread entry must carry `"dump deadline expired before signaling this thread"` and status `timeout`; no entry may be `ok`. Wall-clock stays close to `timeout_ms + consume_ms`. Without the guard, every tid still gets a queued signal that the wait loop has no time to receive, creating exactly the late-handler hazard the per-sequence slot must defend against. | stub + real |
-| 17 | Boundary | `JunkRbpDoesNotCrashCollector` | spawn a detached worker that clobbers `%rbp` to a likely-unmapped address (`0xCAFEBABE00000000`) via inline asm and enters an infinite `pause` loop; dump it. The BE must remain alive and report the dump with at most one frame (the RIP from the asm loop). The `mincore`-based `page_is_mapped` guard in the walk loop is what stops the deref. NOTE: `mincore` does not reject PROT_NONE pages (stack guard pages report as mapped-but-not-resident), so an RBP pointing into a guard page still crashes; a `sigsetjmp`/`siglongjmp` trampoline would close that residual case. Skipped on non-x86_64. | real |
+| 1 | Contract | `SerializeClickHouseLikeShape` | Build a `PrintStackResult`, serialize, parse. Required keys are present: root `threads`; per thread `thread_id`, `thread_name`, `trace`; per frame `dso`, `dso_offset`. No key in {`pc`, `collector`, `status`, `timeout_ms`, `pipe_read_timeout_ms`, `max_frames`, `max_stack_bytes`, `target_tid`, `truncated`, `handler_time_ns`, `error_reason`, `function`, `func`, `file`, `line`, `symbol`, `demangled`, `name`} appears in public JSON. | stub + real |
+| 2 | Coordinator | `ShapeOneThreadId` | Park one thread T; run the coordinator with `PrintStackOptions{target_thread_id:T}` and fake capture. Exactly one `ThreadStackTrace` entry; `thread_id == T`. | stub + real |
+| 3 | Coordinator | `MissingThreadId` | Run the coordinator with an absent target thread id. The result has no entry, or one entry with internal `ThreadStackStatus::ThreadExited`. Public JSON `threads` is empty in the absent case. | stub + real |
+| 4 | HTTP smoke | `BadRequest` | Send invalid `thread_id` values (zero, negative, non-numeric) through `PrintStackAction`. Each is rejected as HTTP 400. Old query fields (`timeout_ms`, `max_frames`, `max_stack_bytes`, `tid`) are not accepted as public controls; if present they are silently ignored. | stub + real |
+| 5 | Coordinator | `SerializedDumpsBlock` | Hold the dump gate with a test guard; start a second collection in another thread. The second collection blocks until the first releases the gate, then completes normally. The public JSON of either dump has no `timeout` indicator. | stub |
+| 6 | Coordinator | `PipeReadTimeout` | Use the stub capture that does not publish before the injected `pipe_read_timeout_ms`. The target thread gets internal `ThreadStackStatus::Timeout`; the public JSON `trace` for that thread is empty. A later normal dump still works. | stub |
+| 7 | Correctness | `NonZeroDsoOffsetPerActiveThread` | Spawn K parked live threads; collect all with the real collector. Each spawned thread returns at least one frame with non-empty `dso` and non-zero `dso_offset`. | real |
+| 8 | Correctness | `KnownChainResolved` | Spawn the marker chain (entry, c, b, a, spin); collect `{thread_id:T}`. The captured slot PCs (`g_slot.pcs[0..frame_count]`) contain the four recorded `__builtin_return_address(0)` values as a contiguous subsequence in caller order, beginning at `pcs[1..4]` (the chain_offset window). The window was widened to absorb the stochastic interceptor frame that ASan inserts (`__asan::*` handlers, pthread internals from `clone`/`start_thread`) ahead of the recorded chain in ~10% of runs under `-O0`. The chain-match assertion and the dso_offset formula assertion stay tight; addr2line consumes `dso_offset`, not `chain_offset`. `pcs[0]` is non-zero. After resolution, every frame has a non-empty `dso` (the test binary) and a `dso_offset` such that `object.address_begin + dso_offset == pcs[i]`, following `SymbolIndex::findObject()`. | real |
+| 9 | Correctness | `MaxSignalFramesCap` | Spawn a chain deeper than `kMaxSignalFrames`; collect `{thread_id:T}`. The slot reports `frame_count == kMaxSignalFrames`. The public `trace` length matches. The public JSON has no `truncated` field; the cap is an internal contract, not a public one. | real |
+| 10 | Correctness | `SignalBlocked` | A thread blocks `SIGRTMIN+6` with `pthread_sigmask`, then parks. Real collection reports internal `ThreadStackStatus::SignalBlocked`, not `Timeout`. Public JSON has an empty `trace` for that thread. | real |
+| 11 | Coordinator | `PartialResults` | Stub capture returns frames for some targets and skips publishing for one target (via `set_unresponsive_tid_for_test`). The result preserves successful threads; the unresponsive one carries internal `ThreadStackStatus::Timeout`. Public JSON shows all threads; some `trace` arrays are empty. There is no public `partial` indicator. | stub |
+| 12 | Boundary | `LateResponderDoesNotCorruptNextDump` | Run two collections for the same target. The second result is not polluted by a late handler from the first request. This is a smoke case; stronger proof stays in variant slot tests. | real |
+| 13 | Stability | `DumpLoopNoCrashNoStuck` | Collect in a loop of about 200 iterations with marker threads alive. Every iteration returns within a wall-clock bound; workers remain joinable. | stub + real |
+| 14 | Variant safety | `RbpBoundsRejectOutOfStackRBP` | Drive fp-walk's per-handler RBP safety check (`rbp_can_read_for_test`) over an accept/reject table: an RBP above the `[initial_rbp, initial_rbp + max_stack_bytes)` window, below it, at a position whose read crosses the upper bound, misaligned, zero anchor, aligned and inside, and equal to the anchor. Rejects every bad input; accepts the valid ones. This is the precondition that bounds the walk from reading past the stack. Case 17 covers the complementary `mincore`-based unmapped-page check; PROT_NONE pages (e.g., stack guard pages) are still a residual case until a `sigsetjmp`/`siglongjmp` trampoline is added. | fp-walk |
+| 15 | Variant safety | `LateHandlerCannotCorruptNextDumpUnderLoad` | Use `pause_handler_for_tid_for_test(bait.tid())` to hold one ring slot after the bait's handler enters; dump the bait with a tight timeout so the coordinator times out and leaves that slot busy; loop 12 marker-chain arms. Every fourth arm targets the same ring slot as the bait — its CAS `IDLE`→`PENDING` must fail. The other arms hit free slots and must report frames intact (no cross-slot corruption). Release the pause hook; a follow-up loop must succeed on every slot. Exercises the per-sequence ring's safety contract directly; the underlying kernel signal-delivery race remains the Tier 2 TSan deepening. | fp-walk |
+| 16 | Coordinator | `DeadlineGuardSkipsExpiredSignaling` | Drain the dump's deadline budget with `consume_deadline_budget_for_test(80)` before a `pipe_read_timeout_ms = 50` collect of all live threads. Every per-thread entry carries internal `ThreadStackStatus::Timeout`; no entry is `OK`. Wall-clock stays close to `pipe_read_timeout_ms + consume_ms`. Without the guard, every tid still gets a queued signal that the wait loop has no time to receive, which is exactly the late-handler hazard the per-sequence slot must defend against. | stub + real |
+| 17 | Variant safety | `JunkRbpDoesNotCrashCollector` | Spawn a detached worker that clobbers `%rbp` to a likely-unmapped address (`0xCAFEBABE00000000`) via inline asm and enters an infinite `pause` loop; dump it. The BE remains alive and reports the dump with at most one frame (the RIP from the asm loop). The `mincore`-based `page_is_mapped` guard in the walk loop is what stops the deref. NOTE: `mincore` does not reject PROT_NONE pages (stack guard pages report as mapped-but-not-resident), so an RBP pointing into a guard page still crashes; a `sigsetjmp`/`siglongjmp` trampoline would close that residual case. Skipped on non-x86_64. | fp-walk |
 
 ## Candidates
 
 Cases worth adding once the baseline is green:
 
-- `MaxStackBytesBound`: set a small `max_stack_bytes` and confirm the frame-
-  pointer walk stops at the bound without reading past it. The charter bounds
-  copied stack bytes, but no Tier 1 case exercises that bound yet.
+- `StackByteCapBound`: set a small variant-local stack-byte cap and confirm the
+  frame-pointer walk stops at the bound without reading past it. The internal
+  contract bounds copied stack bytes, but no Tier 1 case exercises that bound
+  yet. Variant-local, not a public field.
 
 ## The recipe
 
@@ -111,7 +117,7 @@ just phase2-test full-ut base asan 'BrpcClientCacheTest.invalid'
 ```
 
 Every argument is explicit. `new-ut` maps the all-test filter `'*'` to the
-Phase 2 target suite `'*NativeStackActionTest.*'`; a narrower filter is passed
+Phase 2 target suite `'*PrintStackActionTest.*'`; a narrower filter is passed
 through as-is. `full-ut` passes the gtest filter through directly, so `'*'` means
 full BE UT. For `asan`, `release`, and `tsan`, the command runs
 `run-be-ut.sh --run --filter=<effective-filter>` inside the image. By default the
@@ -169,8 +175,9 @@ are not part of the selected baseline smoke. Expect to treat TSAN as best-effort
 atomic instrumentation is not guaranteed async-signal-safe inside our
 signal handler).
 
-Observed results across the four variants (recorded 2026-06-02 against
-the Doris pin at the time of this writing):
+Observed results across the four variants (recorded 2026-06-02 against the
+Doris pin at the time of this writing, under the prior `/api/debug/native_stack`
+contract; case counts include the variant-specific cases each variant ships):
 
 | Variant | ASAN | RELEASE | TSAN |
 | --- | --- | --- | --- |
@@ -204,6 +211,10 @@ Selected fp-walk timings (ASAN-vs-RELEASE, no TSAN row since failures):
 | `DumpLoopNoCrashNoStuck` | ~1083 ms | ~852-1000 ms |
 | `LateHandlerCannotCorruptNextDumpUnderLoad` | ~131 ms | ~129 ms |
 | `DeadlineGuardSkipsExpiredSignaling` | ~80 ms | ~80 ms |
+
+The observed numbers above were captured against the prior contract. Reruns
+under the print_stack contract may shift the case names and counts but should
+preserve the per-variant pass pattern.
 
 ## Tier 2 (deferred, not in this file)
 

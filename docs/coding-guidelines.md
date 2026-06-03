@@ -153,9 +153,9 @@ comments for body beats. The case number cross-references
 
 ```cpp
 // Reason: [case 1] catches drift in the JSON contract. Required keys are
-// present. No symbol-like keys leak. Frames carry only pc, dso,
+// present. No symbol-like keys leak. Frames carry only dso and
 // dso_offset.
-TEST_F(NativeStackActionTest, Schema) {
+TEST_F(PrintStackActionTest, SerializeClickHouseLikeShape) {
     // 1. Run the full pipeline.
     ...
 
@@ -174,10 +174,10 @@ Steps follow the function's top-level `Reason:` and carry no label.
 
 ```cpp
 // Reason: a single orchestration shared by every variant. The per-variant
-// step is the `capture` callback.
-// Spec: docs/phase2-design.md "Common API".
-NativeStackReport run_collection(...) {
-    // 1. Take the single-dump gate bounded by timeout_ms.
+// step is the `capture_into_slot` hook the handler invokes.
+// Spec: docs/architecture.md "Layer 3 — Coordinator and handler protocol".
+PrintStackResult collect_print_stack(const PrintStackOptions& options) {
+    // 1. Take the single-dump gate.
     ...
 
     // 2. Select target tids from /proc/self/task.

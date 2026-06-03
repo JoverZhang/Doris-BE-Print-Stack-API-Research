@@ -52,43 +52,35 @@ is the main reason it is the baseline.
 
 ## Common API
 
-Route: `GET /api/debug/native_stack`. Source: `patches/common/`.
+The variant-agnostic contract and structure live in
+[architecture.md](architecture.md). Source: `patches/common/`.
 
-Request parameters:
+In short:
 
-- `tid`: optional. Dump one thread instead of all.
-- `timeout_ms`: default 100, range 1..60000.
-- `max_frames`: default 64.
-- `max_stack_bytes`: default 8192.
+- Route: `GET /api/print_stack`.
+- Request selects the target thread only: `thread_id`. Implementation
+  policy (`timeout_ms`, `max_frames`, `max_stack_bytes`, etc.) is not
+  exposed as a query field.
+- Response: `threads`. Per thread: `thread_id`, `thread_name`, `trace`.
+  Per frame: `dso`, `dso_offset`. No symbol fields, no raw `pc`.
+- Internal status is the `ThreadStackStatus` enum (`OK`, `Timeout`,
+  `SignalBlocked`, `ThreadExited`, `CaptureFailed`). Public JSON
+  drops it; the BE log records non-`OK` status for operators.
+- Single-dump gate is a `std::mutex` taken for the whole collection.
+  A second request blocks until the first completes. There is no
+  contended-dump timeout.
+- Thread ids come from `/proc/self/task`. Thread names come from
+  `/proc/self/task/<tid>/comm`, read in the coordinator.
 
-Response shape:
+Variants share every layer except the capture hook
+`capture_into_slot`, which fills a fixed-size frame buffer from
+`ucontext_t`. The common library does not link any variant; the
+build picks one implementation.
 
-- Root: `collector`, `status`, `timeout_ms`, `max_frames_per_thread`,
-  `target_tid` when set, `elapsed`, and `threads`.
-- Per thread: `tid`, `status`, `frames`, `truncated`, and an error reason on
-  failure.
-- Per frame: raw `pc`, `dso`, and `dso_offset`. No symbol fields.
-
-Statuses: `ok`, `partial`, `timeout`, `missing_tid`, `bad_request`, plus
-variant-specific states such as `signal_blocked`. `partial` means some threads
-returned frames and others did not; per-thread status carries the detail.
-
-Mechanics:
-
-- A `std::timed_mutex` allows one in-flight dump. A second request waits up to
-  its `timeout_ms`; if it cannot acquire the lock in time, it returns `timeout`.
-  Charter: "one active dump at a time". CK blocks, OB spins; we bound the wait.
-- Thread ids come from `/proc/self/task`. The collector works in-process, so a
-  test binary can dump its own threads.
-- Collection is a free function in three steps: `collect()` returns raw PCs,
-  `resolve_dsos()` adds `dso` and `dso_offset` from `/proc/self/maps`, and
-  `serialize()` writes the JSON. `collect()` is the only per-variant step. Tests
-  call all three directly, without forging an `HttpRequest`.
-
-The common patch ships a stub `collect()` that returns the shape with no PCs.
-Real collection lives in each variant patch. A test-only hook marks a target tid
-unresponsive, so the timeout and partial paths are testable without real
-signaling.
+The common patch ships a stub `capture_into_slot` that publishes a
+fixed shape with no PCs. Real capture lives in each variant patch.
+Test-only hooks (linked in the stub variant) drive the coordinator's
+timeout, deadline, and contended-gate paths without real signaling.
 
 ## Variant Mechanics
 
@@ -106,18 +98,19 @@ signaling.
   from a finished dump drops its result. This closes the late-responder window.
   Reference: `<ck>/src/Storages/System/StorageSystemStackTrace.cpp:131-134,499-506`.
 - The handler reads RIP and RBP from `ucontext_t`, walks the frame chain into the
-  global slot, bounded by `max_frames`, then restores `errno`. It ignores any
-  signal whose sender is not this process.
+  global slot, bounded by `kMaxSignalFrames`, then restores `errno`. It ignores
+  any signal whose sender is not this process.
   Reference: errno save/restore and the `si_pid` sender check,
   `<ck>/src/Storages/System/StorageSystemStackTrace.cpp:123,128-129,180`.
-- Threads that block the signal are reported as `signal_blocked`, not as
-  timeouts.
+- Threads that block the signal are reported through the internal
+  `ThreadStackStatus::SignalBlocked` status, not as timeouts.
 - Needs `-fno-omit-frame-pointer`. The research summary finds Doris already
   builds Release with this flag, and the fp-walk patch adds no build flag.
   Confirm on the first build.
 - Uses no libunwind and no `dl_iterate_phdr` override, so it avoids the
   allocator collision described under jemalloc compatibility.
-- Records handler time per thread.
+- Records handler time per thread as variant-local telemetry. It is not part
+  of the typed result or the public JSON.
 
 ### ck-phdr-unwind
 
@@ -187,12 +180,13 @@ by design:
   would need a `sigsetjmp`/`siglongjmp` trampoline. Bundled with the
   async-safety review above.
 
-- **Libunwind init/get/step errors collapse into `status: ok` with
-  zero frames** (`ck-phdr-unwind`, `ob-kill60`, `snapshot-remote-unwind`).
-  The collectors do not distinguish unwind failure from end-of-stack.
-  A future status-shape refinement task should add an `unwind_failed`
-  status (or equivalent partial-error reason) across all three
-  variants together. Not race-class; the gate is unaffected.
+- **Libunwind init/get/step errors collapse into `ThreadStackStatus::OK`
+  with zero frames** (`ck-phdr-unwind`, `ob-kill60`,
+  `snapshot-remote-unwind`). The collectors do not distinguish unwind
+  failure from end-of-stack. A future status-shape refinement task
+  should add an `UnwindFailed` variant to `ThreadStackStatus` (or an
+  equivalent partial-error reason) across all three variants
+  together. Not race-class; the gate is unaffected.
 
 A second codex adversarial review (`snapshot-remote-unwind`'s handler,
 2026-06-01) surfaced four additional `snapshot-remote-unwind`-specific
@@ -233,9 +227,10 @@ items, all deferred:
 - **Snapshot short-read silently truncates frames**
   (`snapshot-remote-unwind`). The handler's `process_vm_readv`
   short-read sets `stack_size` but does not set a truncation flag,
-  so a stack window larger than `max_stack_bytes` returns
-  `status: ok` with bottom frames missing. Bundled into the same
-  status-shape refinement task as the unwind-error issue above.
+  so a stack window larger than the variant's stack-byte cap
+  returns `ThreadStackStatus::OK` with bottom frames missing.
+  Bundled into the same status-shape refinement task as the
+  unwind-error issue above.
 
 ## Environment Notes
 
