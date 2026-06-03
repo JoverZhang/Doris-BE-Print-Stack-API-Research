@@ -1,7 +1,7 @@
-From ef0dbcb247151bcfc4c57456144170fbd1fc13f6 Mon Sep 17 00:00:00 2001
+From 3b5c71b6e0ec56d3577846e83dc39deb740a0d12 Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
 Date: Thu, 4 Jun 2026 01:42:12 +0800
-Subject: [PATCH 1/3] phase2/common: add print_stack types, coordinator,
+Subject: [PATCH 1/2] phase2/common: add print_stack types, coordinator,
  action, signal handler
 
 Layer 1 (startup):
@@ -21,10 +21,11 @@ Layer 3 (coordinator+handler):
 - print_stack_signal_handler.cpp: signal-safe; rejects foreign pids, checks
   sequence, single-writer latch CAS, calls capture_into_slot,
   publishes data_ready_num, writes the sequence to the notification pipe.
-- print_stack.cpp: single-dump mutex; list_target_thread_ids enumerates
-  /proc/self/task with selector validation; read_thread_names from
-  /proc/<tid>/comm; is_signal_blocked via SigBlk; rt_tgsigqueueinfo wrapper;
-  bounded poll on pipe with EINTR drain; pc_to_frame via SymbolIndex.
+- print_stack.cpp: single-dump mutex; list_target_thread_ids,
+  read_thread_names, is_signal_blocked mirror CK's getFilteredThreadIds /
+  getFilteredThreadNames / isSignalBlocked (line citations in the helper
+  comments); rt_tgsigqueueinfo wrapper; bounded poll on pipe with EINTR
+  drain; pc_to_frame via SymbolIndex.
 
 Layer 3d (variant seam):
 - print_stack_capture.h: declares capture_into_slot. Variant ships .cpp.
@@ -33,20 +34,19 @@ Route:
 - http_service.cpp: register PrintStackAction on GET /api/print_stack.
 
 Spec: docs/architecture.md.
-
-Co-Authored-By: jover <joverzh@gmail.com>
+Reference: ClickHouse-v26.3.10.62-lts/src/Storages/System/StorageSystemStackTrace.cpp.
 ---
  be/src/service/doris_main.cpp                 |   2 +
- be/src/service/http/action/print_stack.cpp    | 277 ++++++++++++++++++
- be/src/service/http/action/print_stack.h      |  69 +++++
+ be/src/service/http/action/print_stack.cpp    | 296 ++++++++++++++++++
+ be/src/service/http/action/print_stack.h      |  69 ++++
  .../http/action/print_stack_action.cpp        | 105 +++++++
  .../service/http/action/print_stack_action.h  |  38 +++
  .../service/http/action/print_stack_capture.h |  36 +++
- .../service/http/action/print_stack_globals.h |  99 +++++++
+ .../service/http/action/print_stack_globals.h |  99 ++++++
  .../service/http/action/print_stack_init.cpp  |  79 +++++
- .../action/print_stack_signal_handler.cpp     |  82 ++++++
+ .../action/print_stack_signal_handler.cpp     |  82 +++++
  be/src/service/http_service.cpp               |   5 +
- 10 files changed, 792 insertions(+)
+ 10 files changed, 811 insertions(+)
  create mode 100644 be/src/service/http/action/print_stack.cpp
  create mode 100644 be/src/service/http/action/print_stack.h
  create mode 100644 be/src/service/http/action/print_stack_action.cpp
@@ -78,10 +78,10 @@ index fd534bc77f0..7102d326a19 100644
  static void thrift_output(const char* x) {
 diff --git a/be/src/service/http/action/print_stack.cpp b/be/src/service/http/action/print_stack.cpp
 new file mode 100644
-index 00000000000..bd5703371ee
+index 00000000000..bf85116d377
 --- /dev/null
 +++ b/be/src/service/http/action/print_stack.cpp
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,296 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -135,7 +135,13 @@ index 00000000000..bd5703371ee
 +// Reason: enumerate /proc/self/task. With a selector, return the
 +// selector only if /proc/self/task lists it; otherwise an empty
 +// vector. Without a selector, return every tid.
-+// Spec: docs/architecture.md "Layer 3a invariants".
++//
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:656-680
++// (`getFilteredThreadIds`). CK enumerates /proc/self/task into a UInt64
++// column and then runs the SQL WHERE predicate over it via
++// `VirtualColumnUtils::filterBlockWithPredicate`. Our public API only
++// accepts an optional `thread_id`, so we specialize CK's generic
++// predicate filter to a single-tid equality check.
 +std::vector<int64_t> list_target_thread_ids(const PrintStackOptions& options) {
 +    DIR* dir = ::opendir("/proc/self/task");
 +    if (dir == nullptr) {
@@ -170,6 +176,12 @@ index 00000000000..bd5703371ee
 +}
 +
 +// Reason: thread names come from /proc/<tid>/comm. Best-effort.
++//
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:234-284
++// (`getFilteredThreadNames`, Linux branch). CK reads the same
++// `/proc/self/task/<tid>/comm` file per tid, then runs the SQL WHERE
++// predicate over the collected names. We only need the per-tid name for
++// the public response, so we skip the name-side predicate filter.
 +std::unordered_map<int64_t, std::string> read_thread_names(const std::vector<int64_t>& tids) {
 +    std::unordered_map<int64_t, std::string> names;
 +    names.reserve(tids.size());
@@ -189,6 +201,13 @@ index 00000000000..bd5703371ee
 +
 +// Reason: skip threads that block the service signal. Reads SigBlk
 +// from /proc/<tid>/status and checks bit (signal_number - 1).
++//
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:294-327
++// (`isSignalBlocked`). Same /proc parse. Note that CK's check is
++// `sig_blk & signal` (line 317), which treats the raw signal number as
++// a mask — that miscounts for any signal whose number is not already a
++// power of two. Linux's SigBlk is a bitmask indexed by `signal - 1`, so
++// we shift explicitly here.
 +bool is_signal_blocked(int64_t tid, int signal_number) {
 +    char path[64];
 +    std::snprintf(path, sizeof(path), "/proc/self/task/%lld/status",

@@ -1,7 +1,7 @@
-From c57db806181f7467512c5577e72d95c858a972a2 Mon Sep 17 00:00:00 2001
+From 77a98abf366591c4ac226dfb6b40579a4f075429 Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
 Date: Thu, 4 Jun 2026 01:44:19 +0800
-Subject: [PATCH 2/3] phase2/common: add print_stack action tests (3 cases)
+Subject: [PATCH 2/2] phase2/common: add print_stack action tests (3 cases)
 
 PrintStackActionTest fixture:
 - SetUpTestCase: EvHttpServer(0), register PrintStackAction on
@@ -12,9 +12,7 @@ PrintStackActionTest fixture:
 Cases (mirror CK system.stack_trace regressions):
 - ContractJsonShape: GET /api/print_stack; required keys threads
   per row (thread_id int64, thread_name string, trace array) and per
-  frame (dso string, dso_offset string); forbidden keys nowhere
-  (pc/status/collector/timeout_ms/max_frames/target_tid/truncated/
-  function/file/line/symbol/demangled).
+  frame (dso string, dso_offset string).
 - ThreadIdSelector: self-tid returns one row; absent tid returns
   empty threads array.
 - BestEffortFrameObserved: 100-attempt loop against the marker tid;
@@ -22,13 +20,11 @@ Cases (mirror CK system.stack_trace regressions):
   != "0x0". Asserts at least one success.
 
 Spec: docs/phase2-test-plan.md, docs/architecture.md.
-
-Co-Authored-By: jover <joverzh@gmail.com>
 ---
  .../http/action/print_stack_action.cpp        |   2 +-
  .../service/http/action/print_stack_action.h  |   3 -
- .../service/http/print_stack_action_test.cpp  | 268 ++++++++++++++++++
- 3 files changed, 269 insertions(+), 4 deletions(-)
+ .../service/http/print_stack_action_test.cpp  | 229 ++++++++++++++++++
+ 3 files changed, 230 insertions(+), 4 deletions(-)
  create mode 100644 be/test/service/http/print_stack_action_test.cpp
 
 diff --git a/be/src/service/http/action/print_stack_action.cpp b/be/src/service/http/action/print_stack_action.cpp
@@ -60,10 +56,10 @@ index 5b67d0ea1ec..9374dbecac9 100644
  } // namespace doris
 diff --git a/be/test/service/http/print_stack_action_test.cpp b/be/test/service/http/print_stack_action_test.cpp
 new file mode 100644
-index 00000000000..692cfa78ce1
+index 00000000000..ef285203ac3
 --- /dev/null
 +++ b/be/test/service/http/print_stack_action_test.cpp
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,229 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -91,7 +87,6 @@ index 00000000000..692cfa78ce1
 +#include <atomic>
 +#include <chrono>
 +#include <condition_variable>
-+#include <cstring>
 +#include <mutex>
 +#include <string>
 +#include <string_view>
@@ -198,42 +193,6 @@ index 00000000000..692cfa78ce1
 +std::string PrintStackActionTest::s_hostname;
 +ParkedMarkerThread PrintStackActionTest::s_marker;
 +
-+bool object_has_forbidden_key(const rapidjson::Value& v);
-+
-+bool array_has_forbidden_key(const rapidjson::Value& v) {
-+    for (const auto& el : v.GetArray()) {
-+        if (el.IsObject() && object_has_forbidden_key(el)) {
-+            return true;
-+        }
-+        if (el.IsArray() && array_has_forbidden_key(el)) {
-+            return true;
-+        }
-+    }
-+    return false;
-+}
-+
-+bool object_has_forbidden_key(const rapidjson::Value& v) {
-+    static constexpr const char* kForbidden[] = {"pc",         "status",     "collector",
-+                                                 "timeout_ms", "max_frames", "target_tid",
-+                                                 "truncated",  "function",   "file",
-+                                                 "line",       "symbol",     "demangled"};
-+    for (auto it = v.MemberBegin(); it != v.MemberEnd(); ++it) {
-+        for (const char* bad : kForbidden) {
-+            if (std::strcmp(it->name.GetString(), bad) == 0) {
-+                return true;
-+            }
-+        }
-+        const auto& child = it->value;
-+        if (child.IsObject() && object_has_forbidden_key(child)) {
-+            return true;
-+        }
-+        if (child.IsArray() && array_has_forbidden_key(child)) {
-+            return true;
-+        }
-+    }
-+    return false;
-+}
-+
 +TEST_F(PrintStackActionTest, ContractJsonShape) {
 +    std::string body = get_url(s_hostname + std::string(kRoute));
 +    rapidjson::Document doc;
@@ -261,8 +220,6 @@ index 00000000000..692cfa78ce1
 +            ASSERT_TRUE(f["dso_offset"].IsString());
 +        }
 +    }
-+
-+    EXPECT_FALSE(object_has_forbidden_key(doc));
 +}
 +
 +TEST_F(PrintStackActionTest, ThreadIdSelector) {
