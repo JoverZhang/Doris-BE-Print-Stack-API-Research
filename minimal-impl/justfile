@@ -1,0 +1,26 @@
+default:
+    @just --list
+
+# Build a single variant: asan | tsan | release_fp | release_nofp
+build VARIANT:
+    cmake -B build/{{VARIANT}} -DBUILD_VARIANT={{VARIANT}} -G Ninja -S .
+    cmake --build build/{{VARIANT}}
+
+# Build all four variants in sequence
+build-all:
+    ./scripts/build_all.sh
+
+# Run one variant × walker combination
+run VARIANT WALKER:
+    ./build/{{VARIANT}}/min_stack_collect --walker {{WALKER}} --verify
+
+# Run the full matrix (4 variants × 2 walkers), emit markdown table
+run-matrix:
+    ./scripts/run_matrix.sh
+
+# Inspect a built binary: sections + per-function CFI classification
+inspect VARIANT:
+    ./scripts/inspect.sh build/{{VARIANT}}/min_stack_collect
+
+clean:
+    rm -rf build
