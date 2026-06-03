@@ -53,8 +53,9 @@ Do this:
 - Run `just phase2-shell` to drop into an interactive container for diagnostics.
 - Run `just phase2-rebase-all` after committing to `phase2/common` to rebase
   every variant on the new common.
-- Run `just phase2-teardown` to remove the worktree and every `phase2/*`
-  branch (rebuild via `phase2-bootstrap`).
+- Run `just phase2-reset` to reset Doris source-tree test artifacts and
+  remove every `phase2/*` branch while preserving build dirs and ccache
+  (rebuild branches via `phase2-bootstrap`).
 
 Do not do this:
 

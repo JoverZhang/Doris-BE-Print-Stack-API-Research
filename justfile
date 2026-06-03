@@ -20,9 +20,9 @@ repos-lsp:
 phase2-bootstrap:
     @./scripts/in-container ./scripts/phase2/bootstrap.sh
 
-# Remove every phase2/* branch from repos/source/doris-master.
-phase2-teardown:
-    @./scripts/in-container ./scripts/phase2/teardown.sh
+# Reset Doris source artifacts and remove every phase2/* branch; preserves build dirs and ccache.
+phase2-reset:
+    @./scripts/in-container ./scripts/phase2/reset.sh
 
 # Switch to phase2/<target> and run BE UT through one explicit test entrypoint.
 # Usage: just phase2-test <new-ut|full-ut> <base|common|variant> <asan|release|tsan|jemalloc> <gtest-filter>
