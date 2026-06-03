@@ -35,8 +35,9 @@ container; never invoke them on the host.
 Do this:
 
 - Run `just phase2-bootstrap` on first setup to create the phase2/* branch
-  stack in `repos/source/doris-master` from `patches/`. Cold cost: a few
-  minutes for submodule init.
+  stack in `repos/source/doris-master` from `patches/`, ending on
+  `phase2/common`. Use `just phase2-bootstrap base` to end detached at
+  `DORIS_BASE`. Cold cost: a few minutes for submodule init.
 - Run `just phase2-test <suite> <target> <mode> <gtest-filter>` to switch,
   build, and run BE UT. Every argument is required. `<suite>` is `new-ut`
   or `full-ut`; `<target>` is `base`, `common`, or a Phase 2 variant;

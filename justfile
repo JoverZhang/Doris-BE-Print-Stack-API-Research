@@ -16,9 +16,9 @@ repos-check:
 repos-lsp:
     ./scripts/lsp/install-clangd.sh "{{justfile_directory()}}"
 
-# Bootstrap the phase2/* branch stack in repos/source/doris-master from patches/.
-phase2-bootstrap:
-    @./scripts/in-container ./scripts/phase2/bootstrap.sh
+# Bootstrap the phase2/* branch stack. final_target is common or base.
+phase2-bootstrap final_target='common':
+    @./scripts/in-container ./scripts/phase2/bootstrap.sh "{{final_target}}"
 
 # Reset Doris source artifacts and remove every phase2/* branch; preserves build dirs and ccache.
 phase2-reset:

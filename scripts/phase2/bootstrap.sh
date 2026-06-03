@@ -3,9 +3,18 @@
 # the harness has no branches to operate on. Common is strict (the variant
 # stack is meaningless without it); each variant is tolerated independently
 # so one stale patch series does not block the rest.
-# Local: one-shot harness setup, called by `just phase2-bootstrap`.
+# Local: one-shot harness setup, called by `just phase2-bootstrap [base|common]`.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+
+final_target="${1:-common}"
+case "$final_target" in
+    base | common) ;;
+    *)
+        echo "usage: bootstrap.sh [base|common]" >&2
+        exit 2
+        ;;
+esac
 
 # 1. Refuse if any phase2/* branch already exists.
 if git -C "$DORIS_REPO" show-ref --verify --quiet refs/heads/phase2/base; then
@@ -45,11 +54,17 @@ for v in $VARIANTS; do
     fi
 done
 
-# 7. Leave on phase2/common as the natural default.
-git -C "$DORIS_REPO" switch phase2/common
+# 7. Leave on the requested branch/default. `base` means detached at DORIS_BASE
+# rather than a mutable branch name such as master.
+if [[ "$final_target" == "base" ]]; then
+    git -C "$DORIS_REPO" switch --detach "$DORIS_BASE"
+else
+    git -C "$DORIS_REPO" switch phase2/common
+fi
 
 echo
 echo "bootstrap summary:"
+echo "  final:   ${final_target}"
 echo "  clean:   common ${clean[*]}"
 if [[ ${#broken[@]} -gt 0 ]]; then
     echo "  broken:  ${broken[*]}"
