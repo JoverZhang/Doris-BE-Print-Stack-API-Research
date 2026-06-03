@@ -42,8 +42,18 @@ Do this:
 - Run `just phase2-test-release <variant>` or `just phase2-test-tsan
   <variant>` to run the same suite under RELEASE (`-O3 -DNDEBUG`) or
   TSAN (`-O1 -fsanitize=thread`). Each mode uses its own sibling build
-  dir (`be/ut_build_{RELEASE,TSAN}`). `just phase2-test-all <variant>`
-  runs all three modes in sequence.
+  dir (`be/ut_build_{RELEASE,TSAN}`).
+- Run `just phase2-test-jemalloc fp-walk` to run the selected baseline under
+  RELEASE plus `USE_JEMALLOC=ON`. It uses its own sibling build dir
+  (`be/ut_build_JEMALLOC_RELEASE`) because Doris `run-be-ut.sh` hard-codes
+  jemalloc off.
+- Run `just phase2-test-all <variant>` to run ASAN, RELEASE, the fp-walk
+  jemalloc smoke when applicable, and TSAN in sequence.
+- Run `just phase2-full-ut <variant>` for local full BE UT without deleting
+  the build dir. Use `just phase2-full-ut-release <variant>` or
+  `just phase2-full-ut-tsan <variant>` for sibling build modes. Use
+  `just phase2-full-ut-clean <variant>` only when you intentionally need
+  CI-parity clean behavior.
 - Run `just phase2-verify <variant>` to confirm `patches/<variant>`
   round-trips against the branch.
 - Run `just phase2-export [variant]` after committing on a branch to

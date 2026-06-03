@@ -108,17 +108,21 @@ just phase2-test common      # 8 pass, 6 skip (stub collector)
 just phase2-test fp-walk     # 17 pass (14 common + 3 fp-walk-specific)
 ```
 
-It runs `run-be-ut.sh --run --filter='*NativeStackActionTest.*' -j $(nproc)`
-inside the image (test binary `doris_be_test`, build dir `be/ut_build_ASAN`).
-The wildcard prefix is what makes `FpWalkNativeStackActionTest` (and future
-per-variant suites) match.
+It runs `run-be-ut.sh --run --filter='*NativeStackActionTest.*'` inside the
+image (test binary `doris_be_test`, build dir `be/ut_build_ASAN`). By default
+the wrapper does not pass `-j`, so Doris uses its own parallelism heuristic.
+Set `PHASE2_UT_JOBS=<n>` to override it for a local run. The wildcard prefix
+is what makes `FpWalkNativeStackActionTest` (and future per-variant suites)
+match.
 Source and test files are auto-discovered by the existing `GLOB_RECURSE`, so no
 CMake patch is needed.
 
 The harness mounts the project root at its host path inside the container, so
 git's `.git` pointers (worktree and submodules) resolve the same way on both
 sides — no PATH shim is needed. `DORIS_THIRDPARTY=/var/local/thirdparty` reuses
-the image's prebuilt thirdparty; it is never rebuilt.
+the image's prebuilt thirdparty; it is never rebuilt. `CCACHE_DIR` points at
+the project-local `.tmp/ccache`, so ASAN, RELEASE, TSAN, and jemalloc Release
+build dirs share one persistent compiler cache across short-lived containers.
 
 `be/CMakeLists.txt` puts `-fno-omit-frame-pointer` in the global
 `add_compile_options()`, so fp-walk's RBP walk works under every build type
@@ -127,13 +131,25 @@ without a patch.
 ## Build matrix
 
 `run-be-ut.sh` reads `BUILD_TYPE_UT` and forwards it as `CMAKE_BUILD_TYPE`,
-auto-deriving `be/ut_build_${BUILD_TYPE_UT}` as the parallel build dir. Three
-modes are wired into the justfile:
+auto-deriving `be/ut_build_${BUILD_TYPE_UT}` as the parallel build dir. It also
+hard-codes `USE_JEMALLOC=OFF`, so the ASAN/RELEASE/TSAN UT modes are allocator
+off by design. Four local modes are wired into the justfile:
 
 ```
 just phase2-test-release <variant>   # -O3 -DNDEBUG, no sanitizer
 just phase2-test-tsan    <variant>   # -O1 -fsanitize=thread
-just phase2-test-all     <variant>   # ASAN, RELEASE, TSAN in sequence
+just phase2-test-jemalloc fp-walk    # RELEASE plus USE_JEMALLOC=ON
+just phase2-test-all     <variant>   # ASAN, RELEASE, fp-walk jemalloc, TSAN
+```
+
+Full BE UT is a separate local recipe. It preserves the selected build dir by
+default; use the clean variant only when you need CI-parity behavior:
+
+```
+just phase2-full-ut <variant>         # ASAN, no clean
+just phase2-full-ut-release <variant> # RELEASE, no clean
+just phase2-full-ut-tsan <variant>    # TSAN, no clean
+just phase2-full-ut-clean <variant>   # ASAN, deletes ut_build_ASAN first
 ```
 
 | Mode | Flags (`be/CMakeLists.txt`) | Build dir | What it catches that ASan misses |
@@ -141,6 +157,7 @@ just phase2-test-all     <variant>   # ASAN, RELEASE, TSAN in sequence
 | ASAN (default) | `-O0 -fsanitize=address` (`ASAN_UT`, L458) | `ut_build_ASAN` | memory bugs in the collector itself |
 | RELEASE | `-O3 -DNDEBUG` (L450) | `ut_build_RELEASE` | inlining-induced chain-shape drift, frame-pointer reliance under optimization, prod codegen |
 | TSAN | `-O1 -fsanitize=thread` (L468) | `ut_build_TSAN` | concurrent writes to the per-sequence ring slot; Tier 2's "late-handler race under TSan" |
+| JEMALLOC_RELEASE | `-O3 -DNDEBUG`, `USE_JEMALLOC=ON` | `ut_build_JEMALLOC_RELEASE` | fp-walk under Doris's production allocator shape; validates that the selected baseline does not depend on UT's allocator-off build |
 
 The patches are not `#ifdef`-gated by build type. Test fixtures use
 `__attribute__((noinline))` and trailing `asm volatile("")` on every recorded
@@ -153,18 +170,48 @@ applied first so the design patches build on top of it): the upstream
 header declares two `SegmentWriter` members non-inline but the .cpp
 defines them with `inline`, which `-O0` masks and `-O3` exposes as
 undefined-symbol link errors against the test subclass. The patch removes
-the keyword; no semantic change. Expect to treat TSAN as best-effort (its
+the keyword; no semantic change. `phase2-test-jemalloc` is intentionally
+fp-walk-only for now; the libunwind variants carry separate PHDR-cache and
+jemalloc-prof-libunwind questions that are not part of the selected baseline
+smoke. Expect to treat TSAN as best-effort (its
 atomic instrumentation is not guaranteed async-signal-safe inside our
 signal handler).
 
-Baseline timings observed under fp-walk:
+Observed results across the four variants (recorded 2026-06-02 against
+the Doris pin at the time of this writing):
+
+| Variant | ASAN | RELEASE | TSAN |
+| --- | --- | --- | --- |
+| `fp-walk` | 17/17 pass | 17/17 pass | 15/17 (Truncated; LateHandlerCannotCorruptNextDumpUnderLoad reports 7/12 iterations with corrupted frames) |
+| `ck-phdr-unwind` | 14/14 pass | 14/14 pass | 10/14 (4 correctness tests report empty frames) |
+| `ob-kill60` | 14/14 pass | 14/14 pass | 10/14 (same 4 as ck-phdr-unwind) |
+| `snapshot-remote-unwind` | 14/14 pass | 14/14 pass | 10/14 (same 4 as ck-phdr-unwind) |
+
+ASAN and RELEASE are green on every variant. TSAN fails on every
+variant in the expected best-effort way: TSAN's `pthread_*` and
+atomic interceptors are not async-signal-safe, so the libunwind-based
+collectors (ck-phdr-unwind, ob-kill60, snapshot-remote-unwind) return
+empty `frames` for the four correctness cases that need a real walk.
+`fp-walk` fares better — its handler does no library calls and walks
+%rbp directly, so 15 of 17 tests still pass — but `Truncated`
+(chain-depth assertion) and `LateHandlerCannotCorruptNextDumpUnderLoad`
+(per-sequence ring slot under load) still fail.
+
+The 7/12 corruption rate on the latter is interesting and is exactly
+the Tier 2 "late-handler race under TSan" the test plan already
+deferred. Whether it is a real race that TSAN's instrumentation
+amplifies via timing perturbation, or instrumentation interference
+inside the handler itself, is the Tier 2 question. The Tier 1 gate
+remains ASAN + RELEASE, which both pass.
+
+Selected fp-walk timings (ASAN-vs-RELEASE, no TSAN row since failures):
 
 | Case | ASAN (`-O0`) | RELEASE (`-O3`) |
 | --- | --- | --- |
-| Full suite (17 tests) | ~1100 ms | 1136 ms |
-| `DumpLoopNoCrashNoStuck` | ~933 ms | 852 ms |
-| `LateHandlerCannotCorruptNextDumpUnderLoad` | ~131 ms | 129 ms |
-| `DeadlineGuardSkipsExpiredSignaling` | ~80 ms | 80 ms |
+| Full suite (17 tests) | ~1223 ms | ~1137 ms |
+| `DumpLoopNoCrashNoStuck` | ~1083 ms | ~852-1000 ms |
+| `LateHandlerCannotCorruptNextDumpUnderLoad` | ~131 ms | ~129 ms |
+| `DeadlineGuardSkipsExpiredSignaling` | ~80 ms | ~80 ms |
 
 ## Tier 2 (deferred, not in this file)
 

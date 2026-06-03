@@ -22,6 +22,14 @@ git -C "$DORIS_REPO" switch "phase2/$variant"
 # variant suites named `<Variant>NativeStackActionTest` (e.g. `FpWalk…`),
 # whose fixtures cannot share a class with common's at file scope.
 build_type="${BUILD_TYPE_UT:-ASAN}"
-echo "phase2-test: variant=${variant} build_type=${build_type}"
+args=(--run --filter="*NativeStackActionTest.*")
+if [[ -n "${PHASE2_UT_JOBS:-}" ]]; then
+    args+=(-j "${PHASE2_UT_JOBS}")
+    jobs_label="${PHASE2_UT_JOBS}"
+else
+    jobs_label="doris-default"
+fi
+
+echo "phase2-test: variant=${variant} build_type=${build_type} jobs=${jobs_label}"
 cd "$DORIS_REPO"
-./run-be-ut.sh --run --filter="*NativeStackActionTest.*" -j "$(nproc)"
+./run-be-ut.sh "${args[@]}"

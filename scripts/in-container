@@ -7,6 +7,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CCACHE_DIR="${CCACHE_DIR:-${ROOT}/.tmp/ccache}"
+CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-20G}"
+
+mkdir -p "${CCACHE_DIR}"
 
 exec podman run --rm \
     -v "${ROOT}:${ROOT}" \
@@ -14,5 +18,10 @@ exec podman run --rm \
     -e DORIS_THIRDPARTY=/var/local/thirdparty \
     -e PROJECT_ROOT="${ROOT}" \
     -e BUILD_TYPE_UT="${BUILD_TYPE_UT:-}" \
+    -e PHASE2_UT_JOBS="${PHASE2_UT_JOBS:-}" \
+    -e CCACHE_DIR="${CCACHE_DIR}" \
+    -e CCACHE_MAXSIZE="${CCACHE_MAXSIZE}" \
+    -e CCACHE_BASEDIR="${ROOT}" \
+    -e CCACHE_NOHASHDIR=true \
     docker.io/apache/doris:build-env-ldb-toolchain-latest \
     bash "$@"
