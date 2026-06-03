@@ -1,4 +1,4 @@
-From 4f96f979c51b6806413c6383d548780d3b1ee451 Mon Sep 17 00:00:00 2001
+From f42adcc9952988c10d7eaf4ea093ab75bd61248b Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Tue, 2 Jun 2026 11:48:07 +0000
 Subject: [PATCH 0/2] upstream: drop inline from SegmentWriter::_is_mow defs

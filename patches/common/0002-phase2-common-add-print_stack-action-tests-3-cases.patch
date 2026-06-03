@@ -1,4 +1,4 @@
-From 77a98abf366591c4ac226dfb6b40579a4f075429 Mon Sep 17 00:00:00 2001
+From 80d813d5dcf3c9bcce9e55512635fe14bfde9bda Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
 Date: Thu, 4 Jun 2026 01:44:19 +0800
 Subject: [PATCH 2/2] phase2/common: add print_stack action tests (3 cases)
@@ -23,8 +23,8 @@ Spec: docs/phase2-test-plan.md, docs/architecture.md.
 ---
  .../http/action/print_stack_action.cpp        |   2 +-
  .../service/http/action/print_stack_action.h  |   3 -
- .../service/http/print_stack_action_test.cpp  | 229 ++++++++++++++++++
- 3 files changed, 230 insertions(+), 4 deletions(-)
+ .../service/http/print_stack_action_test.cpp  | 256 ++++++++++++++++++
+ 3 files changed, 257 insertions(+), 4 deletions(-)
  create mode 100644 be/test/service/http/print_stack_action_test.cpp
 
 diff --git a/be/src/service/http/action/print_stack_action.cpp b/be/src/service/http/action/print_stack_action.cpp
@@ -56,10 +56,10 @@ index 5b67d0ea1ec..9374dbecac9 100644
  } // namespace doris
 diff --git a/be/test/service/http/print_stack_action_test.cpp b/be/test/service/http/print_stack_action_test.cpp
 new file mode 100644
-index 00000000000..ef285203ac3
+index 00000000000..e4c901dbbeb
 --- /dev/null
 +++ b/be/test/service/http/print_stack_action_test.cpp
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,256 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -103,6 +103,10 @@ index 00000000000..ef285203ac3
 +
 +constexpr std::string_view kRoute = "/api/print_stack";
 +
++// Reason: a cheap thread fixture for tests that need a stable target tid
++// to dump. The worker records its tid via SYS_gettid, signals ready, and
++// parks on a flag until stop().
++// Local: test-only fixture.
 +class ParkedMarkerThread {
 +public:
 +    ParkedMarkerThread() = default;
@@ -145,6 +149,10 @@ index 00000000000..ef285203ac3
 +    bool _ready = false;
 +};
 +
++// Reason: integration fixture that exposes PrintStackAction on a real
++// EvHttpServer. Test cases drive it with HttpClient and read the JSON
++// response — the same path a production caller takes.
++// Spec: docs/phase2-test-plan.md "Test surface".
 +class PrintStackActionTest : public testing::Test {
 +public:
 +    static void SetUpTestCase() {
@@ -193,16 +201,24 @@ index 00000000000..ef285203ac3
 +std::string PrintStackActionTest::s_hostname;
 +ParkedMarkerThread PrintStackActionTest::s_marker;
 +
++// Reason: [case 1] catches drift in the JSON contract. The required root
++// (threads), per-thread (thread_id, thread_name, trace), and per-frame
++// (dso, dso_offset) keys must be present with their declared types.
 +TEST_F(PrintStackActionTest, ContractJsonShape) {
++    // 1. GET /api/print_stack and parse the JSON body.
 +    std::string body = get_url(s_hostname + std::string(kRoute));
 +    rapidjson::Document doc;
 +    doc.Parse(body.c_str());
 +    ASSERT_FALSE(doc.HasParseError()) << "body: " << body;
++
++    // 2. Root threads is a non-empty array.
 +    ASSERT_TRUE(doc.IsObject());
 +    ASSERT_TRUE(doc.HasMember("threads"));
 +    ASSERT_TRUE(doc["threads"].IsArray());
 +    EXPECT_FALSE(doc["threads"].Empty()) << "expected at least one captured thread";
 +
++    // 3. Each thread row carries thread_id/thread_name/trace; each frame
++    //    carries dso/dso_offset; all well-typed.
 +    for (const auto& t : doc["threads"].GetArray()) {
 +        ASSERT_TRUE(t.IsObject());
 +        ASSERT_TRUE(t.HasMember("thread_id"));
@@ -222,7 +238,10 @@ index 00000000000..ef285203ac3
 +    }
 +}
 +
++// Reason: [case 2] the thread_id query param targets one tid. A live tid
++// returns a single matching row; an absent tid returns an empty array.
 +TEST_F(PrintStackActionTest, ThreadIdSelector) {
++    // 1. Self-tid: exactly one row whose thread_id matches.
 +    {
 +        pid_t self_tid = static_cast<pid_t>(::syscall(SYS_gettid));
 +        std::string body =
@@ -237,6 +256,7 @@ index 00000000000..ef285203ac3
 +        EXPECT_EQ(static_cast<int64_t>(self_tid), doc["threads"][0]["thread_id"].GetInt64());
 +    }
 +
++    // 2. Absent tid (999999999): threads is empty.
 +    {
 +        std::string body = get_url(s_hostname + std::string(kRoute) + "?thread_id=999999999");
 +        rapidjson::Document doc;
@@ -248,9 +268,17 @@ index 00000000000..ef285203ac3
 +    }
 +}
 +
++// Reason: [case 3] the walker observes at least one frame that maps back
++// to the test binary. Capture is best-effort under TSan, so the loop
++// retries up to 100 times before failing — mirroring CK's
++// 03565_system_stack_trace_works.sh.
 +TEST_F(PrintStackActionTest, BestEffortFrameObserved) {
++    // 1. The marker thread is live so its tid is non-zero.
 +    ASSERT_NE(0, s_marker.tid());
 +
++    // 2. Up to 100 attempts: dump the marker tid and scan its trace for a
++    //    frame whose dso names the test binary (`doris_be_test`) with a
++    //    non-zero offset.
 +    bool observed = false;
 +    for (int attempt = 0; attempt < 100 && !observed; ++attempt) {
 +        std::string body =
@@ -273,9 +301,6 @@ index 00000000000..ef285203ac3
 +            std::string_view dso(frame["dso"].GetString(), frame["dso"].GetStringLength());
 +            std::string_view dso_offset(frame["dso_offset"].GetString(),
 +                                        frame["dso_offset"].GetStringLength());
-+            // Reason: the test process is `doris_be_test`; the marker
-+            // thread is running in this binary so at least one frame's
-+            // DSO should resolve to it.
 +            const bool dso_matches = dso.find("doris_be_test") != std::string_view::npos;
 +            const bool offset_nonzero = dso_offset != "0x0";
 +            if (dso_matches && offset_nonzero) {
@@ -284,6 +309,8 @@ index 00000000000..ef285203ac3
 +            }
 +        }
 +    }
++
++    // 3. At least one attempt observed the test-binary frame.
 +    EXPECT_TRUE(observed) << "no frame mapped to the test binary across 100 attempts";
 +}
 +
