@@ -12,7 +12,7 @@ usage() {
 usage: test.sh <new-ut|full-ut> <base|common|variant> <asan|release|tsan|jemalloc> <gtest-filter>
 
 examples:
-  test.sh new-ut fp-walk asan '*NativeStackActionTest.*'
+  test.sh new-ut fp-walk asan '*'
   test.sh full-ut base asan 'BrpcClientCacheTest.invalid'
   test.sh full-ut fp-walk asan '*'
   DORIS_BE_CLEAN=1 DORIS_BE_JOBS=24 test.sh full-ut fp-walk asan '*'
@@ -28,6 +28,7 @@ suite="$1"
 target="$2"
 mode="$3"
 filter="$4"
+effective_filter="$filter"
 
 case "$suite" in
     new-ut | full-ut) ;;
@@ -67,6 +68,10 @@ case "$mode" in
         ;;
 esac
 
+if [[ "$suite" == "new-ut" && "$filter" == "*" ]]; then
+    effective_filter="*NativeStackActionTest.*"
+fi
+
 clean=0
 case "${DORIS_BE_CLEAN:-}" in
     "" | 0 | false | FALSE | no | NO) ;;
@@ -83,10 +88,8 @@ if [[ -n "${DORIS_BE_JOBS:-}" && ! "${DORIS_BE_JOBS}" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 jobs_label="doris-default"
-run_be_ut_jobs=()
 if [[ -n "${DORIS_BE_JOBS:-}" ]]; then
     jobs_label="${DORIS_BE_JOBS}"
-    run_be_ut_jobs=(-j "${DORIS_BE_JOBS}")
 fi
 
 # 1. Refuse on a dirty tree; a switch would corrupt state.
@@ -100,14 +103,16 @@ head="$(git -C "$DORIS_REPO" rev-parse --short=12 HEAD)"
 run_with_doris_ut_script() {
     local build_type="$1"
     local clean_label="no"
-    local args=(--run --filter="$filter")
+    local args=(--run --filter="$effective_filter")
     if [[ "$clean" -eq 1 ]]; then
         args+=(--clean)
         clean_label="yes"
     fi
-    args+=("${run_be_ut_jobs[@]}")
+    if [[ -n "${DORIS_BE_JOBS:-}" ]]; then
+        args+=(-j "${DORIS_BE_JOBS}")
+    fi
 
-    echo "phase2-test: suite=${suite} target=${target} branch=phase2/${target} head=${head} mode=${mode} build_type=${build_type} use_jemalloc=OFF jobs=${jobs_label} clean=${clean_label} filter=${filter}"
+    echo "phase2-test: suite=${suite} target=${target} branch=phase2/${target} head=${head} mode=${mode} build_type=${build_type} use_jemalloc=OFF jobs=${jobs_label} clean=${clean_label} filter=${filter} effective_filter=${effective_filter}"
     cd "$DORIS_REPO"
     BUILD_TYPE_UT="$build_type" ./run-be-ut.sh "${args[@]}"
 }
@@ -380,7 +385,7 @@ run_with_jemalloc() {
         rm -rf "$cmake_build_dir" "${DORIS_REPO}/be/output"
     fi
 
-    echo "phase2-test: suite=${suite} target=${target} branch=phase2/${target} head=${head} mode=jemalloc build_type=RELEASE use_jemalloc=ON build_dir=be/ut_build_${build_label} jobs=${jemalloc_jobs_label} clean=${clean_label} filter=${filter}"
+    echo "phase2-test: suite=${suite} target=${target} branch=phase2/${target} head=${head} mode=jemalloc build_type=RELEASE use_jemalloc=ON build_dir=be/ut_build_${build_label} jobs=${jemalloc_jobs_label} clean=${clean_label} filter=${filter} effective_filter=${effective_filter}"
 
     update_submodule "contrib/apache-orc" "apache-orc" "https://github.com/apache/doris-thirdparty/archive/refs/heads/orc.tar.gz"
     update_submodule "contrib/clucene" "clucene" "https://github.com/apache/doris-thirdparty/archive/refs/heads/clucene.tar.gz"
@@ -400,7 +405,7 @@ run_with_jemalloc() {
     "$test_binary" \
         --gtest_output="xml:${gtest_output_dir}/${file_name}.xml" \
         --gtest_print_time=true \
-        --gtest_filter="$filter"
+        --gtest_filter="$effective_filter"
 
     echo "=== Finished. Gtest output: ${gtest_output_dir}"
 }

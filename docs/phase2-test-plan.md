@@ -55,9 +55,10 @@ Test-only hooks in common:
 - A case that needs a real collector starts with
   `if (report.collector == "stub") GTEST_SKIP();` (variant-agnostic file) or
   `if (collector_is_stub()) GTEST_SKIP();` (variant file). So
-  `just phase2-test common` runs the variant-agnostic subset (8 pass, 6
-  skip), and `just phase2-test fp-walk` runs everything (14 + 3 = 17 pass).
-  The harness filter is `*NativeStackActionTest.*` to catch both suites.
+  `just phase2-test new-ut common asan '*'` runs the variant-agnostic subset
+  (8 pass, 6 skip), and `just phase2-test new-ut fp-walk asan '*'` runs
+  everything (14 + 3 = 17 pass). In `new-ut`, `'*'` maps to
+  `*NativeStackActionTest.*` to catch both suites.
 
 ## Categories
 
@@ -104,16 +105,16 @@ Cases worth adding once the baseline is green:
 in the build-env image (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```
-just phase2-test new-ut common asan '*NativeStackActionTest.*'
-just phase2-test new-ut fp-walk asan '*NativeStackActionTest.*'
+just phase2-test new-ut common asan '*'
+just phase2-test new-ut fp-walk asan '*'
 just phase2-test full-ut base asan 'BrpcClientCacheTest.invalid'
 ```
 
-Every argument is explicit. `new-ut` and `full-ut` are labels for the local
-command shape; the gtest filter decides what actually runs. Use
-`'*NativeStackActionTest.*'` for the Phase 2 target suite and `'*'` for full BE
-UT. For `asan`, `release`, and `tsan`, the command runs
-`run-be-ut.sh --run --filter=<gtest-filter>` inside the image. By default the
+Every argument is explicit. `new-ut` maps the all-test filter `'*'` to the
+Phase 2 target suite `'*NativeStackActionTest.*'`; a narrower filter is passed
+through as-is. `full-ut` passes the gtest filter through directly, so `'*'` means
+full BE UT. For `asan`, `release`, and `tsan`, the command runs
+`run-be-ut.sh --run --filter=<effective-filter>` inside the image. By default the
 wrapper does not pass `-j`, so Doris uses its own parallelism heuristic. Set
 `DORIS_BE_JOBS=<n>` to override it for a local run. Set `DORIS_BE_CLEAN=1` only
 when you intentionally need CI-parity clean behavior.
@@ -136,10 +137,10 @@ without a patch.
 The single local test command has four modes:
 
 ```
-just phase2-test new-ut fp-walk asan '*NativeStackActionTest.*'
-just phase2-test new-ut fp-walk release '*NativeStackActionTest.*'
-just phase2-test new-ut fp-walk tsan '*NativeStackActionTest.*'
-just phase2-test new-ut fp-walk jemalloc '*NativeStackActionTest.*'
+just phase2-test new-ut fp-walk asan '*'
+just phase2-test new-ut fp-walk release '*'
+just phase2-test new-ut fp-walk tsan '*'
+just phase2-test new-ut fp-walk jemalloc '*'
 just phase2-test full-ut fp-walk asan '*'
 ```
 

@@ -42,9 +42,9 @@ Do this:
   build, and run BE UT. Every argument is required. `<suite>` is `new-ut`
   or `full-ut`; `<target>` is `base`, `common`, or a Phase 2 variant;
   `<mode>` is `asan`, `release`, `tsan`, or `jemalloc`; `<gtest-filter>` is
-  passed directly to gtest. Set `DORIS_BE_JOBS=<n>` for build parallelism.
-  Set `DORIS_BE_CLEAN=1` only when you intentionally need CI-parity clean
-  behavior.
+  passed directly to gtest, except `new-ut` maps `*` to the Phase 2 target
+  suite. Set `DORIS_BE_JOBS=<n>` for build parallelism. Set `DORIS_BE_CLEAN=1`
+  only when you intentionally need CI-parity clean behavior.
 - Run `just phase2-verify <variant>` to confirm `patches/<variant>`
   round-trips against the branch.
 - Run `just phase2-export [variant]` after committing on a branch to
