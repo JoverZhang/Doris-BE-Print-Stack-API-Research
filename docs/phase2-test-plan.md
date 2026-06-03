@@ -99,21 +99,24 @@ Cases worth adding once the baseline is green:
 
 ## The recipe
 
-`just phase2-test <variant>` switches `repos/source/doris-master` to
-`phase2/<variant>`, then builds and runs the tests in the build-env image
-(`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
+`just phase2-test <suite> <target> <mode> <gtest-filter>` switches
+`repos/source/doris-master` to `phase2/<target>`, then builds and runs BE UT
+in the build-env image (`docker.io/apache/doris:build-env-ldb-toolchain-latest`):
 
 ```
-just phase2-test common      # 8 pass, 6 skip (stub collector)
-just phase2-test fp-walk     # 17 pass (14 common + 3 fp-walk-specific)
+just phase2-test new-ut common asan '*NativeStackActionTest.*'
+just phase2-test new-ut fp-walk asan '*NativeStackActionTest.*'
+just phase2-test full-ut base asan 'BrpcClientCacheTest.invalid'
 ```
 
-It runs `run-be-ut.sh --run --filter='*NativeStackActionTest.*'` inside the
-image (test binary `doris_be_test`, build dir `be/ut_build_ASAN`). By default
-the wrapper does not pass `-j`, so Doris uses its own parallelism heuristic.
-Set `PHASE2_UT_JOBS=<n>` to override it for a local run. The wildcard prefix
-is what makes `FpWalkNativeStackActionTest` (and future per-variant suites)
-match.
+Every argument is explicit. `new-ut` and `full-ut` are labels for the local
+command shape; the gtest filter decides what actually runs. Use
+`'*NativeStackActionTest.*'` for the Phase 2 target suite and `'*'` for full BE
+UT. For `asan`, `release`, and `tsan`, the command runs
+`run-be-ut.sh --run --filter=<gtest-filter>` inside the image. By default the
+wrapper does not pass `-j`, so Doris uses its own parallelism heuristic. Set
+`DORIS_BE_JOBS=<n>` to override it for a local run. Set `DORIS_BE_CLEAN=1` only
+when you intentionally need CI-parity clean behavior.
 Source and test files are auto-discovered by the existing `GLOB_RECURSE`, so no
 CMake patch is needed.
 
@@ -130,38 +133,22 @@ without a patch.
 
 ## Build matrix
 
-`run-be-ut.sh` reads `BUILD_TYPE_UT` and forwards it as `CMAKE_BUILD_TYPE`,
-auto-deriving `be/ut_build_${BUILD_TYPE_UT}` as the parallel build dir. It also
-hard-codes `USE_JEMALLOC=OFF`, so the ASAN/RELEASE/TSAN UT modes are allocator
-off by design. Four local modes are wired into the justfile:
+The single local test command has four modes:
 
 ```
-just phase2-test-release <variant>   # -O3 -DNDEBUG, no sanitizer
-just phase2-test-tsan    <variant>   # -O1 -fsanitize=thread
-just phase2-test-jemalloc fp-walk    # RELEASE plus USE_JEMALLOC=ON
-just phase2-test-all     <variant>   # ASAN, RELEASE, fp-walk jemalloc, TSAN
-just phase2-test-filter <variant-or-base> <gtest-filter>
-```
-
-Full BE UT is a separate local recipe. It preserves the selected build dir by
-default; use the clean variant only when you need CI-parity behavior:
-
-```
-just phase2-full-ut <variant>         # ASAN, no clean
-just phase2-full-ut-release <variant> # RELEASE, no clean
-just phase2-full-ut-tsan <variant>    # TSAN, no clean
-just phase2-full-ut-clean <variant>   # ASAN, deletes ut_build_ASAN first
-just phase2-full-ut-base              # ASAN full UT on phase2/base
-just phase2-full-ut-base-release      # RELEASE full UT on phase2/base
-just phase2-full-ut-base-tsan         # TSAN full UT on phase2/base
+just phase2-test new-ut fp-walk asan '*NativeStackActionTest.*'
+just phase2-test new-ut fp-walk release '*NativeStackActionTest.*'
+just phase2-test new-ut fp-walk tsan '*NativeStackActionTest.*'
+just phase2-test new-ut fp-walk jemalloc '*NativeStackActionTest.*'
+just phase2-test full-ut fp-walk asan '*'
 ```
 
 | Mode | Flags (`be/CMakeLists.txt`) | Build dir | What it catches that ASan misses |
 | --- | --- | --- | --- |
-| ASAN (default) | `-O0 -fsanitize=address` (`ASAN_UT`, L458) | `ut_build_ASAN` | memory bugs in the collector itself |
-| RELEASE | `-O3 -DNDEBUG` (L450) | `ut_build_RELEASE` | inlining-induced chain-shape drift, frame-pointer reliance under optimization, prod codegen |
-| TSAN | `-O1 -fsanitize=thread` (L468) | `ut_build_TSAN` | concurrent writes to the per-sequence ring slot; Tier 2's "late-handler race under TSan" |
-| JEMALLOC_RELEASE | `-O3 -DNDEBUG`, `USE_JEMALLOC=ON` | `ut_build_JEMALLOC_RELEASE` | fp-walk under Doris's production allocator shape; validates that the selected baseline does not depend on UT's allocator-off build |
+| asan | `ASAN_UT` via `run-be-ut.sh`; `USE_JEMALLOC=OFF` | `ut_build_ASAN` | memory bugs in the collector itself |
+| release | `RELEASE` via `run-be-ut.sh`; `USE_JEMALLOC=OFF` | `ut_build_RELEASE` | inlining-induced chain-shape drift, frame-pointer reliance under optimization, prod codegen |
+| tsan | `TSAN` via `run-be-ut.sh`; `USE_JEMALLOC=OFF` | `ut_build_TSAN` | concurrent writes to the per-sequence ring slot; Tier 2's "late-handler race under TSan" |
+| jemalloc | `RELEASE` direct CMake; `USE_JEMALLOC=ON` | `ut_build_JEMALLOC_RELEASE` | fp-walk under Doris's production allocator shape; validates that the selected baseline does not depend on UT's allocator-off build |
 
 The patches are not `#ifdef`-gated by build type. Test fixtures use
 `__attribute__((noinline))` and trailing `asm volatile("")` on every recorded
@@ -174,10 +161,10 @@ applied first so the design patches build on top of it): the upstream
 header declares two `SegmentWriter` members non-inline but the .cpp
 defines them with `inline`, which `-O0` masks and `-O3` exposes as
 undefined-symbol link errors against the test subclass. The patch removes
-the keyword; no semantic change. `phase2-test-jemalloc` is intentionally
-fp-walk-only for now; the libunwind variants carry separate PHDR-cache and
-jemalloc-prof-libunwind questions that are not part of the selected baseline
-smoke. Expect to treat TSAN as best-effort (its
+the keyword; no semantic change. The `jemalloc` mode uses a direct CMake path
+because Doris `run-be-ut.sh` hard-codes `USE_JEMALLOC=OFF`. The libunwind
+variants carry separate PHDR-cache and jemalloc-prof-libunwind questions that
+are not part of the selected baseline smoke. Expect to treat TSAN as best-effort (its
 atomic instrumentation is not guaranteed async-signal-safe inside our
 signal handler).
 

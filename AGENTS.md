@@ -37,27 +37,13 @@ Do this:
 - Run `just phase2-bootstrap` on first setup to create the phase2/* branch
   stack in `repos/source/doris-master` from `patches/`. Cold cost: a few
   minutes for submodule init.
-- Run `just phase2-test <variant>` to switch, build, and run the
-  NativeStackActionTest suite. `<variant>` is `common`, `fp-walk`, etc.
-- Run `just phase2-test-release <variant>` or `just phase2-test-tsan
-  <variant>` to run the same suite under RELEASE (`-O3 -DNDEBUG`) or
-  TSAN (`-O1 -fsanitize=thread`). Each mode uses its own sibling build
-  dir (`be/ut_build_{RELEASE,TSAN}`).
-- Run `just phase2-test-filter <variant-or-base> <gtest-filter>` for a
-  narrow diagnostic repro, including base-vs-variant checks such as
-  `just phase2-test-filter base BrpcClientCacheTest.invalid`.
-- Run `just phase2-test-jemalloc fp-walk` to run the selected baseline under
-  RELEASE plus `USE_JEMALLOC=ON`. It uses its own sibling build dir
-  (`be/ut_build_JEMALLOC_RELEASE`) because Doris `run-be-ut.sh` hard-codes
-  jemalloc off.
-- Run `just phase2-test-all <variant>` to run ASAN, RELEASE, the fp-walk
-  jemalloc smoke when applicable, and TSAN in sequence.
-- Run `just phase2-full-ut <variant>` for local full BE UT without deleting
-  the build dir. Use `just phase2-full-ut-release <variant>` or
-  `just phase2-full-ut-tsan <variant>` for sibling build modes. Use
-  `just phase2-full-ut-clean <variant>` only when you intentionally need
-  CI-parity clean behavior. Use `just phase2-full-ut-base` for the same
-  full UT gate on the upstream base commit.
+- Run `just phase2-test <suite> <target> <mode> <gtest-filter>` to switch,
+  build, and run BE UT. Every argument is required. `<suite>` is `new-ut`
+  or `full-ut`; `<target>` is `base`, `common`, or a Phase 2 variant;
+  `<mode>` is `asan`, `release`, `tsan`, or `jemalloc`; `<gtest-filter>` is
+  passed directly to gtest. Set `DORIS_BE_JOBS=<n>` for build parallelism.
+  Set `DORIS_BE_CLEAN=1` only when you intentionally need CI-parity clean
+  behavior.
 - Run `just phase2-verify <variant>` to confirm `patches/<variant>`
   round-trips against the branch.
 - Run `just phase2-export [variant]` after committing on a branch to
