@@ -26,10 +26,11 @@ out of scope. Their existing patches stay frozen.
 The patch series follows the layers in [architecture.md](architecture.md).
 One patch per logical change; split or merge as needed for review.
 
+`patches/common/0000-upstream-drop-inline-from-SegmentWriter-_is_mow-defs.patch`
+is the upstream link fix needed for RELEASE. Already present; no rewrite.
+
 ### patches/common/
 
-- [ ] `0000-upstream-drop-inline-from-SegmentWriter-_is_mow-defs.patch`
-      Upstream link fix needed for RELEASE. Already present; no rewrite.
 - [ ] `0001-be-add-print-stack-types-and-process-startup.patch`
       Layer 1. `print_stack.h`, `print_stack_globals.h`,
       `print_stack_init.cpp`. `main()` calls `print_stack_init()`.
@@ -37,8 +38,7 @@ One patch per logical change; split or merge as needed for review.
       Layer 3 + 4. `print_stack.cpp`, `print_stack_signal_handler.cpp`,
       `print_stack_capture.h` (declaration only).
 - [ ] `0003-be-add-print-stack-http-action.patch`
-      Layer 2 + 5. `print_stack_action.{h,cpp}`. Parser, serializer,
-      `handle`.
+      Layer 2 + 5. `print_stack_action.{h,cpp}`.
 - [ ] `0004-be-register-print-stack-http-route.patch`
       Route `/api/print_stack`.
 - [ ] `0005-be-add-print-stack-action-tests.patch`
@@ -50,9 +50,6 @@ One patch per logical change; split or merge as needed for review.
 - [ ] `0001-be-add-fp-walk-capture-into-slot.patch`
       Layer 3d. `capture_into_slot` definition. Signal-safe RBP walk.
       `mincore` guard.
-
-No fp-walk-specific test patch this phase. The capture is exercised through
-the three common cases.
 
 ## Dev workflow
 
@@ -85,14 +82,6 @@ Implementer entry points into the upstream sources:
 The Doris HTTP integration test pattern to copy is
 `be/test/service/http/http_client_test.cpp` (real `EvHttpServer` +
 `HttpClient`).
-
-## Verification
-
-Run from a clean tree, in order:
-
-- [ ] `just phase2-test new-ut fp-walk asan "*"` → green.
-- [ ] `just phase2-test new-ut fp-walk release "*"` → green.
-- [ ] `just phase2-test new-ut fp-walk tsan "*"` → green.
 
 ## Log
 
