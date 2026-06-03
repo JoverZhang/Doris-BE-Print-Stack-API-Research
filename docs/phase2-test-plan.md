@@ -140,6 +140,7 @@ just phase2-test-release <variant>   # -O3 -DNDEBUG, no sanitizer
 just phase2-test-tsan    <variant>   # -O1 -fsanitize=thread
 just phase2-test-jemalloc fp-walk    # RELEASE plus USE_JEMALLOC=ON
 just phase2-test-all     <variant>   # ASAN, RELEASE, fp-walk jemalloc, TSAN
+just phase2-test-filter <variant-or-base> <gtest-filter>
 ```
 
 Full BE UT is a separate local recipe. It preserves the selected build dir by
@@ -150,6 +151,9 @@ just phase2-full-ut <variant>         # ASAN, no clean
 just phase2-full-ut-release <variant> # RELEASE, no clean
 just phase2-full-ut-tsan <variant>    # TSAN, no clean
 just phase2-full-ut-clean <variant>   # ASAN, deletes ut_build_ASAN first
+just phase2-full-ut-base              # ASAN full UT on phase2/base
+just phase2-full-ut-base-release      # RELEASE full UT on phase2/base
+just phase2-full-ut-base-tsan         # TSAN full UT on phase2/base
 ```
 
 | Mode | Flags (`be/CMakeLists.txt`) | Build dir | What it catches that ASan misses |

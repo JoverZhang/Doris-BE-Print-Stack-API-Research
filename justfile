@@ -41,6 +41,17 @@ phase2-test-release variant:
 phase2-test-tsan variant:
     @BUILD_TYPE_UT=TSAN ./scripts/in-container ./scripts/phase2/test.sh "{{variant}}"
 
+# Diagnostic: switch to phase2/<variant> or phase2/base and run one gtest
+# filter without deleting that build dir. Useful for base-vs-variant checks.
+phase2-test-filter variant filter:
+    @./scripts/in-container ./scripts/phase2/test-filter.sh "{{variant}}" "{{filter}}"
+
+phase2-test-filter-release variant filter:
+    @BUILD_TYPE_UT=RELEASE ./scripts/in-container ./scripts/phase2/test-filter.sh "{{variant}}" "{{filter}}"
+
+phase2-test-filter-tsan variant filter:
+    @BUILD_TYPE_UT=TSAN ./scripts/in-container ./scripts/phase2/test-filter.sh "{{variant}}" "{{filter}}"
+
 # fp-walk only: Release flags plus USE_JEMALLOC=ON, matching the production
 # allocator shape more closely than run-be-ut.sh (which hard-codes jemalloc OFF).
 # Build lands at be/ut_build_JEMALLOC_RELEASE.
@@ -66,11 +77,23 @@ phase2-full-ut variant:
 phase2-full-ut-clean variant:
     @./scripts/in-container ./scripts/phase2/full-ut.sh "{{variant}}" --clean
 
+phase2-full-ut-base:
+    @just phase2-full-ut base
+
+phase2-full-ut-base-clean:
+    @just phase2-full-ut-clean base
+
 phase2-full-ut-release variant:
     @BUILD_TYPE_UT=RELEASE ./scripts/in-container ./scripts/phase2/full-ut.sh "{{variant}}"
 
 phase2-full-ut-tsan variant:
     @BUILD_TYPE_UT=TSAN ./scripts/in-container ./scripts/phase2/full-ut.sh "{{variant}}"
+
+phase2-full-ut-base-release:
+    @just phase2-full-ut-release base
+
+phase2-full-ut-base-tsan:
+    @just phase2-full-ut-tsan base
 
 # Round-trip verify: tree(phase2/<variant>) == tree(re-apply patches at DORIS_BASE).
 phase2-verify variant:
@@ -95,7 +118,7 @@ phase2-shell:
         -w "{{justfile_directory()}}/repos/source/doris-master" \
         -e DORIS_THIRDPARTY=/var/local/thirdparty \
         -e CCACHE_DIR="{{justfile_directory()}}/.tmp/ccache" \
-        -e CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-20G}" \
+        -e CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-50G}" \
         -e CCACHE_BASEDIR="{{justfile_directory()}}" \
         -e CCACHE_NOHASHDIR=true \
         docker.io/apache/doris:build-env-ldb-toolchain-latest \
@@ -109,7 +132,7 @@ phase2-shell-host host_port='8040':
         -w "{{justfile_directory()}}/repos/source/doris-master" \
         -e DORIS_THIRDPARTY=/var/local/thirdparty \
         -e CCACHE_DIR="{{justfile_directory()}}/.tmp/ccache" \
-        -e CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-20G}" \
+        -e CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-50G}" \
         -e CCACHE_BASEDIR="{{justfile_directory()}}" \
         -e CCACHE_NOHASHDIR=true \
         docker.io/apache/doris:build-env-ldb-toolchain-latest \

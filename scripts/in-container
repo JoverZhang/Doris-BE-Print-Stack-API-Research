@@ -8,7 +8,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CCACHE_DIR="${CCACHE_DIR:-${ROOT}/.tmp/ccache}"
-CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-20G}"
+CCACHE_MAXSIZE="${CCACHE_MAXSIZE:-50G}"
 
 mkdir -p "${CCACHE_DIR}"
 
