@@ -19,6 +19,8 @@ test binary fails to link with:
 The fix is to remove the inline keyword from the two out-of-line
 definitions. No semantic change in any build mode. Carry this on
 phase2/common so RELEASE and TSAN UT builds can link.
+
+Co-Authored-By: jover <joverzh@gmail.com>
 ---
  be/src/storage/segment/segment_writer.cpp | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
@@ -43,4 +45,3 @@ index 917777f24eb..b5f3e2d5b4d 100644
  
 -- 
 2.43.0
-

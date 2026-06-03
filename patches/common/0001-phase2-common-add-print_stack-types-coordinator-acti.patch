@@ -35,6 +35,8 @@ Route:
 
 Spec: docs/architecture.md.
 Reference: ClickHouse-v26.3.10.62-lts/src/Storages/System/StorageSystemStackTrace.cpp.
+
+Co-Authored-By: jover <joverzh@gmail.com>
 ---
  be/src/service/doris_main.cpp                 |   2 +
  be/src/service/http/action/print_stack.cpp    | 296 ++++++++++++++++++
@@ -953,4 +955,3 @@ index 93a50a81cc1..2cacc312e83 100644
      _ev_http_server->register_handler(HttpMethod::GET, "/api/clear_cache/{type}",
 -- 
 2.43.0
-

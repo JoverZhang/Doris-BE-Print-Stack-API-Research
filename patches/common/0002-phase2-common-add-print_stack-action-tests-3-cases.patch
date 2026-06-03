@@ -20,6 +20,8 @@ Cases (mirror CK system.stack_trace regressions):
   != "0x0". Asserts at least one success.
 
 Spec: docs/phase2-test-plan.md, docs/architecture.md.
+
+Co-Authored-By: jover <joverzh@gmail.com>
 ---
  .../http/action/print_stack_action.cpp        |   2 +-
  .../service/http/action/print_stack_action.h  |   3 -
@@ -318,4 +320,3 @@ index 00000000000..e4c901dbbeb
 +} // namespace doris
 -- 
 2.43.0
-

@@ -19,6 +19,8 @@ SIGSEGV during the walk. Uses no allocations, no /proc, no locks,
 no Doris TLS.
 
 Spec: docs/architecture.md "Layer 3d".
+
+Co-Authored-By: jover <joverzh@gmail.com>
 ---
  .../http/action/print_stack_fp_walk.cpp       | 140 ++++++++++++++++++
  1 file changed, 140 insertions(+)
@@ -172,4 +174,3 @@ index 00000000000..cba622321b9
 +} // namespace doris::print_stack
 -- 
 2.43.0
-
