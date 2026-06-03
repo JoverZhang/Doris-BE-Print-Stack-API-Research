@@ -23,6 +23,13 @@ The three cases that must run green are defined in
 Other variants (`ck-phdr-unwind`, `ob-kill60`, `snapshot-remote-unwind`) are
 out of scope. Their existing patches stay frozen.
 
+The new `patches/common/` and `patches/fp-walk/` series is a wholesale
+replacement. The existing `native_stack_*` patches in those directories
+get deleted; the new series below takes their place. The pinned base
+commit `c24d454f15cee2d937ef4749270a3ecb449eafe6` has no `native_stack_*`
+or `print_stack_*` files, so the new series creates `print_stack_*` files
+in their place and registers only `/api/print_stack`.
+
 The patch series follows the layers in [architecture.md](architecture.md).
 One patch per logical change; split or merge as needed for review.
 

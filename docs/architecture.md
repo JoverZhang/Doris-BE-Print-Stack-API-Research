@@ -124,9 +124,8 @@ namespace doris::print_stack {
 // Reason: an RT signal is queued, not coalesced, so the coordinator
 // drives one target after another without losing the signal in
 // flight. The BE has no other SIGRT* user, and glibc reserves
-// SIGRTMIN..SIGRTMIN+2. SIGRTMIN+6 matches the existing slot in
-// be/src/service/http/action/native_stack_collect.cpp:80-82 so the
-// existing test fixture and observability paths continue to apply.
+// SIGRTMIN..SIGRTMIN+2. Any slot >= SIGRTMIN+3 would work; SIGRTMIN+6
+// is the chosen one.
 // Spec: docs/architecture.md "Layer 1".
 constexpr int kServiceSignal = SIGRTMIN + 6;
 
@@ -134,6 +133,13 @@ constexpr int kServiceSignal = SIGRTMIN + 6;
 // slot's frame array.
 // Spec: docs/architecture.md "Layer 1".
 constexpr size_t kMaxSignalFrames = 1024;
+
+// Reason: bounded wait the coordinator gives the handler to publish
+// on the notification pipe. Short enough that one stuck thread does
+// not dominate wall clock; long enough that a non-stuck thread
+// always publishes. Per-thread, applied sequentially.
+// Spec: docs/architecture.md "Layer 1".
+constexpr int kPipeReadTimeoutMs = 100;
 
 // Reason: handler writes frames here; coordinator reads them after
 // the wait succeeds. One slot suffices because capture is sequential.
@@ -235,8 +241,9 @@ void print_stack_init() {
 } // namespace doris::print_stack
 ```
 
-`main()` calls `doris::print_stack::print_stack_init()` once, before
-any HTTP listener is bound.
+`doris::init_signals()` in `be/src/service/doris_main.cpp` calls
+`doris::print_stack::print_stack_init()` as its last step. `main()`
+invokes `init_signals()` once before any HTTP listener is bound.
 
 ## Layer 2 — Action layer
 
@@ -304,6 +311,11 @@ void PrintStackAction::handle(HttpRequest* req) {
 - Late drain: the coordinator advances `g_sequence_num` on every exit
   path. A late handler fails the payload check, or the wait drains
   its pipe write.
+- Selector validation: `list_target_thread_ids` filters a `thread_id`
+  selector against `/proc/self/task`. An absent tid yields an empty
+  target list and a request that completes with `"threads": []`. The
+  ESRCH path in `capture_one` is reserved for racy mid-dump exits
+  where the thread was alive at list time and gone by signal time.
 - Capture is signal-safe. The variant hook must not allocate, log,
   take locks, read `/proc`, or touch Doris TLS.
 - DSO resolution is not signal-safe and runs in the coordinator only.
@@ -321,10 +333,12 @@ namespace {
 // Spec: docs/architecture.md "Layer 3a invariants".
 std::mutex s_dump_mutex;
 
+// list_target_thread_ids enumerates /proc/self/task. With a selector
+// it returns the selector only if /proc/self/task lists it, otherwise
+// an empty vector. Without a selector it returns every tid.
 std::vector<int64_t> list_target_thread_ids(const PrintStackOptions& options);
 std::unordered_map<int64_t, std::string> read_thread_names(
         const std::vector<int64_t>& tids);
-int get_pipe_read_timeout_ms();
 bool is_signal_blocked(int64_t tid, int signal_number);
 int remaining_ms_until(std::chrono::steady_clock::time_point deadline);
 
@@ -336,7 +350,8 @@ int rt_tgsigqueueinfo(pid_t tgid, pid_t tid, int sig, siginfo_t* info) {
 }
 
 // Reason: map one captured PC to a (dso, dso_offset) pair.
-// SymbolIndex is built at startup from dl_iterate_phdr and is not
+// SymbolIndex is built lazily by MultiVersion<SymbolIndex>::instance()
+// on first call; its construction reads dl_iterate_phdr and is not
 // signal-safe, so this resolution runs in the coordinator.
 // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:560-563.
 StackFrame pc_to_frame(uintptr_t pc) {
@@ -469,15 +484,17 @@ PrintStackResult collect_print_stack(const PrintStackOptions& options) {
     // 1. Take the single-dump gate.
     std::scoped_lock dump_lock(s_dump_mutex);
 
-    // 2. Select target tids from /proc/self/task or from options.
+    // 2. Select target tids by enumerating /proc/self/task and
+    //    filtering by `options`. An absent selector tid yields an
+    //    empty vector; the loop below then runs zero iterations.
     std::vector<int64_t> tids = list_target_thread_ids(options);
 
     // 3. Read thread names in the coordinator. /proc reads are racy
     //    but cheap and never happen in the handler.
     auto names = read_thread_names(tids);
 
-    // 4. Compute the per-thread bounded wait.
-    int pipe_read_timeout_ms = get_pipe_read_timeout_ms();
+    // 4. Per-thread bounded wait is a compile-time constant.
+    constexpr int pipe_read_timeout_ms = print_stack::kPipeReadTimeoutMs;
 
     // 5. Capture each tid sequentially.
     PrintStackResult result;
@@ -511,8 +528,13 @@ namespace doris::print_stack {
 // stay signal-safe.
 // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:120-183.
 void print_stack_signal_handler(int, siginfo_t* info, void* context) {
-    // 1. Forbid allocator use for the duration of this handler.
-    DENY_ALLOCATIONS_IN_SCOPE;
+    // 1. The handler body must stay allocation-free. CK enforces
+    //    this with `DENY_ALLOCATIONS_IN_SCOPE`, backed by their
+    //    allocator's overload hooks. Doris jemalloc has no such
+    //    hook, so the marker is kept commented out as documentation;
+    //    review enforces the rule.
+    // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:121.
+    // DENY_ALLOCATIONS_IN_SCOPE;
 
     // 2. Save errno so the interrupted thread does not observe a
     //    change.
@@ -593,7 +615,9 @@ through `SymbolIndex::findObject`.
   can resolve from the DSO file alone.
 - A PC outside every loaded DSO produces an empty `StackFrame`. The
   serializer drops it from JSON.
-- `SymbolIndex` is built at startup from `dl_iterate_phdr` and is not
+- `SymbolIndex` is built lazily by
+  `MultiVersion<SymbolIndex>::instance()` on the first coordinator
+  call. The construction reads `dl_iterate_phdr` and is not
   signal-safe. Only the coordinator calls it.
 
 ## Layer 5 — Return
@@ -614,12 +638,34 @@ The BE log records non-OK status for operators.
   handler.
 - Doris does not reuse CK's `StackTrace` class or `QueryPipeline`
   `Pipe`.
-- Doris uses `SIGRTMIN + 6` to match the existing slot in
-  `native_stack_collect.cpp`. CK uses `SIGRTMIN`.
+- Doris uses `SIGRTMIN + 6`. Any RT slot at or above `SIGRTMIN + 3`
+  would work; glibc reserves `SIGRTMIN..SIGRTMIN+2`. CK uses `SIGRTMIN`.
 - Doris exposes a typed `ThreadStackStatus` at the coordinator
   boundary. CK encodes "no frames" as NULLs in result columns.
-- Doris installs the signal handler once in `main()`. CK installs it
-  lazily in the storage constructor.
+- Doris installs the signal handler from `init_signals()`, which
+  `main()` calls once before any HTTP listener is bound. CK installs
+  it lazily in the storage constructor.
+
+## Appendix — Production deployment notes
+
+The baseline ships without the production-hardening items below. They
+belong to a later wrap-up phase, not the fp-walk baseline.
+
+- Auth. The baseline registers `/api/print_stack` without privilege
+  guards. Production should construct `PrintStackAction` with
+  `(TPrivilegeHier::GLOBAL, TPrivilegeType::ADMIN)`, matching the
+  existing `NativeStackAction` pattern. The route exposes per-thread
+  PCs (a small information disclosure) and lets the caller force
+  every BE worker to take a signal (a small denial-of-service vector),
+  both of which justify admin-only access.
+- Configurable timeout. `kPipeReadTimeoutMs` is a compile-time
+  constant. A production deploy may want a BE config flag so an
+  operator can tune the per-thread wait without recompiling.
+- Allocator guard. CK forbids allocations inside the handler with a
+  macro hook in their allocator. Doris jemalloc lacks the equivalent
+  hook. A real guard (probably built on `je_mallctl`) would catch
+  accidental allocations in the handler at runtime; the baseline
+  relies on review of the handler body.
 
 ## Appendix — Offline symbolization with llvm-symbolizer
 
