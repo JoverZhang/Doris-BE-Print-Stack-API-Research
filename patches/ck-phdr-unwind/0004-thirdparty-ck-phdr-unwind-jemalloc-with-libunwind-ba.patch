@@ -1,11 +1,8 @@
-From 5de6fe71ce153dce28ebe9be044d0b38a9531608 Mon Sep 17 00:00:00 2001
+From b0e5f10094e4d44fba03907fcd6dd8a32ef48db4 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Thu, 4 Jun 2026 20:34:02 +0800
 Subject: [PATCH 4/4] (thirdparty) ck-phdr-unwind jemalloc with libunwind
  backtracer
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 Pass `--enable-prof-libunwind` to `build_jemalloc_doris()` so jemalloc's
 heap-profile backtracer calls `unw_backtrace` instead of libgcc's
@@ -13,10 +10,10 @@ heap-profile backtracer calls `unw_backtrace` instead of libgcc's
 `_Unwind_Find_FDE` and deadlocks against the lock-free override under
 profiling load.
 
-Detection inputs (CPPFLAGS/LDFLAGS/LIBS) are supplied by the caller's
-environment rather than hard-coded here, so the patch stays minimal and
-the harness wrapper (scripts/phase2/phase2-jemalloc.sh) keeps the
-rebuild-scenario plumbing in one place.
+ClickHouse documents the same flag for an independently-sufficient
+reason (glibc >= 2.34 `dlsym` routes through `malloc` and the libgcc
+backtracer deadlocks during jemalloc bootstrap); that rationale also
+applies to every Doris BE built on a glibc-2.34 host.
 
 Add a post-configure verify of `result: prof-libunwind : 1` in
 `config.log` and fail early on mismatch. jemalloc/jemalloc#2504:
@@ -27,21 +24,21 @@ In a fully-clean `build-thirdparty.sh` run, libunwind is built later in
 the package list than jemalloc, so a clean invocation of this function
 will not yet see libunwind and the verify will fail. The intended
 invocation is `build-thirdparty.sh jemalloc_doris` after the prebuilt
-thirdparty (which includes libunwind) is in place — i.e. the rebuild
-scenario the ck-phdr-unwind variant exercises.
+thirdparty (which includes libunwind) is in place.
 
 Spec: docs/design/ck.md "Decisions".
+Reference: <ck>/contrib/jemalloc-cmake/CMakeLists.txt:199-211.
 
 Co-Authored-By: jover <joverzh@gmail.com>
 ---
- thirdparty/build-thirdparty.sh | 18 +++++++++++++++++-
- 1 file changed, 17 insertions(+), 1 deletion(-)
+ thirdparty/build-thirdparty.sh | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
 
 diff --git a/thirdparty/build-thirdparty.sh b/thirdparty/build-thirdparty.sh
-index 71a3b38afb8..673a0ddde92 100755
+index 71a3b38afb8..e019ce90843 100755
 --- a/thirdparty/build-thirdparty.sh
 +++ b/thirdparty/build-thirdparty.sh
-@@ -1613,8 +1613,24 @@ build_jemalloc_doris() {
+@@ -1613,8 +1613,23 @@ build_jemalloc_doris() {
      # It is not easy to remove `with-jemalloc-prefix`, which may affect the compatibility between third-party and old version codes.
      # Also, will building failed on Mac, it said can't find mallctl symbol. because jemalloc's default prefix on macOS is "je_", not "".
      # Maybe can use alias instead of overwrite.
@@ -49,9 +46,7 @@ index 71a3b38afb8..673a0ddde92 100755
 +    # backtracer call `unw_backtrace`. The default libgcc backtracer
 +    # re-enters `dl_iterate_phdr` and deadlocks against the lock-free
 +    # override (be/src/common/phdr_cache.cpp) under profiling load.
-+    # `CPPFLAGS`/`LDFLAGS`/`LIBS` for libunwind detection come from the
-+    # caller's env (see scripts/phase2/phase2-jemalloc.sh).
-+    # Spec: docs/design/ck.md "Decisions".
++    # Reference: <ck>/contrib/jemalloc-cmake/CMakeLists.txt:199-211.
      CFLAGS="${cflags}" ../configure --prefix="${TP_INSTALL_DIR}" --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
 -        --with-jemalloc-prefix=je --enable-prof --disable-cxx --disable-libdl --disable-shared
 +        --with-jemalloc-prefix=je --enable-prof --enable-prof-libunwind \
@@ -59,6 +54,7 @@ index 71a3b38afb8..673a0ddde92 100755
 +
 +    # Reason: libunwind detection can silently fall back to libgcc
 +    # (jemalloc/jemalloc#2504). Fail before sinking time into `make`.
++    # Local: defensive verify; no CK precedent.
 +    if ! grep -qE "result: prof-libunwind +: 1$" config.log; then
 +        echo "ERROR: prof-libunwind != 1 in config.log; libunwind detection failed (jemalloc/jemalloc#2504)." >&2
 +        grep -E "result: prof-(libunwind|libgcc|gcc) +:" config.log >&2 || true
