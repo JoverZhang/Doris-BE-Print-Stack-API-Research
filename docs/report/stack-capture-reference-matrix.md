@@ -44,7 +44,7 @@
 - libunwind：使用 unwind info + fallback；通常比 fp-walk 覆盖更多帧。
 
 地址归一化：
-- variant handler 只采集 PC。
+- signal handler 只采集 PC。
 - Doris 在 handler 外用 `SymbolIndex` 把 PC 转成 `(dso, dso_offset)`。
 - TODO：在 handler 外基于 `(dso, dso_offset)` 增加符号化结果。
 
