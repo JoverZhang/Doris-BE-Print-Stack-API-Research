@@ -21,19 +21,19 @@
 
 ## 矩阵 2：Doris 各实验方案
 
-| Doris 设计点         |   fp-walk   | ck-phdr-unwind |  ob-kill60  | 说明                                                                                               |
-|----------------------|:-----------:|:--------------:|:-----------:|----------------------------------------------------------------------------------------------------|
-| 触发入口             | doris local |  doris local   | doris local | HTTP API                                                                                           |
-| thread 枚举          |   ck, ob    |     ck, ob     |   ck, ob    | 全一致，直接采用 `/proc/self/task` 枚举线程                                                         |
-| 顺序唤起 thread      |   ck, ob    |     ck, ob     |   ck, ob    | 全一致，避免 signal queue 和共享状态复杂度                                                          |
-| public API 输出 JSON | doris local |  doris local   | doris local | { "thread_id": ..., "thread_name": ..., "trace": [{"dso": ..., "dso_offset": ...}] }               |
-| handler 外解析地址   |     ck      |       ck       |     ck      | CK 用 SQL introspection 函数；Doris 输出 `(dso, dso_offset)`                                        |
-| 抓栈实现             | doris local |  ck + ob dep   |     ob      | fp-walk 本地 / ck-phdr 是 CK 语义 + nongnu 依赖 / ob 是纯 nongnu libunwind 路径，不加 CK PHDR cache |
-| 可见栈完整度         | 受限        |      更好      |    更好     | 见下方 |
-| `updatePHDRCache`    |      -      |       ck       |      -      | 仅 ck-phdr 继承 CK 的 PHDR cache 预热；fp-walk / ob-kill60 不引入                            |
-| libunwind 依赖形态   |      -      |       ob       |     ob      | Doris thirdparty 更接近 OB：nongnu libunwind 1.6.2                                                  |
-| 协同方式             |     ck      |       ck       |     ob      | CK 单阶段；OB 两阶段                                                                                |
-| jemalloc profiling   |      -      |       ck       |     ck      | 作为风险 / 依赖参考，不一定进入 `print_stack` 实现                                                  |
+| 序号 | Doris 设计点         |   fp-walk   | ck-phdr-unwind |  ob-kill60  | 说明                                                                                               |
+|------|----------------------|:-----------:|:--------------:|:-----------:|----------------------------------------------------------------------------------------------------|
+| 0    | libunwind 依赖形态   |      -      |       ob       |     ob      | Doris thirdparty 更接近 OB：nongnu libunwind 1.6.2                                                  |
+| 1    | `updatePHDRCache`    |      -      |       ck       |      -      | 仅 ck-phdr 继承 CK 的 PHDR cache 预热；fp-walk / ob-kill60 不引入                                  |
+| 2    | 触发入口             | doris local |  doris local   | doris local | HTTP API                                                                                           |
+| 3    | thread 枚举          |   ck, ob    |     ck, ob     |   ck, ob    | 全一致，直接采用 `/proc/self/task` 枚举线程                                                         |
+| 4    | 顺序唤起 thread      |   ck, ob    |     ck, ob     |   ck, ob    | 全一致，避免 signal queue 和共享状态复杂度                                                          |
+| 5    | 协同方式             |     ck      |       ck       |     ob      | CK 单阶段；OB 两阶段                                                                                |
+| 6    | 抓栈实现             | doris local |  ck + ob dep   |     ob      | fp-walk 本地 / ck-phdr 是 CK 语义 + nongnu 依赖 / ob 是纯 nongnu libunwind 路径，不加 CK PHDR cache |
+| 7    | 可见栈完整度         | 受限        |      更好      |    更好     | 见下方                                                                                             |
+| 8    | handler 外解析地址   |     ck      |       ck       |     ck      | CK 用 SQL introspection 函数；Doris 输出 `(dso, dso_offset)`                                        |
+| 9    | public API 输出 JSON | doris local |  doris local   | doris local | { "thread_id": ..., "thread_name": ..., "trace": [{"dso": ..., "dso_offset": ...}] }               |
+| 10   | jemalloc profiling   |      -      |       ck       |     ck      | 附带依赖风险，不一定进入 `print_stack` 主流程                                                       |
 
 可见栈完整度：
 - fp-walk：只靠 `-fno-omit-frame-pointer` + RBP 链；tail call / tail return、断在 prologue、手写汇编会少帧。
