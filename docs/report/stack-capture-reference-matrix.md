@@ -1,0 +1,46 @@
+# 抓栈参考矩阵
+
+## 矩阵 1：CK / OB 每个环节实现
+
+| 环节               | ClickHouse `system.stack_trace`                                               | OceanBase `kill -60`                                                                     |
+|--------------------|-------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| 触发入口           | SQL 读 `system.stack_trace`                                                   | 外部 `kill -60 <pid>`                                                                    |
+| thread 枚举        | 读 `/proc/self/task`                                                          | 读 `/proc/self/task`                                                                     |
+| 唤起目标线程       | `rt_tgsigqueueinfo` 发送 `SIGRTMIN` 到目标 tid                                | signal 60 触发 worker；worker 再发送 `SIGURG` 到目标 tid                                  |
+| 遍历方式           | 顺序，一次一个 thread                                                          | 顺序，一次一个 thread                                                                     |
+| handler 入口校验   | 校验 sender pid 和 sequence                                                   | 校验 request id                                                                          |
+| 抓栈位置           | 目标线程 signal handler                                                       | 目标线程 signal handler                                                                  |
+| 抓栈实现           | CK 定制 LLVM/libunwind `unw_backtrace()`                                      | OB `safe_backtrace()` 包装 nongnu libunwind 1.6.2                                        |
+| `updatePHDRCache`  | `main()` 预先填充 PHDR cache；这是 signal handler 内 unwind 的前置条件          | 无 CK PHDR cache；纯 nongnu libunwind 路径                                               |
+| 协同方式           | 单阶段：handler 抓栈、通知、返回                                                 | 两阶段：handler `prepare()` 后等待 collector `process()` 和 release                       |
+| 输出形态           | system table：`thread_name`、`thread_id`、`query_id`、`trace`、`untracked_memory`  | `stack.<pid>.<time>` 文本文件；文件头写 `/proc/maps`，每个 thread 行带 `tid`、`tname`、`lbt` |
+| 地址语义           | `trace` 是 file/object offset 数组，语义接近 DSO offset                        | `lbt` 是运行时虚拟地址列表；普通 frame 会做 `ip - 1`，不是 DSO offset                      |
+| 解析方式           | 抓栈时不符号化；SQL 中用 `addressToLine` / `addressToSymbol` / `demangle` 解析 | 抓栈时不符号化；后续依赖 maps + raw address 解析                                          |
+| frame pointer      | 非核心依赖                                                                    | `oblib` 带 `-fno-omit-frame-pointer`，但抓栈仍以 libunwind 为主                           |
+| jemalloc profiling | 有，且和 libunwind / `trace_log` 相关                                          | `kill -60` 路径无明显关联                                                                |
+
+## 矩阵 2：Doris 各实验方案
+
+| Doris 设计点         |   fp-walk   | ck-phdr-unwind |  ob-kill60  | 说明                                                                                               |
+|----------------------|:-----------:|:--------------:|:-----------:|----------------------------------------------------------------------------------------------------|
+| 触发入口             | doris local |  doris local   | doris local | HTTP API                                                                                           |
+| thread 枚举          |   ck, ob    |     ck, ob     |   ck, ob    | 全一致，直接采用 `/proc/self/task` 枚举线程                                                         |
+| 顺序唤起 thread      |   ck, ob    |     ck, ob     |   ck, ob    | 全一致，避免 signal queue 和共享状态复杂度                                                          |
+| public API 输出 JSON | doris local |  doris local   | doris local | { "thread_id": ..., "thread_name": ..., "trace": [{"dso": ..., "dso_offset": ...}] }               |
+| handler 外解析地址   |     ck      |       ck       |     ck      | CK 用 SQL introspection 函数；Doris 输出 `(dso, dso_offset)`                                        |
+| 抓栈实现             | doris local |  ck + ob dep   |     ob      | fp-walk 本地 / ck-phdr 是 CK 语义 + nongnu 依赖 / ob 是纯 nongnu libunwind 路径，不加 CK PHDR cache |
+| `updatePHDRCache`    |      -      |       ck       |      -      | 仅 ck-phdr 继承 CK 的 PHDR cache 预热；fp-walk / ob-kill60 不引入                            |
+| libunwind 依赖形态   |      -      |       ob       |     ob      | Doris thirdparty 更接近 OB：nongnu libunwind 1.6.2                                                  |
+| 协同方式             |     ck      |       ck       |     ob      | CK 单阶段；OB 两阶段                                                                                |
+| jemalloc profiling   |      -      |       ck       |     ck      | 作为风险 / 依赖参考，不一定进入 `print_stack` 实现                                                  |
+
+## 矩阵 3：LLVM/libunwind 与 nongnu libunwind
+
+| 环节               | LLVM/libunwind（CK）                                                                  | nongnu libunwind 1.6.2（OB / Doris）                                                      |
+|--------------------|-------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| Doris 是否直接使用 | 否。Doris 没有 CK vendored LLVM/libunwind fork。                                      | 是。Doris Linux thirdparty 使用 nongnu libunwind 1.6.2。                                  |
+| CK / OB 使用方式   | CK fork 增加 `unw_backtrace()`。                                                     | OB 自己写 `safe_backtrace()` 包装 cursor API。                                           |
+| 主要 unwind 元数据 | `.eh_frame_hdr` / `.eh_frame`；LLVM CFI parser；Linux x86_64 主要走 DWARF。            | `.eh_frame_hdr` / `.eh_frame`；缺 header 时可合成 `.eh_frame_hdr`；可选 `.debug_frame`。   |
+| fallback 形态      | 找不到 unwind info 时倾向结束；CK 版本还关闭了慢速 full scan。                        | DWARF 失败后还有 signal frame、PLT、RSP fixup、guessed RBP frame 等 x86_64 fallback。       |
+| signal frame       | CK 在 `StackTrace(signal_context)` 外层用 signal `ucontext` 对齐 interrupted frame。 | 提供 `unw_is_signal_frame()`；x86_64 fallback 可处理 signal frame。                       |
+| 对 Doris 的含义    | 不能按“纯 CK unwinder”移植，只能借鉴 CK 单阶段协议。                                  | 依赖形态更接近 Doris；但 signal handler 内跑 libunwind 仍需处理 PHDR / loader-lock 风险。 |
