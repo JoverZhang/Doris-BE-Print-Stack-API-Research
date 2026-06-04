@@ -32,8 +32,7 @@
 | 6    | 抓栈实现             | doris local |  CK + nongnu   | OB + nongnu | 见下方                                                                                             |
 | 7    | 可见栈完整度         | 受限        |      更好      |    更好     | 见下方                                                                                             |
 | 8    | 地址归一化           | doris local |  doris local   | doris local | PC -> `(dso, dso_offset)`                                                                          |
-| 9    | 输出字段形态         | doris local |  doris local   | doris local | 当前为 `(dso, dso_offset)`；符号化 TODO                                                            |
-| 10   | jemalloc prof-libunwind |      -   |       ck       |     ck      | 见下方                                                                                             |
+| 9    | jemalloc prof-libunwind |      -   |       ck       |     ck      | 见下方                                                                                             |
 
 抓栈实现：
 - fp-walk：Doris 本地 RBP 链 walk，不依赖 libunwind。
@@ -47,12 +46,7 @@
 地址归一化：
 - variant handler 只采集 PC。
 - Doris 在 handler 外用 `SymbolIndex` 把 PC 转成 `(dso, dso_offset)`。
-- `(dso, dso_offset)` 是当前输出字段，也是后续符号化的输入。
-
-输出字段形态：
-- 当前 HTTP JSON frame 是 `{dso, dso_offset}`。
-- TODO：支持符号化输出。
-- 符号化完成后，trace frame schema 需要扩展或调整，例如增加 `function` / `file` / `line`，或提供独立的 symbolized 输出形态。
+- TODO：在 handler 外基于 `(dso, dso_offset)` 增加符号化结果。
 
 jemalloc prof-libunwind：
 - 这个维度指 jemalloc heap profiling 的 backtracer 选择。
