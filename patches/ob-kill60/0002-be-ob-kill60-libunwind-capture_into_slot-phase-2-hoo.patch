@@ -1,0 +1,194 @@
+From 22a3cd208fe7968afb10a43295f4e1c6d28a322e Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Fri, 5 Jun 2026 00:09:51 +0800
+Subject: [PATCH 2/3] (be) ob-kill60 libunwind capture_into_slot + phase-2
+ hooks
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add the variant TU `be/src/service/http/action/print_stack_ob_kill60.cpp`.
+Defines the three variant entry points the patch 0001 hooks call into:
+
+  capture_into_slot
+    libunwind walk seeded from the interrupted thread's saved
+    `ucontext_t`. `unw_init_local2(..., UNW_INIT_SIGNAL_FRAME)` so
+    the first IP read returns the interrupted PC, not the handler's
+    own frame. Loop walks via `unw_get_reg(UNW_REG_IP)` + `unw_step`
+    up to `kMaxSignalFrames`. Same shape as
+    `print_stack_ck_phdr_unwind.cpp`.
+
+  variant_wait_for_release
+    Blocks the handler on `g_handler_release_pipe_rw[0]` via `poll`
+    bounded by `kPipeReadTimeoutMs`. Drains reads whose sequence
+    does not match (stale wakeups from prior dumps' late drains).
+    Returns on match, on timeout, or on read failure — never hangs
+    the handler indefinitely.
+
+  variant_after_slot_read
+    One `write` of the sequence on `g_handler_release_pipe_rw[1]`
+    from the coordinator after copying the slot.
+
+No `hasPHDRCache()` gate. ob-kill60 deliberately ships no PHDR cache
+override; `unw_step` reaches libc `dl_iterate_phdr`, which takes the
+loader lock and is not async-signal-safe. OceanBase ships this exact
+shape in production; the variant inherits the risk so the report's
+comparison against ck-phdr-unwind stays clean. The dlopen-deadlock
+window is documented in docs/design/ob.md "Runtime dlopen / dlclose
+compatibility".
+
+`UNW_LOCAL_ONLY` is defined before `<libunwind.h>` so the include
+resolves to the local-only `_ULx86_64_*` symbols the Doris libunwind
+archive exports. `be/src/service/CMakeLists.txt` globs `*.cpp`
+recursively, so the new TU is picked up without a CMakeLists edit.
+
+Spec: docs/architecture.md "Layer 3d"; docs/design/ob.md "Decisions",
+      "Steps".
+Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:55-82
+  (`get_stack_trace_inplace` is the unwind loop shape ob-kill60
+  transcribes; the seed differs — ob-kill60 uses the saved ucontext,
+  OB uses `unw_getcontext`).
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ .../http/action/print_stack_ob_kill60.cpp     | 128 ++++++++++++++++++
+ 1 file changed, 128 insertions(+)
+ create mode 100644 be/src/service/http/action/print_stack_ob_kill60.cpp
+
+diff --git a/be/src/service/http/action/print_stack_ob_kill60.cpp b/be/src/service/http/action/print_stack_ob_kill60.cpp
+new file mode 100644
+index 00000000000..29f4f94c3f3
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_ob_kill60.cpp
+@@ -0,0 +1,128 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++// Reason: the Doris libunwind archive exposes only the local-only
++// `_ULx86_64_*` symbols. The define remaps `<libunwind.h>` to those.
++// Spec: docs/design/ob.md "Decisions".
++#define UNW_LOCAL_ONLY
++
++#include <libunwind.h>
++#include <poll.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#include <cerrno>
++#include <cstring>
++
++#include "service/http/action/print_stack_capture.h"
++#include "service/http/action/print_stack_globals.h"
++
++namespace doris::print_stack {
++namespace {
++
++// Reason: seed from the interrupted thread's saved context and walk
++// the chain. `UNW_INIT_SIGNAL_FRAME` tells libunwind the context came
++// from a signal handler so the first IP read returns the interrupted PC.
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_libunwind.c:55-82
++//   (`get_stack_trace_inplace` is the unwind loop shape).
++size_t walk_signal_frame(const ucontext_t& uc, uintptr_t* out, size_t cap) {
++    unw_context_t ctx;
++    std::memcpy(&ctx, &uc, sizeof(ctx));
++
++    unw_cursor_t cursor;
++    if (unw_init_local2(&cursor, &ctx, UNW_INIT_SIGNAL_FRAME) != 0) {
++        return 0;
++    }
++
++    size_t n = 0;
++    do {
++        if (n >= cap) {
++            break;
++        }
++        unw_word_t ip = 0;
++        if (unw_get_reg(&cursor, UNW_REG_IP, &ip) != 0 || ip == 0) {
++            break;
++        }
++        out[n++] = static_cast<uintptr_t>(ip);
++    } while (unw_step(&cursor) > 0);
++
++    return n;
++}
++
++} // namespace
++
++// Reason: variant capture. Body runs inside the signal handler. ob-kill60
++// ships no `dl_iterate_phdr` override; the libc implementation takes the
++// loader lock, which is not async-signal-safe. Risk inherited deliberately
++// so the report's comparison against ck-phdr-unwind stays clean.
++// Spec: docs/architecture.md "Layer 3d"; docs/design/ob.md "Decisions".
++void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
++    out->status = ThreadStackStatus::CaptureFailed;
++    out->frame_count = walk_signal_frame(uc, out->pcs.data(), kMaxSignalFrames);
++    out->status = ThreadStackStatus::OK;
++}
++
++// Reason: phase-2 release wait. Block in the signal handler until the
++// coordinator writes the matching sequence on g_handler_release_pipe_rw.
++// Bounded by kPipeReadTimeoutMs so a coordinator that errors mid-read
++// does not hang the handler indefinitely. Non-matching reads (left over
++// from a prior dump's late hooks) are drained.
++// Spec: docs/design/ob.md "Steps".
++// Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:365
++//   (OB's `wait_readable(fd2_[0])`).
++void variant_wait_for_release(int seq) {
++    int remaining_ms = kPipeReadTimeoutMs;
++    while (true) {
++        pollfd pfd {g_handler_release_pipe_rw[0], POLLIN, 0};
++        int rc = ::poll(&pfd, 1, remaining_ms);
++
++        if (rc < 0 && errno == EINTR) {
++            if (--remaining_ms <= 0) {
++                return;
++            }
++            continue;
++        }
++        if (rc <= 0) {
++            return;
++        }
++
++        int got = 0;
++        ssize_t n = ::read(g_handler_release_pipe_rw[0], &got, sizeof(got));
++        if (n < 0 && errno == EINTR) {
++            continue;
++        }
++        if (n != static_cast<ssize_t>(sizeof(got))) {
++            return;
++        }
++        if (got == seq) {
++            return;
++        }
++        // Stale wakeup from a prior dump's coordinator; drain and keep
++        // waiting for our own sequence.
++    }
++}
++
++// Reason: phase-2 release notify. The coordinator calls this from
++// capture_one after the slot copy. One write of the sequence wakes
++// the handler's poll loop above.
++// Spec: docs/design/ob.md "Steps".
++void variant_after_slot_read(int seq) {
++    ssize_t res = ::write(g_handler_release_pipe_rw[1], &seq, sizeof(seq));
++    (void)res;
++}
++
++} // namespace doris::print_stack
+-- 
+2.53.0
+

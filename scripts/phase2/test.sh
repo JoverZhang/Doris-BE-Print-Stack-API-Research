@@ -100,14 +100,14 @@ assert_clean_worktree "$DORIS_REPO"
 git -C "$DORIS_REPO" switch "phase2/$target"
 head="$(git -C "$DORIS_REPO" rev-parse --short=12 HEAD)"
 
-# 3. ck-phdr-unwind variant: the rebuilt libjemalloc_doris.a lives in the
-# bind-mounted Doris thirdparty/installed/, but CMake's THIRDPARTY_DIR
-# resolves to ${DORIS_THIRDPARTY}/installed/ which is container-internal and
-# reset to the stock (libgcc-backed) prebuilt every `--rm` container start.
-# Re-sync from the host-persistent cache to the container install at the
-# start of every test container; the wrapper hits its sentinel cache after
-# the first bootstrap build (<1 s).
-if [[ "$target" == "ck-phdr-unwind" ]]; then
+# 3. ck-phdr-unwind and ob-kill60 variants: the rebuilt libjemalloc_doris.a
+# lives in the bind-mounted Doris thirdparty/installed/, but CMake's
+# THIRDPARTY_DIR resolves to ${DORIS_THIRDPARTY}/installed/ which is
+# container-internal and reset to the stock (libgcc-backed) prebuilt every
+# `--rm` container start. Re-sync from the host-persistent cache to the
+# container install at the start of every test container; the wrapper hits
+# its sentinel cache after the first bootstrap build (<1 s).
+if [[ "$target" == "ck-phdr-unwind" || "$target" == "ob-kill60" ]]; then
     "$PROJECT_ROOT/scripts/phase2/build-jemalloc-prof-libunwind.sh"
 fi
 

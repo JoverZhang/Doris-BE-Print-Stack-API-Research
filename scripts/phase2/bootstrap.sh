@@ -38,15 +38,17 @@ git -C "$DORIS_REPO" switch -c phase2/common
 git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/common/"*.patch
 
 # 6. For each variant: branch from phase2/common; try to apply. On failure
-#    abort cleanly so the next variant can still run. ck-phdr-unwind also
-#    needs `libjemalloc_doris.a` rebuilt with `--enable-prof-libunwind`;
-#    the variant patches Doris's `thirdparty/build-thirdparty.sh` to add
-#    the flag and a verify, and the harness wrapper below ensures the
-#    jemalloc source is unpacked + invokes the patched build. The
-#    rebuild writes to `${DORIS_THIRDPARTY}/installed/lib/libjemalloc_doris.a`
-#    (the container's standard install root), which is where CMake's
+#    abort cleanly so the next variant can still run. ck-phdr-unwind and
+#    ob-kill60 both need `libjemalloc_doris.a` rebuilt with
+#    `--enable-prof-libunwind`; their variant patches add the flag and a
+#    verify to Doris's `thirdparty/build-thirdparty.sh`, and the harness
+#    wrapper below ensures the jemalloc source is unpacked + invokes the
+#    patched build. The rebuild writes to
+#    `${DORIS_THIRDPARTY}/installed/lib/libjemalloc_doris.a` (the
+#    container's standard install root), which is where CMake's
 #    `add_thirdparty(jemalloc ...)` already looks — no in-tree path swap.
-#    The wrapper is idempotent (probes config.log for `prof-libunwind:1`).
+#    The wrapper is idempotent (probes config.log for `prof-libunwind:1`)
+#    and md5-keyed, so the second variant in this loop is a cache hit.
 clean=()
 broken=()
 for v in $VARIANTS; do
@@ -54,7 +56,7 @@ for v in $VARIANTS; do
     git -C "$DORIS_REPO" switch -c "phase2/$v"
     if git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/$v/"*.patch; then
         clean+=("$v")
-        if [[ "$v" == "ck-phdr-unwind" ]]; then
+        if [[ "$v" == "ck-phdr-unwind" || "$v" == "ob-kill60" ]]; then
             DORIS_REPO="$DORIS_REPO" "$PROJECT_ROOT/scripts/phase2/build-jemalloc-prof-libunwind.sh"
         fi
     else

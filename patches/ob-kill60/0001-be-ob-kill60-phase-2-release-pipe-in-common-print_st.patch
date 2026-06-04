@@ -1,0 +1,187 @@
+From b8d3caa965719b0655423f15e99f73565145341a Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Fri, 5 Jun 2026 00:09:00 +0800
+Subject: [PATCH 1/3] (be) ob-kill60 phase-2 release pipe in common print_stack
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The ob-kill60 variant runs OceanBase's two-phase release handshake on
+top of the architecture's single-phase shape. The handler publishes
+the slot and the notification, then blocks until the coordinator
+writes back the same sequence; the coordinator writes that sequence
+after copying the slot. Two pipes total: the existing
+`g_notification_pipe_rw` (handler -> coordinator) and the new
+`g_handler_release_pipe_rw` (coordinator -> handler).
+
+This patch adds the release pipe and the two variant hooks in the
+common print_stack files. Single-phase variants do not link this
+patch; their `variant_wait_for_release` and `variant_after_slot_read`
+are absent because the calls are absent. Architecture stays
+single-phase: the spec in docs/architecture.md is untouched.
+
+Files:
+ - print_stack_globals.h: extern int g_handler_release_pipe_rw[2];
+ - print_stack_init.cpp: definition + sibling open_handler_release_pipe_once
+   called from print_stack_init between the notification pipe open and
+   the handler install. Additive — open_notification_pipe_once keeps
+   its name and body.
+ - print_stack_capture.h: declare variant_wait_for_release(int seq) +
+   variant_after_slot_read(int seq).
+ - print_stack_signal_handler.cpp: variant_wait_for_release(seq) call
+   inserted between the notification write (step 9) and the errno/
+   latch restore (renumbered to step 11).
+ - print_stack.cpp: variant_after_slot_read(si.si_value.sival_int)
+   inserted in capture_one after the frame copy loop, before the
+   Defer bumps the sequence. Adds a #include for print_stack_capture.h.
+
+The release wait is functionally redundant under the architecture's
+slot-ring + sequence-on-payload + late-drain protections (see
+docs/design/ob.md "Why phase 2 is redundant"). The variant runs it
+for envelope-fidelity comparison with OceanBase, recorded in the
+stack-capture-reference-matrix.
+
+Spec: docs/design/ob.md "Scope", "Steps".
+Reference: <ob>/deps/oblib/src/lib/signal/ob_signal_worker.cpp:325-365
+  (OB's `wait_readable(fd2_[0])` is the upstream release-wait shape).
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ be/src/service/http/action/print_stack.cpp    |  6 ++++++
+ .../service/http/action/print_stack_capture.h | 11 ++++++++++
+ .../service/http/action/print_stack_globals.h |  9 +++++++++
+ .../service/http/action/print_stack_init.cpp  | 20 ++++++++++++++++++-
+ .../action/print_stack_signal_handler.cpp     |  8 +++++++-
+ 5 files changed, 52 insertions(+), 2 deletions(-)
+
+diff --git a/be/src/service/http/action/print_stack.cpp b/be/src/service/http/action/print_stack.cpp
+index bf85116d377..426a192761b 100644
+--- a/be/src/service/http/action/print_stack.cpp
++++ b/be/src/service/http/action/print_stack.cpp
+@@ -37,6 +37,7 @@
+ #include <vector>
+ 
+ #include "common/symbol_index.h"
++#include "service/http/action/print_stack_capture.h"
+ #include "service/http/action/print_stack_globals.h"
+ #include "util/defer_op.h"
+ 
+@@ -263,6 +264,11 @@ void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
+     for (size_t i = 0; i < print_stack::g_slot.frame_count; ++i) {
+         out->frames.push_back(pc_to_frame(print_stack::g_slot.pcs[i]));
+     }
++
++    // Phase-2 release. No-op for single-phase variants; ob-kill60
++    // writes the sequence on g_handler_release_pipe_rw so the
++    // handler can return. Spec: docs/design/ob.md "Steps".
++    print_stack::variant_after_slot_read(si.si_value.sival_int);
+ }
+ 
+ } // namespace
+diff --git a/be/src/service/http/action/print_stack_capture.h b/be/src/service/http/action/print_stack_capture.h
+index ebe57b7e7d6..b7a3d25e1e2 100644
+--- a/be/src/service/http/action/print_stack_capture.h
++++ b/be/src/service/http/action/print_stack_capture.h
+@@ -33,4 +33,15 @@ namespace doris::print_stack {
+ // Spec: docs/architecture.md "Layer 3d".
+ void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out);
+ 
++// Reason: phase-2 release-handshake hooks. Single-phase variants
++// (fp-walk, ck-phdr-unwind) define both as no-ops; ob-kill60 implements
++// the OceanBase-style two-phase exchange by waiting on
++// `g_handler_release_pipe_rw` inside the handler and writing the
++// sequence from the coordinator. The architecture's slot ring +
++// sequence-on-payload + late-drain already protects against poisoning;
++// ob-kill60 runs phase 2 for envelope-fidelity comparison with OB.
++// Spec: docs/design/ob.md "Scope", "Steps".
++void variant_wait_for_release(int seq);
++void variant_after_slot_read(int seq);
++
+ } // namespace doris::print_stack
+diff --git a/be/src/service/http/action/print_stack_globals.h b/be/src/service/http/action/print_stack_globals.h
+index e19660436ed..6be6b0b4af0 100644
+--- a/be/src/service/http/action/print_stack_globals.h
++++ b/be/src/service/http/action/print_stack_globals.h
+@@ -92,6 +92,15 @@ extern StackCaptureSlot g_slot;
+ // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:111.
+ extern int g_notification_pipe_rw[2];
+ 
++// Reason: phase-2 release channel for variants that implement the OB-
++// style handshake. The handler waits on the read end after publishing
++// the slot; the coordinator writes the sequence on the write end after
++// reading the slot. Single-phase variants leave the fds at -1 and the
++// pipe is never used (their `variant_wait_for_release` / `variant_after_slot_read`
++// are no-ops).
++// Spec: docs/design/ob.md "Steps".
++extern int g_handler_release_pipe_rw[2];
++
+ void print_stack_signal_handler(int sig, siginfo_t* info, void* context);
+ 
+ void print_stack_init();
+diff --git a/be/src/service/http/action/print_stack_init.cpp b/be/src/service/http/action/print_stack_init.cpp
+index cc4369092c4..52961e2cea9 100644
+--- a/be/src/service/http/action/print_stack_init.cpp
++++ b/be/src/service/http/action/print_stack_init.cpp
+@@ -34,6 +34,7 @@ std::atomic<int> g_data_ready_num {0};
+ std::atomic<bool> g_signal_latch {false};
+ StackCaptureSlot g_slot;
+ int g_notification_pipe_rw[2] = {-1, -1};
++int g_handler_release_pipe_rw[2] = {-1, -1};
+ 
+ namespace {
+ 
+@@ -46,6 +47,17 @@ void open_notification_pipe_once() {
+     }
+ }
+ 
++// Reason: open the phase-2 release pipe with close-on-exec. Variants
++// that ship the OB handshake (ob-kill60) read on this pipe inside the
++// handler and write on it from the coordinator. Single-phase variants
++// leave the fds untouched at -1; their hooks are no-ops.
++// Spec: docs/design/ob.md "Steps".
++void open_handler_release_pipe_once() {
++    if (pipe2(g_handler_release_pipe_rw, O_CLOEXEC) != 0) {
++        LOG(FATAL) << "print_stack: pipe2 (release) failed: " << std::strerror(errno);
++    }
++}
++
+ // Reason: install the service signal handler with SA_SIGINFO so the
+ // payload carries the sequence. SA_RESTART avoids EINTR on unrelated
+ // syscalls in target threads.
+@@ -72,7 +84,13 @@ void print_stack_init() {
+     //    the handler always has a valid write fd.
+     open_notification_pipe_once();
+ 
+-    // 3. Install the signal handler last.
++    // 3. Open the phase-2 release pipe. The handler waits on the read
++    //    end (variant_wait_for_release) after publishing; the
++    //    coordinator writes the sequence on the write end
++    //    (variant_after_slot_read) once it has copied the slot.
++    open_handler_release_pipe_once();
++
++    // 4. Install the signal handler last.
+     install_signal_handler_once();
+ }
+ 
+diff --git a/be/src/service/http/action/print_stack_signal_handler.cpp b/be/src/service/http/action/print_stack_signal_handler.cpp
+index bfbd6df749c..a4103c5bca4 100644
+--- a/be/src/service/http/action/print_stack_signal_handler.cpp
++++ b/be/src/service/http/action/print_stack_signal_handler.cpp
+@@ -74,7 +74,13 @@ void print_stack_signal_handler(int /*sig*/, siginfo_t* info, void* context) {
+     ssize_t res = ::write(g_notification_pipe_rw[1], &seq, sizeof(seq));
+     (void)res;
+ 
+-    // 10. Restore errno and release the latch.
++    // 10. Phase-2 release wait. No-op for single-phase variants;
++    //     ob-kill60 blocks here until the coordinator writes the
++    //     same sequence on g_handler_release_pipe_rw.
++    //     Spec: docs/design/ob.md "Steps".
++    variant_wait_for_release(seq);
++
++    // 11. Restore errno and release the latch.
+     errno = saved_errno;
+     g_signal_latch.store(false, std::memory_order_release);
+ }
+-- 
+2.53.0
+
