@@ -6,7 +6,7 @@
 # phase2/* branch descends from this; changing it requires re-baselining
 # every variant. Env-overridable for one-off bootstrap from a different base.
 # Local: harness config.
-DORIS_BASE="${DORIS_BASE:-c24d454f15cee2d937ef4749270a3ecb449eafe6}"
+DORIS_BASE="${DORIS_BASE:-fc639a14a6cb19e23565c868e62d4c170337d5d8}"
 
 # Reason: variants known to the harness; common is implicit.
 # snapshot-remote-unwind is temporarily disabled because its patches still

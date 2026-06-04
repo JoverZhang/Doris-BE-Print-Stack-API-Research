@@ -1,4 +1,4 @@
-From 19f16f1927b48ffc9778add9552f6c63f363ca5c Mon Sep 17 00:00:00 2001
+From 790bdaa0f01647a5c9fefdfaa8c9ef670c3aa3e1 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Tue, 2 Jun 2026 11:48:07 +0000
 Subject: [PATCH 0/2] upstream: drop inline from SegmentWriter::_is_mow defs
@@ -26,10 +26,10 @@ Co-Authored-By: jover <joverzh@gmail.com>
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/be/src/storage/segment/segment_writer.cpp b/be/src/storage/segment/segment_writer.cpp
-index 917777f24eb..b5f3e2d5b4d 100644
+index 5db2561b9d8..00db2362b63 100644
 --- a/be/src/storage/segment/segment_writer.cpp
 +++ b/be/src/storage/segment/segment_writer.cpp
-@@ -1252,11 +1252,11 @@ Status SegmentWriter::_generate_short_key_index(std::vector<IOlapColumnDataAcces
+@@ -1244,11 +1244,11 @@ Status SegmentWriter::_generate_short_key_index(std::vector<IOlapColumnDataAcces
      return Status::OK();
  }
  

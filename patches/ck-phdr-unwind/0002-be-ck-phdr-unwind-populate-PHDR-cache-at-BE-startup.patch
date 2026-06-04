@@ -1,4 +1,4 @@
-From 2f576ac4c7a87297c871971d3b12e40cc406a76b Mon Sep 17 00:00:00 2001
+From c4c75222c82cf72b9ef7a869806e3ebd33a003fb Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
 Date: Thu, 4 Jun 2026 08:36:06 +0000
 Subject: [PATCH 2/4] (be) ck-phdr-unwind populate PHDR cache at BE startup
@@ -13,7 +13,7 @@ Co-Authored-By: jover <joverzh@gmail.com>
  1 file changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/be/src/service/doris_main.cpp b/be/src/service/doris_main.cpp
-index 7102d326a19..e70f515f60a 100644
+index 9018ceacb1c..f8fa62ec5b5 100644
 --- a/be/src/service/doris_main.cpp
 +++ b/be/src/service/doris_main.cpp
 @@ -48,6 +48,7 @@
