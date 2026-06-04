@@ -45,7 +45,6 @@ DORIS_REPO="${DORIS_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../repos/sourc
 HOST_TP_DIR="${DORIS_REPO}/thirdparty"
 HOST_TP_INSTALL="${HOST_TP_DIR}/installed"
 HOST_ARCHIVE="${HOST_TP_INSTALL}/lib/libjemalloc_doris.a"
-HOST_HEADER="${HOST_TP_INSTALL}/include/jemalloc/jemalloc.h"
 # Sentinel records the md5sum of the jemalloc source tarball that
 # produced the cached archive. Survives `cleanup_package_source`
 # because it lives in installed/lib/, not src/.
@@ -55,7 +54,6 @@ HOST_SENTINEL="${HOST_TP_INSTALL}/lib/.libjemalloc_doris.prof-libunwind"
 # is inside the container image, destroyed by `--rm`.
 TARGET_INSTALL="${DORIS_THIRDPARTY:-/var/local/thirdparty}/installed"
 TARGET_ARCHIVE="${TARGET_INSTALL}/lib/libjemalloc_doris.a"
-TARGET_HEADER="${TARGET_INSTALL}/include/jemalloc/jemalloc.h"
 
 # 1. Sanity-check: the patched build-thirdparty.sh must be live.
 #    Without the patch, the configure runs without
@@ -81,13 +79,30 @@ JEMALLOC_SRC_TARBALL="${TP_SOURCE_DIR}/${JEMALLOC_DORIS_NAME}"
 JEMALLOC_SRC_TREE="${TP_SOURCE_DIR}/${JEMALLOC_DORIS_SOURCE}"
 JEMALLOC_PATCHED_MARK="${JEMALLOC_SRC_TREE}/patched_mark"
 
-# 3. Cache-hit path: sentinel matches current md5sum and both files
-#    exist → just sync to the container install and exit.
-if [[ -f "${HOST_SENTINEL}" && -f "${HOST_ARCHIVE}" && -f "${HOST_HEADER}" ]] && \
+# 3. Cache-hit path: sentinel matches current md5sum and the archive
+#    exists → sync the archive to the container install and exit.
+#    We intentionally do NOT replace the container's stock
+#    `installed/include/jemalloc/jemalloc.h` even though we built a
+#    fresh one. The rebuilt header differs from the stock by exactly
+#    one autoconf-detected feature flag
+#    (`#define JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF` vs
+#    `/* #undef ... */`) which is a compile-time printf-format
+#    annotation only — no ABI effect. Touching jemalloc.h would
+#    invalidate ccache for every BE TU that includes it (most of the
+#    BE), turning a fast incremental build into a near-full rebuild.
+#    Keeping the stock header preserves the ccache hit rate at the
+#    cost of one minor compile-time warning attribute the BE never
+#    relied on.
+if [[ -f "${HOST_SENTINEL}" && -f "${HOST_ARCHIVE}" ]] && \
    [[ "$(cat "${HOST_SENTINEL}" 2>/dev/null)" == "${JEMALLOC_DORIS_MD5SUM}" ]]; then
-    install -m 0644 "${HOST_ARCHIVE}" "${TARGET_ARCHIVE}"
-    install -m 0644 "${HOST_HEADER}" "${TARGET_HEADER}"
-    echo "ck-phdr-unwind jemalloc: cache hit (md5=${JEMALLOC_DORIS_MD5SUM}); synced ${HOST_ARCHIVE} -> ${TARGET_ARCHIVE}."
+    # Skip if archive content already matches (e.g., wrapper invoked
+    # twice in the same container). `cmp -s` is fast.
+    if ! cmp -s "${HOST_ARCHIVE}" "${TARGET_ARCHIVE}"; then
+        install -m 0644 "${HOST_ARCHIVE}" "${TARGET_ARCHIVE}"
+        echo "ck-phdr-unwind jemalloc: cache hit (md5=${JEMALLOC_DORIS_MD5SUM}); synced ${HOST_ARCHIVE} -> ${TARGET_ARCHIVE}."
+    else
+        echo "ck-phdr-unwind jemalloc: cache hit (md5=${JEMALLOC_DORIS_MD5SUM}); ${TARGET_ARCHIVE} already in sync."
+    fi
     exit 0
 fi
 
@@ -143,8 +158,11 @@ echo "ck-phdr-unwind jemalloc: invoking build-thirdparty.sh jemalloc_doris"
 bash "${HOST_TP_DIR}/build-thirdparty.sh" jemalloc_doris
 
 # 7. Cache the build (sentinel records md5sum so future runs can hit)
-#    and sync to the container install where CMake links from.
+#    and sync the archive to the container install where CMake links
+#    from. As above, the stock `installed/include/jemalloc/jemalloc.h`
+#    is intentionally left in place — the rebuilt one differs by a
+#    cosmetic feature flag and replacing it would void ccache for
+#    every BE TU including jemalloc.h.
 echo -n "${JEMALLOC_DORIS_MD5SUM}" > "${HOST_SENTINEL}"
 install -m 0644 "${HOST_ARCHIVE}" "${TARGET_ARCHIVE}"
-install -m 0644 "${HOST_HEADER}" "${TARGET_HEADER}"
 echo "ck-phdr-unwind jemalloc: build complete; cached (md5=${JEMALLOC_DORIS_MD5SUM}) and synced to ${TARGET_ARCHIVE}."
