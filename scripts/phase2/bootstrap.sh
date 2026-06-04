@@ -39,9 +39,14 @@ git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/common/"*.patch
 
 # 6. For each variant: branch from phase2/common; try to apply. On failure
 #    abort cleanly so the next variant can still run. ck-phdr-unwind also
-#    needs a jemalloc archive rebuilt with --enable-prof-libunwind; the
-#    helper is idempotent and writes to `be/.tmp/jemalloc-prof-libunwind/`
-#    inside the Doris worktree (gitignored, survives phase2-reset).
+#    needs `libjemalloc_doris.a` rebuilt with `--enable-prof-libunwind`;
+#    the variant patches Doris's `thirdparty/build-thirdparty.sh` to add
+#    the flag and a verify, and the harness wrapper below ensures the
+#    jemalloc source is unpacked + invokes the patched build. The
+#    rebuild writes to `${DORIS_THIRDPARTY}/installed/lib/libjemalloc_doris.a`
+#    (the container's standard install root), which is where CMake's
+#    `add_thirdparty(jemalloc ...)` already looks — no in-tree path swap.
+#    The wrapper is idempotent (probes config.log for `prof-libunwind:1`).
 clean=()
 broken=()
 for v in $VARIANTS; do
@@ -50,13 +55,7 @@ for v in $VARIANTS; do
     if git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/$v/"*.patch; then
         clean+=("$v")
         if [[ "$v" == "ck-phdr-unwind" ]]; then
-            jemalloc_archive="${DORIS_REPO}/be/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a"
-            if [[ -f "$jemalloc_archive" ]]; then
-                echo "  ck-phdr-unwind jemalloc archive present at ${jemalloc_archive}"
-            else
-                echo "  ck-phdr-unwind jemalloc archive missing; building via ${DORIS_REPO}/be/cmake/build-jemalloc-prof-libunwind.sh"
-                (cd "$DORIS_REPO" && ./be/cmake/build-jemalloc-prof-libunwind.sh)
-            fi
+            DORIS_REPO="$DORIS_REPO" "$PROJECT_ROOT/scripts/phase2/build-jemalloc-prof-libunwind.sh"
         fi
     else
         git -C "$DORIS_REPO" am --abort 2>/dev/null || true

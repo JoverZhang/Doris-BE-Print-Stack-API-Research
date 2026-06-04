@@ -1,0 +1,94 @@
+From edf4bdc2798a01a652f85b91ef29f69172832d66 Mon Sep 17 00:00:00 2001
+From: mira <mira@example.invalid>
+Date: Thu, 4 Jun 2026 20:34:02 +0800
+Subject: [PATCH 4/4] (thirdparty) ck-phdr-unwind jemalloc with libunwind
+ backtracer
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Pass `--enable-prof-libunwind` to `build_jemalloc_doris()` so jemalloc's
+heap-profile backtracer calls `unw_backtrace` instead of libgcc's
+`_Unwind_Backtrace`. The libgcc path re-enters `dl_iterate_phdr` through
+`_Unwind_Find_FDE` and deadlocks against the lock-free override under
+profiling load.
+
+CPPFLAGS/LDFLAGS point detection at the thirdparty libunwind. `LIBS=-llzma`
+is required because the thirdparty libunwind is built with `-llzma`
+(see `build_libunwind` above) and autoconf's AC_CHECK_LIB appends LIBS
+after `-lunwind`.
+
+Add a post-configure verify of `result: prof-libunwind : 1` in
+`config.log` and fail early on mismatch. jemalloc/jemalloc#2504:
+detection can silently fall back to libgcc; without the verify the
+build would succeed and quietly produce a libgcc-backed archive.
+
+In a fully-clean `build-thirdparty.sh` run, libunwind is built later in
+the package list than jemalloc, so a clean invocation of this function
+will not yet see libunwind and the verify will fail. The intended
+invocation is `build-thirdparty.sh jemalloc_doris` after the prebuilt
+thirdparty (which includes libunwind) is in place — i.e. the rebuild
+scenario the ck-phdr-unwind variant exercises.
+
+Spec: docs/design/ck.md "Decisions".
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ thirdparty/build-thirdparty.sh | 41 ++++++++++++++++++++++++++++++++--
+ 1 file changed, 39 insertions(+), 2 deletions(-)
+
+diff --git a/thirdparty/build-thirdparty.sh b/thirdparty/build-thirdparty.sh
+index 71a3b38afb8..25c3dead73e 100755
+--- a/thirdparty/build-thirdparty.sh
++++ b/thirdparty/build-thirdparty.sh
+@@ -1613,8 +1613,45 @@ build_jemalloc_doris() {
+     # It is not easy to remove `with-jemalloc-prefix`, which may affect the compatibility between third-party and old version codes.
+     # Also, will building failed on Mac, it said can't find mallctl symbol. because jemalloc's default prefix on macOS is "je_", not "".
+     # Maybe can use alias instead of overwrite.
+-    CFLAGS="${cflags}" ../configure --prefix="${TP_INSTALL_DIR}" --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
+-        --with-jemalloc-prefix=je --enable-prof --disable-cxx --disable-libdl --disable-shared
++    # ck-phdr-unwind: pass `--enable-prof-libunwind` so jemalloc's
++    # heap-profile backtracer calls `unw_backtrace` instead of libgcc's
++    # `_Unwind_Backtrace`. The libgcc path re-enters `dl_iterate_phdr`
++    # through `_Unwind_Find_FDE` and deadlocks against the lock-free
++    # `dl_iterate_phdr` override (be/src/common/phdr_cache.cpp) under
++    # profiling load. `LIBS=-llzma` is required because the thirdparty
++    # libunwind is built with `-llzma` (see build_libunwind above) and
++    # autoconf's AC_CHECK_LIB appends LIBS after `-lunwind`. The
++    # libunwind detection points at the ambient thirdparty install
++    # via `${DORIS_THIRDPARTY:-${TP_DIR}}/installed/{include,lib}`
++    # rather than `${TP_INCLUDE_DIR}` / `${TP_LIB_DIR}` because the
++    # latter resolve relative to `${TP_DIR}` (this script's own
++    # directory after the `export TP_DIR="${curdir}"` at line ~37)
++    # which is empty when a rebuild runs against an already-installed
++    # prebuilt thirdparty (the harness's `phase2-bootstrap` path).
++    # When `DORIS_THIRDPARTY` is unset (full from-scratch
++    # `build-thirdparty.sh` run), the fallback `${TP_DIR}/installed`
++    # equals `${TP_INSTALL_DIR}` and matches the build's own install.
++    # In that case libunwind must precede jemalloc_doris in the package
++    # list (not in scope here, see commit message).
++    # Spec: docs/design/ck.md "Decisions" / Decision 6.
++    CFLAGS="${cflags}" \
++        CPPFLAGS="-I${DORIS_THIRDPARTY:-${TP_DIR}}/installed/include" \
++        LDFLAGS="-L${DORIS_THIRDPARTY:-${TP_DIR}}/installed/lib" \
++        LIBS="-llzma" \
++        ../configure --prefix="${TP_INSTALL_DIR}" --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
++        --with-jemalloc-prefix=je --enable-prof --enable-prof-libunwind \
++        --disable-cxx --disable-libdl --disable-shared
++
++    # jemalloc/jemalloc#2504: libunwind detection can silently fall back
++    # to libgcc. Verify before sinking time into `make`. jemalloc 5.3.0
++    # records the choice in `config.log` as one of three `result:` lines:
++    # `prof-libunwind : 1`, `prof-libgcc : 1`, or `prof-gcc : 1`.
++    if ! grep -qE "result: prof-libunwind +: 1$" config.log; then
++        echo "ERROR: prof-libunwind != 1 in config.log;" \
++             "libunwind detection failed (jemalloc/jemalloc#2504)." >&2
++        grep -E "result: prof-(libunwind|libgcc|gcc) +:" config.log >&2 || true
++        exit 1
++    fi
+ 
+     make -j "${PARALLEL}"
+     make install
+-- 
+2.43.0
+

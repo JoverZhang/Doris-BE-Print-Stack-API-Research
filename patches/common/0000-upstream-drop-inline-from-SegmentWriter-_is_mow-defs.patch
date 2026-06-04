@@ -1,4 +1,4 @@
-From f42adcc9952988c10d7eaf4ea093ab75bd61248b Mon Sep 17 00:00:00 2001
+From 7e6f3f64334adff38c1a663927014c5a63e2a14c Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Tue, 2 Jun 2026 11:48:07 +0000
 Subject: [PATCH 0/2] upstream: drop inline from SegmentWriter::_is_mow defs
@@ -45,3 +45,4 @@ index 917777f24eb..b5f3e2d5b4d 100644
  
 -- 
 2.43.0
+

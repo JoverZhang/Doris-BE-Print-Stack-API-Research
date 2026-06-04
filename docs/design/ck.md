@@ -58,18 +58,26 @@ jemalloc so its heap profiler does not deadlock against the override.
    the include resolves to remote `_Ux86_64_*` symbols the archive does
    not export, and the BE fails to link.
 
-6. **Jemalloc rebuilt with libunwind backtracer.** Doris BE links a
-   `libjemalloc_doris.a` configured with `--enable-prof-libunwind`. Reason:
-   jemalloc's default heap-profile backtracer uses libgcc's
+6. **Jemalloc rebuilt with libunwind backtracer.** Patch
+   `thirdparty/build-thirdparty.sh build_jemalloc_doris()` to pass
+   `--enable-prof-libunwind` to the existing configure invocation.
+   Reason: jemalloc's default heap-profile backtracer uses libgcc's
    `_Unwind_Backtrace`, which calls `_Unwind_Find_FDE` and re-enters
    `dl_iterate_phdr`. With the override active and profiling on, that
    re-entry deadlocks against jemalloc's internal locks. The
    `--enable-prof-libunwind` build makes jemalloc call `unw_backtrace`
-   instead. The build helper verifies `prof-libunwind     : 1` in
-   `config.log` (jemalloc 5.3.0 records the backtracer choice as one of
-   three boolean result lines, not as a `backtrace_method` string) and
-   fails the build on mismatch (jemalloc/jemalloc#2504 — detection can
-   silently fall back to libgcc).
+   instead. `CPPFLAGS`/`LDFLAGS` point detection at the thirdparty
+   libunwind; `LIBS=-llzma` is required because that libunwind is
+   built with `-llzma` (see `build_libunwind`) and autoconf's
+   `AC_CHECK_LIB` appends LIBS after `-lunwind`. The patched function
+   also verifies `prof-libunwind : 1` in `config.log` (jemalloc 5.3.0
+   records the backtracer choice as one of three boolean `result:`
+   lines, not as a `backtrace_method` string) and aborts on mismatch
+   (jemalloc/jemalloc#2504 — detection can silently fall back to
+   libgcc). The rebuild writes to
+   `${DORIS_THIRDPARTY}/installed/lib/libjemalloc_doris.a`, exactly
+   where CMake's existing `add_thirdparty(jemalloc LIBNAME ...)`
+   already looks; no `be/cmake/thirdparty.cmake` swap is needed.
 
 ## Files
 
@@ -78,8 +86,17 @@ jemalloc so its heap profiler does not deadlock against the override.
 | `be/src/common/phdr_cache.cpp` | `dl_iterate_phdr` override; `updatePHDRCache`; `hasPHDRCache`. |
 | `be/src/service/doris_main.cpp` | `updatePHDRCache()` call before `BackendOptions::init`. |
 | `be/src/service/http/action/print_stack_ck_phdr_unwind.cpp` | `capture_into_slot` definition. TU-local `walk_signal_frame` helper. |
-| `be/cmake/build-jemalloc-prof-libunwind.sh` | Fetch jemalloc, configure with `--enable-prof-libunwind`, build, install, verify the backtracer choice. |
-| `be/cmake/thirdparty.cmake` | Link `libjemalloc_doris.a` from the locally-built install prefix. |
+| `thirdparty/build-thirdparty.sh` | `build_jemalloc_doris()`: add `--enable-prof-libunwind` (+ `CPPFLAGS`/`LDFLAGS`/`LIBS` for libunwind detection); verify `prof-libunwind : 1` in `config.log` and abort on mismatch. |
+
+The harness wrapper `scripts/phase2/build-jemalloc-prof-libunwind.sh`
+(outside the Doris worktree) ensures the jemalloc source is unpacked
+in `${TP_SOURCE_DIR}` and invokes `build-thirdparty.sh jemalloc_doris`
+with `TP_DIR=${DORIS_THIRDPARTY}`. Idempotent: skips when the source
+tree's `config.log` already records `prof-libunwind : 1`. The rebuild
+writes `libjemalloc_doris.a` directly to
+`${DORIS_THIRDPARTY}/installed/lib/`, which is where CMake's existing
+`add_thirdparty(jemalloc LIBNAME "lib/libjemalloc_doris.a")` already
+links from — no in-tree CMake path swap, no `.gitignore` change.
 
 `be/src/service/CMakeLists.txt` already globs `*.cpp` recursively, so the
 new TU links without a CMakeLists edit.
@@ -184,20 +201,28 @@ void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
 } // namespace doris::print_stack
 ```
 
-Jemalloc swap (`be/cmake/thirdparty.cmake`):
+Jemalloc rebuild (`thirdparty/build-thirdparty.sh build_jemalloc_doris`):
 
-```cmake
-# Reason: link the locally-built jemalloc whose heap-profile backtracer
-# uses `unw_backtrace` instead of libgcc's `_Unwind_Backtrace`. The
-# build helper writes the archive to `be/.tmp/jemalloc-prof-libunwind/`
-# (gitignored, survives `phase2-reset`); running
-# `be/cmake/build-jemalloc-prof-libunwind.sh` is a prerequisite of the
-# `cmake` configure step.
-# Spec: docs/design/ck.md "Decisions".
-add_library(jemalloc STATIC IMPORTED)
-set_target_properties(jemalloc PROPERTIES
-    IMPORTED_LOCATION
-    "${CMAKE_SOURCE_DIR}/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a")
+```diff
+-    CFLAGS="${cflags}" ../configure --prefix="${TP_INSTALL_DIR}" \
+-        --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
+-        --with-jemalloc-prefix=je --enable-prof \
+-        --disable-cxx --disable-libdl --disable-shared
++    CFLAGS="${cflags}" \
++        CPPFLAGS="-I${TP_INCLUDE_DIR}" \
++        LDFLAGS="-L${TP_LIB_DIR}" \
++        LIBS="-llzma" \
++        ../configure --prefix="${TP_INSTALL_DIR}" \
++        --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
++        --with-jemalloc-prefix=je --enable-prof --enable-prof-libunwind \
++        --disable-cxx --disable-libdl --disable-shared
++
++    if ! grep -qE "result: prof-libunwind +: 1$" config.log; then
++        echo "ERROR: prof-libunwind != 1 in config.log;" \
++             "libunwind detection failed (jemalloc/jemalloc#2504)." >&2
++        grep -E "result: prof-(libunwind|libgcc|gcc) +:" config.log >&2 || true
++        exit 1
++    fi
 ```
 
 ## Workflow inside `capture_into_slot`
@@ -222,19 +247,39 @@ Doris cannot, so the sites below need explicit treatment.
 
 Inventory of in-process `dlopen`-family calls in `be/src/`:
 
-| Site | Type | Treatment |
-|---|---|---|
-| `be/src/util/libjvm_loader.cpp:91` (`dlopen(libjvm)`) | Real load on first JNI use | Call `updatePHDRCache()` after `LibJVMLoader::load` returns success. Only real concern. |
-| `be/src/util/libjvm_loader.cpp:92` (`dlclose(libjvm)`) | Destructor on shutdown | Benign in practice (BE keeps the JVM for process lifetime). Pin if explicit close paths emerge. |
-| `be/src/runtime/user_function_cache.cpp:150` (`dynamic_open(nullptr, ...)`) | `dlopen(NULL, ...)` = self-handle | No new DSO; PHDR cache unaffected. Ignore. |
-| `be/src/runtime/user_function_cache.cpp:472` (`dynamic_open(.so, ...)`) | Native `.so` UDF load via `LibType::SO` | Vestigial — no frontend UDF path triggers `LibType::SO`. Every modern UDF goes through `get_jarpath` (Java UDF via JVM) or `get_pypath` (Python UDF via out-of-process `python_server.py` subprocess). The only entry to `LibType::SO` is `_load_entry_from_lib` rehydrating `.so` files left in the local cache dir at startup, and no execution path calls into them. Negligible risk; leave untreated. |
-| `be/src/util/dynamic_util.cpp:54` (`dlclose`) | Generic unloader | Reachable only via the vestigial `.so` UDF path. Negligible risk. |
+| Site | Type | Status | Treatment |
+|---|---|---|---|
+| `be/src/util/libjvm_loader.cpp:91` (`dlopen(libjvm)`) | Real load on first JNI use | **TODO — deferred** | Call `updatePHDRCache()` after `LibJVMLoader::load` returns success. The only site that warrants intervention. Not yet implemented in this patch series; track as follow-up. |
+| `be/src/util/libjvm_loader.cpp:92` (`dlclose(libjvm)`) | Destructor on shutdown | No treatment needed | Benign — the BE keeps the JVM for process lifetime; the destructor runs after the signal-trap subsystem is already down. |
+| `be/src/runtime/user_function_cache.cpp:150` (`dynamic_open(nullptr, ...)`) | `dlopen(NULL, ...)` = self-handle | No treatment needed | No new DSO; the call returns a handle to the BE itself. PHDR cache unaffected. |
+| `be/src/runtime/user_function_cache.cpp:472` (`dynamic_open(.so, ...)`) | Native `.so` UDF load via `LibType::SO` | **Deprecated — no treatment** | No frontend driver triggers `LibType::SO`. Java UDFs run as in-process JVM bytecode via JNI (`function_java_udf.cpp:111 call_long_method`); Python UDFs run out-of-process via `boost::process::child` over a Unix socket (`python_server.cpp:228 fork`). The only entry to `LibType::SO` is `_load_entry_from_lib` rehydrating `.so` files at startup, with no execution path calling into them. |
+| `be/src/util/dynamic_util.cpp:54` (`dlclose`) | Generic unloader | **Deprecated — no treatment** | Reachable only via the deprecated native `.so` UDF path. |
 
-Net: libjvm is the only real concern. Modern Doris UDFs run isolated
-(JVM-mediated for Java; out-of-process subprocess for Python), matching
-CK's isolation model in spirit. The native `.so` UDF path is dead code
-in current deployments.
+**Net.** Java UDFs in Doris are *in-process* via an embedded JVM —
+`libjvm_loader.cpp:91 dlopen(libjvm)` puts libjvm.so into the BE
+address space, `jni-util.cpp:156 JNI_CreateJavaVM` initializes a JVM
+inside the BE process, and `function_java_udf.cpp:111 call_long_method`
+runs `UdfExecutor.evaluate` as Java bytecode in that same JVM. This
+differs from ClickHouse, whose executable UDFs always fork through
+`ShellCommand` and whose WebAssembly UDFs run in a sandbox; CK has no
+embedded native runtime. Only Doris's Python UDFs are isolated like
+CK's executable UDFs. The libjvm dlopen is the one site worth a hook;
+everything else on the list is either harmless (self-handle, shutdown
+destructor) or deprecated (native `.so` UDF).
 
-Decision: hook `updatePHDRCache()` immediately after
-`LibJVMLoader::load` succeeds. The native `.so` UDF path is left as-is
-until/unless a frontend driver for it returns.
+**Known limitation of the libjvm hook.** Once the JVM is loaded,
+libjvm.so can internally `dlopen` more native libraries on demand
+(libhdfs JNI bindings, native parquet/orc accelerators, anything a
+Java UDF jar pulls in via `System.loadLibrary`). Those dlopens go
+through libc and never call back into `updatePHDRCache()`. A single
+hook after `LibJVMLoader::load` catches the bulk JVM init dlopens;
+lazy `System.loadLibrary` calls inside UDF code remain a hole. The
+capture-time consequence is lossy unwinding through frames in those
+libraries — not a crash. Accepted; full coverage would require
+interposing `dlopen`/`dlclose` system-wide to maintain a latched
+cache, which is out of scope for this variant.
+
+**Decision (deferred).** Hook `updatePHDRCache()` immediately after
+`LibJVMLoader::load` succeeds. Not in this patch series — track as
+follow-up. The variant's existing tests pass without the hook because
+the BE under test does not exercise JVM-mediated unwinding paths.
