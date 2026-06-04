@@ -29,6 +29,7 @@
 | public API 输出 JSON | doris local |  doris local   | doris local | { "thread_id": ..., "thread_name": ..., "trace": [{"dso": ..., "dso_offset": ...}] }               |
 | handler 外解析地址   |     ck      |       ck       |     ck      | CK 用 SQL introspection 函数；Doris 输出 `(dso, dso_offset)`                                        |
 | 抓栈实现             | doris local |  ck + ob dep   |     ob      | fp-walk 本地 / ck-phdr 是 CK 语义 + nongnu 依赖 / ob 是纯 nongnu libunwind 路径，不加 CK PHDR cache |
+| 优化后栈完整度       | doris local |  ck + ob dep   |     ob      | fp-walk 只靠 `-fno-omit-frame-pointer` + RBP 链，tail call / tail return、断在 prologue、手写汇编会少帧；libunwind 用 unwind info + fallback，覆盖通常更好 |
 | `updatePHDRCache`    |      -      |       ck       |      -      | 仅 ck-phdr 继承 CK 的 PHDR cache 预热；fp-walk / ob-kill60 不引入                            |
 | libunwind 依赖形态   |      -      |       ob       |     ob      | Doris thirdparty 更接近 OB：nongnu libunwind 1.6.2                                                  |
 | 协同方式             |     ck      |       ck       |     ob      | CK 单阶段；OB 两阶段                                                                                |
