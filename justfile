@@ -34,6 +34,10 @@ phase2-test suite target mode filter:
 phase2-verify variant:
     @./scripts/in-container ./scripts/phase2/verify.sh "{{variant}}"
 
+# Cheap shell self-test for ck-phdr-unwind preflight failure modes.
+phase2-ck-preflight-selftest:
+    @./scripts/in-container ./scripts/phase2/check-ck-phdr-unwind-selftest.sh
+
 # Regenerate patches/ from the branches. With no arg, exports common and all variants.
 phase2-export variant='':
     @./scripts/in-container ./scripts/phase2/export.sh "{{variant}}"

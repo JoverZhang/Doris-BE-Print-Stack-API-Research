@@ -55,6 +55,9 @@ for v in $VARIANTS; do
     git -C "$DORIS_REPO" switch phase2/common
     git -C "$DORIS_REPO" switch -c "phase2/$v"
     if git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/$v/"*.patch; then
+        if [[ "$v" == "ck-phdr-unwind" ]]; then
+            DORIS_REPO="$DORIS_REPO" "$PROJECT_ROOT/scripts/phase2/check-ck-phdr-unwind.sh"
+        fi
         clean+=("$v")
         if [[ "$v" == "ck-phdr-unwind" || "$v" == "ob-kill60" ]]; then
             DORIS_REPO="$DORIS_REPO" "$PROJECT_ROOT/scripts/phase2/phase2-jemalloc.sh"

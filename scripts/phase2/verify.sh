@@ -23,6 +23,9 @@ git -C "$verify_dir" am "$PROJECT_ROOT/patches/common/"*.patch
 if [[ "$variant" != "common" ]]; then
     git -C "$verify_dir" am "$PROJECT_ROOT/patches/$variant/"*.patch
 fi
+if [[ "$variant" == "ck-phdr-unwind" ]]; then
+    DORIS_REPO="$verify_dir" "$PROJECT_ROOT/scripts/phase2/check-ck-phdr-unwind.sh" "$verify_dir"
+fi
 
 # 5. STREE = tree of the re-applied state.
 stree=$(git -C "$verify_dir" rev-parse "HEAD^{tree}")

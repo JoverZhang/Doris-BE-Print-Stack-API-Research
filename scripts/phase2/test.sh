@@ -100,7 +100,15 @@ assert_clean_worktree "$DORIS_REPO"
 git -C "$DORIS_REPO" switch "phase2/$target"
 head="$(git -C "$DORIS_REPO" rev-parse --short=12 HEAD)"
 
-# 3. ck-phdr-unwind and ob-kill60 variants: the rebuilt libjemalloc_doris.a
+# 3. ck-phdr-unwind has two expensive setup preconditions that ordinary
+# gtests would not prove: `doris_main.cpp` must populate the PHDR cache at
+# startup, and jemalloc must select the libunwind profiler. Fail before the
+# jemalloc sync/rebuild and before BE compile.
+if [[ "$target" == "ck-phdr-unwind" ]]; then
+    "$PROJECT_ROOT/scripts/phase2/check-ck-phdr-unwind.sh" "$DORIS_REPO"
+fi
+
+# 4. ck-phdr-unwind and ob-kill60 variants: the rebuilt libjemalloc_doris.a
 # lives in the bind-mounted Doris thirdparty/installed/, but CMake's
 # THIRDPARTY_DIR resolves to ${DORIS_THIRDPARTY}/installed/ which is
 # container-internal and reset to the stock (libgcc-backed) prebuilt every
