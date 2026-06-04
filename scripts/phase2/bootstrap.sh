@@ -38,7 +38,10 @@ git -C "$DORIS_REPO" switch -c phase2/common
 git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/common/"*.patch
 
 # 6. For each variant: branch from phase2/common; try to apply. On failure
-#    abort cleanly so the next variant can still run.
+#    abort cleanly so the next variant can still run. ck-phdr-unwind also
+#    needs a jemalloc archive rebuilt with --enable-prof-libunwind; the
+#    helper is idempotent and lives at the harness project root .tmp/ so
+#    it survives phase2-reset (reset operates only inside $DORIS_REPO).
 clean=()
 broken=()
 for v in $VARIANTS; do
@@ -46,6 +49,15 @@ for v in $VARIANTS; do
     git -C "$DORIS_REPO" switch -c "phase2/$v"
     if git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/$v/"*.patch; then
         clean+=("$v")
+        if [[ "$v" == "ck-phdr-unwind" ]]; then
+            jemalloc_archive="${PROJECT_ROOT}/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a"
+            if [[ -f "$jemalloc_archive" ]]; then
+                echo "  ck-phdr-unwind jemalloc archive present at ${jemalloc_archive}"
+            else
+                echo "  ck-phdr-unwind jemalloc archive missing; building via ${DORIS_REPO}/be/cmake/build-jemalloc-prof-libunwind.sh"
+                (cd "$DORIS_REPO" && ./be/cmake/build-jemalloc-prof-libunwind.sh)
+            fi
+        fi
     else
         git -C "$DORIS_REPO" am --abort 2>/dev/null || true
         git -C "$DORIS_REPO" switch phase2/common

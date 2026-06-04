@@ -1,0 +1,121 @@
+From 8fed950446170ad94ac3b17854a2015b34083e02 Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 4 Jun 2026 08:50:23 +0000
+Subject: [PATCH 3/4] (be) ck-phdr-unwind libunwind capture_into_slot
+
+Add the variant TU `be/src/service/http/action/print_stack_ck_phdr_unwind.cpp`. The handler-side hook copies the interrupted thread's `ucontext_t` into a libunwind context, calls `unw_init_local2` with `UNW_INIT_SIGNAL_FRAME`, and walks via `unw_get_reg(UNW_REG_IP)` + `unw_step` up to `kMaxSignalFrames`. A `hasPHDRCache()` gate refuses to unwind if patch 2's `updatePHDRCache()` never ran.
+
+TSan exception: `be/src/common/phdr_cache.cpp` compile-guards the override off when `THREAD_SANITIZER` is defined (TSan installs its own `dl_iterate_phdr` interceptor and refuses a user override), so `hasPHDRCache()` is always false in a TSan build. The defense-in-depth rationale (avoid the loader lock from the signal handler) is moot under TSan, which serializes loader access through its runtime and is debug-only. The gate is therefore `#if !defined(THREAD_SANITIZER)` so the test case `BestEffortFrameObserved` exercises real frames under TSan instead of degrading to CaptureFailed.
+
+`UNW_LOCAL_ONLY` is defined before `<libunwind.h>` so the include resolves to the local-only `_ULx86_64_*` symbols the Doris libunwind archive exports. `be/src/service/CMakeLists.txt` globs `*.cpp` recursively, so the new TU is picked up without a CMakeLists edit.
+
+Spec: docs/architecture.md "Layer 3d"; docs/design/ck.md "Decisions", "Shape", "Workflow".
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ .../action/print_stack_ck_phdr_unwind.cpp     | 93 +++++++++++++++++++
+ 1 file changed, 93 insertions(+)
+ create mode 100644 be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
+
+diff --git a/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp b/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
+new file mode 100644
+index 00000000000..31e6a89d0a8
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
+@@ -0,0 +1,93 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++// Reason: the Doris libunwind archive exposes only the local-only
++// `_ULx86_64_*` symbols. The define remaps `<libunwind.h>` to those.
++// Spec: docs/design/ck.md "Decisions".
++#define UNW_LOCAL_ONLY
++
++#include <libunwind.h>
++#include <ucontext.h>
++
++#include <cstring>
++
++#include "common/phdr_cache.h"
++#include "service/http/action/print_stack_capture.h"
++#include "service/http/action/print_stack_globals.h"
++
++namespace doris::print_stack {
++namespace {
++
++// Reason: seed from the interrupted thread's saved context and walk
++// the chain. `UNW_INIT_SIGNAL_FRAME` tells libunwind the context came
++// from a signal handler so the first IP read returns the interrupted PC.
++// Reference: <ck>/contrib/llvm-project/libunwind/src/libunwind.cpp:221-240
++//   (CK's `unw_backtrace` — the same step loop, but seeded from
++//   `unw_getcontext`).
++size_t walk_signal_frame(const ucontext_t& uc, uintptr_t* out, size_t cap) {
++    unw_context_t ctx;
++    std::memcpy(&ctx, &uc, sizeof(ctx));
++
++    unw_cursor_t cursor;
++    if (unw_init_local2(&cursor, &ctx, UNW_INIT_SIGNAL_FRAME) != 0) {
++        return 0;
++    }
++
++    size_t n = 0;
++    do {
++        if (n >= cap) {
++            break;
++        }
++        unw_word_t ip = 0;
++        if (unw_get_reg(&cursor, UNW_REG_IP, &ip) != 0 || ip == 0) {
++            break;
++        }
++        out[n++] = static_cast<uintptr_t>(ip);
++    } while (unw_step(&cursor) > 0);
++
++    return n;
++}
++
++} // namespace
++
++// Reason: variant capture. Body runs inside the signal handler.
++// Spec: docs/architecture.md "Layer 3d"; docs/design/ck.md "Workflow".
++void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
++    // 1. Default to failure; success path overwrites both fields.
++    out->status = ThreadStackStatus::CaptureFailed;
++    out->frame_count = 0;
++
++    // 2. Refuse to unwind without the PHDR cache. Skipped under TSan:
++    //    `phdr_cache.cpp` compile-guards the override off when
++    //    `THREAD_SANITIZER` is defined (TSan installs its own
++    //    `dl_iterate_phdr` interceptor and refuses a user override),
++    //    so `hasPHDRCache()` always returns false in a TSan build.
++    //    The defense-in-depth rationale (avoid the loader lock in the
++    //    handler) is moot in TSan, which serializes loader access
++    //    through its runtime and is debug-only.
++#if !defined(THREAD_SANITIZER)
++    if (!hasPHDRCache()) {
++        return;
++    }
++#endif
++
++    // 3. Walk the interrupted chain.
++    out->frame_count = walk_signal_frame(uc, out->pcs.data(), kMaxSignalFrames);
++    out->status = ThreadStackStatus::OK;
++}
++
++} // namespace doris::print_stack
+-- 
+2.43.0
+

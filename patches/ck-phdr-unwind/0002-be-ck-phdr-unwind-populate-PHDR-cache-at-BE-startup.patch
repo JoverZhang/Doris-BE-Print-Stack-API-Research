@@ -1,27 +1,19 @@
-From 041509d084d831ae7427550ec22b707347f385ca Mon Sep 17 00:00:00 2001
-From: mira <mira@example.invalid>
-Date: Sun, 31 May 2026 20:26:50 +0800
+From 62e3956462d0e9bd90b4bbb7f178e4c51087808c Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Thu, 4 Jun 2026 08:36:06 +0000
 Subject: [PATCH 2/4] (be) ck-phdr-unwind populate PHDR cache at BE startup
 
-Uncomment the existing updatePHDRCache() call in doris_main.cpp so the
-lock-free dl_iterate_phdr override (patch 1) has a populated cache
-before any worker thread that may run the variant's signal handler is
-spawned. The test runner (be/test/testutil/run_all_tests.cpp:109)
-already calls updatePHDRCache() before RUN_ALL_TESTS, so this commit
-only restores the production path.
+Call `updatePHDRCache()` in `doris_main` before `BackendOptions::init` so the lock-free `dl_iterate_phdr` override (patch 1) sees a populated cache by the time any BE worker thread that may run the print_stack signal handler exists. The call sits at the existing upstream-anchored line between `MemInfo::debug_string()` and `BackendOptions::init()`.
 
-The placement is the existing upstream-anchored line (between
-`MemInfo::debug_string` and `BackendOptions::init`); the call must
-precede `ExecEnv::init` because that line brings up the BE worker
-pools whose threads can enter the handler.
+Spec: docs/design/ck.md "Decisions".
 
-Reference: <ck>/programs/main.cpp:318.
+Co-Authored-By: jover <joverzh@gmail.com>
 ---
- be/src/service/doris_main.cpp | 20 ++++++++++++++++----
- 1 file changed, 16 insertions(+), 4 deletions(-)
+ be/src/service/doris_main.cpp | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/be/src/service/doris_main.cpp b/be/src/service/doris_main.cpp
-index fd534bc77f0..fb7337a62fa 100644
+index 7102d326a19..e70f515f60a 100644
 --- a/be/src/service/doris_main.cpp
 +++ b/be/src/service/doris_main.cpp
 @@ -48,6 +48,7 @@
@@ -32,7 +24,7 @@ index fd534bc77f0..fb7337a62fa 100644
  #include "common/stack_trace.h"
  #include "runtime/memory/mem_tracker_limiter.h"
  #include "storage/tablet/tablet_schema_cache.h"
-@@ -585,10 +586,21 @@ int main(int argc, char** argv) {
+@@ -587,10 +588,12 @@ int main(int argc, char** argv) {
      LOG(INFO) << doris::DiskInfo::debug_string();
      LOG(INFO) << doris::MemInfo::debug_string();
  
@@ -40,20 +32,11 @@ index fd534bc77f0..fb7337a62fa 100644
 -    // will work only after additional call of this function.
 -    // rewrites dl_iterate_phdr will cause Jemalloc to fail to run after enable profile. see #
 -    // updatePHDRCache();
-+    // Reason: populate the PHDR cache before any thread that may run the
-+    // ck-phdr-unwind signal handler exists. Once `BackendOptions::init` +
-+    // `ExecEnv::init` bring up the BE worker pools (next lines), a worker
-+    // can enter the handler, which calls `unw_step` -> `dl_iterate_phdr`;
-+    // without the populated cache the override falls through to the libc
-+    // function and takes the loader lock, which is not async-signal-safe.
-+    // Reason: jemalloc heap-profile previously crashed against the override
-+    // because libgcc's backtracer reentered the loader. Profiling defaults
-+    // to OFF in this round's test build, so the prebuilt jemalloc is safe;
-+    // turning profiling on requires the jemalloc rebuild documented in the
-+    // build-system patch + build-facts.md.
-+    // Reference: <ck>/programs/main.cpp:318 (ClickHouse calls
-+    // updatePHDRCache near the top of main; Doris keeps the existing
-+    // upstream-anchored placement to avoid moving init order).
++    // Reason: populate the PHDR cache before any BE worker thread that
++    // may run the print_stack signal handler exists. The handler's
++    // `unw_step` reaches `dl_iterate_phdr`; with a populated cache the
++    // override serves callbacks without taking the loader lock.
++    // Spec: docs/design/ck.md "Decisions".
 +    updatePHDRCache();
      if (!doris::BackendOptions::init()) {
          exit(-1);
