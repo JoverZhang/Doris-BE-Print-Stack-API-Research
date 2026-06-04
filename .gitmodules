@@ -12,6 +12,12 @@
 	path = repos/source/obstack-master
 	url = https://github.com/oceanbase/obstack.git
 	ignore = untracked
+
+[submodule ".mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind"]
+	path = .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind
+	url = https://github.com/libunwind/libunwind.git
+	ignore = untracked
+
 [submodule "repos/source/doris-master"]
 	path = repos/source/doris-master
 	url = https://github.com/apache/doris.git
