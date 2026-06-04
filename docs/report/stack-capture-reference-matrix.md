@@ -31,9 +31,9 @@
 | 5    | 协同方式             |     ck      |       ck       |     ob      | CK 单阶段；OB 两阶段                                                                                |
 | 6    | 抓栈实现             | doris local |  CK + nongnu   | OB + nongnu | 见下方                                                                                             |
 | 7    | 可见栈完整度         | 受限        |      更好      |    更好     | 见下方                                                                                             |
-| 8    | handler 外解析地址   |     ck      |       ck       |     ck      | CK 用 SQL introspection 函数；Doris 输出 `(dso, dso_offset)`                                        |
-| 9    | public API 输出 JSON | doris local |  doris local   | doris local | { "thread_id": ..., "thread_name": ..., "trace": [{"dso": ..., "dso_offset": ...}] }               |
-| 10   | jemalloc profiling   |      -      |       ck       |     ck      | 附带依赖风险，不一定进入 `print_stack` 主流程                                                       |
+| 8    | 地址归一化           | doris local |  doris local   | doris local | PC -> `(dso, dso_offset)`                                                                          |
+| 9    | 输出字段形态         | doris local |  doris local   | doris local | 当前为 `(dso, dso_offset)`；符号化 TODO                                                            |
+| 10   | jemalloc prof-libunwind |      -   |       ck       |     ck      | 见下方                                                                                             |
 
 抓栈实现：
 - fp-walk：Doris 本地 RBP 链 walk，不依赖 libunwind。
@@ -43,6 +43,21 @@
 可见栈完整度：
 - fp-walk：只靠 `-fno-omit-frame-pointer` + RBP 链；tail call / tail return、断在 prologue、手写汇编会少帧。
 - libunwind：使用 unwind info + fallback；通常比 fp-walk 覆盖更多帧。
+
+地址归一化：
+- variant handler 只采集 PC。
+- Doris 在 handler 外用 `SymbolIndex` 把 PC 转成 `(dso, dso_offset)`。
+- `(dso, dso_offset)` 是当前输出字段，也是后续符号化的输入。
+
+输出字段形态：
+- 当前 HTTP JSON frame 是 `{dso, dso_offset}`。
+- TODO：支持符号化输出。
+- 符号化完成后，trace frame schema 需要扩展或调整，例如增加 `function` / `file` / `line`，或提供独立的 symbolized 输出形态。
+
+jemalloc prof-libunwind：
+- 这个维度指 jemalloc heap profiling 的 backtracer 选择。
+- 依赖 libunwind 的方案需要关注 `--enable-prof-libunwind`，让 jemalloc profiling 走 libunwind backtracer。
+- 这里参考 CK 对 jemalloc + libunwind 的处理；它是 thirdparty 构建 / 重入风险，不是 `print_stack` API 本身的功能。
 
 ## 矩阵 3：LLVM/libunwind 与 nongnu libunwind
 
