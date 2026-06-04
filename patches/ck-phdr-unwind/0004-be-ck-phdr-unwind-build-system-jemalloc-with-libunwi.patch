@@ -1,15 +1,15 @@
-From ae5cc1519bde5ef569f75bb6d1fad0f418093bd2 Mon Sep 17 00:00:00 2001
+From 9919565bead660f15afba0a2cd2e1fbec8369fcd Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
-Date: Thu, 4 Jun 2026 08:40:39 +0000
+Date: Thu, 4 Jun 2026 12:00:12 +0000
 Subject: [PATCH 4/4] (be) ck-phdr-unwind build-system jemalloc with libunwind
  backtracer
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Add `be/cmake/build-jemalloc-prof-libunwind.sh` to rebuild jemalloc with `--enable-prof-libunwind` plus the flag set `thirdparty/build-thirdparty.sh` `build_jemalloc_doris()` uses (`--with-jemalloc-prefix=je`, `--with-install-suffix=_doris`, `--enable-prof`, `--disable-cxx`, `--disable-libdl`, `--disable-shared`). The script verifies `backtrace_method = libunwind` in `config.log` and aborts on mismatch — jemalloc/jemalloc#2504 lets libunwind detection silently fall back to libgcc, and the verify step is the only safety net.
+Add `be/cmake/build-jemalloc-prof-libunwind.sh` to rebuild jemalloc with `--enable-prof-libunwind` plus the flag set `thirdparty/build-thirdparty.sh` `build_jemalloc_doris()` uses (`--with-jemalloc-prefix=je`, `--with-install-suffix=_doris`, `--enable-prof`, `--disable-cxx`, `--disable-libdl`, `--disable-shared`). The script verifies `prof-libunwind : 1` in `config.log` and aborts on mismatch — jemalloc/jemalloc#2504 lets libunwind detection silently fall back to libgcc, and the verify step is the only safety net.
 
-The archive lives at `${PROJECT_ROOT}/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a`. `PROJECT_ROOT` is the harness root (parent of `repos/source/doris-master`), exported by `scripts/in-container`; the script derives it from its own location when unset. `phase2-reset` operates only inside `$DORIS_REPO`, so the archive survives resets.
+The archive lives at `be/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a` inside the Doris worktree. `/be/.tmp/` is added to `.gitignore` so `phase2-reset` (`git clean -fd` without `-x`) preserves the archive across resets, and `thirdparty.cmake` references it through the natural `${CMAKE_SOURCE_DIR}/.tmp/` path with no env-var dance.
 
 Edit `be/cmake/thirdparty.cmake`: replace the prebuilt `add_thirdparty(jemalloc ...)` with an IMPORTED static target pointing at the locally-built archive. No CMake option — one configuration. The block calls `message(FATAL_ERROR ...)` with the exact helper command if the archive is missing.
 
@@ -17,17 +17,33 @@ Spec: docs/design/ck.md "Decisions".
 
 Co-Authored-By: jover <joverzh@gmail.com>
 ---
- be/cmake/build-jemalloc-prof-libunwind.sh | 93 +++++++++++++++++++++++
- be/cmake/thirdparty.cmake                 | 26 ++++++-
- 2 files changed, 118 insertions(+), 1 deletion(-)
+ .gitignore                                |  4 +
+ be/cmake/build-jemalloc-prof-libunwind.sh | 94 +++++++++++++++++++++++
+ be/cmake/thirdparty.cmake                 | 19 ++++-
+ 3 files changed, 116 insertions(+), 1 deletion(-)
  create mode 100755 be/cmake/build-jemalloc-prof-libunwind.sh
 
+diff --git a/.gitignore b/.gitignore
+index 7a61c598c99..fcf513d6d39 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -27,6 +27,10 @@ ut_dir
+ package-lock.json
+ __pycache__
+ 
++# ck-phdr-unwind variant: locally-built jemalloc archive with
++# --enable-prof-libunwind, populated by be/cmake/build-jemalloc-prof-libunwind.sh.
++/be/.tmp/
++
+ # ignore all sub `/bin` and `/build` directory
+ **/build/
+ **/target/
 diff --git a/be/cmake/build-jemalloc-prof-libunwind.sh b/be/cmake/build-jemalloc-prof-libunwind.sh
 new file mode 100755
-index 00000000000..76474a265e1
+index 00000000000..198539813fa
 --- /dev/null
 +++ b/be/cmake/build-jemalloc-prof-libunwind.sh
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,94 @@
 +#!/usr/bin/env bash
 +# Reason: build a `libjemalloc_doris.a` whose heap-profile backtracer
 +# uses `unw_backtrace` instead of libgcc's `_Unwind_Backtrace`. The
@@ -40,14 +56,15 @@ index 00000000000..76474a265e1
 +# same `--enable-prof-libunwind` flag.
 +set -euo pipefail
 +
-+# Resolve the harness project root (parent of repos/source/doris-master).
-+# `scripts/in-container` and `scripts/phase2/*` export PROJECT_ROOT; when
-+# absent (e.g. running from `just phase2-shell`), derive it from the
-+# script's own location.
++# Resolve the BE source root (`be/`) and place the archive under
++# `be/.tmp/jemalloc-prof-libunwind/`. This lives inside the Doris worktree
++# alongside `be/ut_build_*` and survives `phase2-reset` because `/be/.tmp/`
++# is in the Doris `.gitignore` and `git clean -fd` does not remove ignored
++# paths.
 +SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-+: "${PROJECT_ROOT:=$(cd "${SCRIPT_DIR}/../../../../.." && pwd)}"
++BE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 +
-+ARCHIVE_DIR="${PROJECT_ROOT}/.tmp/jemalloc-prof-libunwind"
++ARCHIVE_DIR="${BE_DIR}/.tmp/jemalloc-prof-libunwind"
 +INSTALL_DIR="${ARCHIVE_DIR}/install"
 +ARCHIVE_LIB="${INSTALL_DIR}/lib/libjemalloc_doris.a"
 +
@@ -122,10 +139,10 @@ index 00000000000..76474a265e1
 +
 +echo "build-jemalloc-prof-libunwind: built ${ARCHIVE_LIB}; prof-libunwind = 1 confirmed."
 diff --git a/be/cmake/thirdparty.cmake b/be/cmake/thirdparty.cmake
-index 1dba907307d..dcdc196705f 100644
+index 1dba907307d..179e9ec028c 100644
 --- a/be/cmake/thirdparty.cmake
 +++ b/be/cmake/thirdparty.cmake
-@@ -80,7 +80,31 @@ add_thirdparty(crypto)
+@@ -80,7 +80,24 @@ add_thirdparty(crypto)
  add_thirdparty(openssl LIBNAME "lib/libssl.a")
  add_thirdparty(leveldb)
  if (USE_JEMALLOC)
@@ -136,17 +153,10 @@ index 1dba907307d..dcdc196705f 100644
 +    # through `_Unwind_Find_FDE` and deadlocks against the lock-free
 +    # override under profiling load. Build the archive first via
 +    # `be/cmake/build-jemalloc-prof-libunwind.sh`; the archive lives at
-+    # the harness project root `.tmp/` so `phase2-reset` does not touch
-+    # it.
++    # `be/.tmp/jemalloc-prof-libunwind/` which is `.gitignore`d.
 +    # Spec: docs/design/ck.md "Decisions".
-+    if (DEFINED ENV{PROJECT_ROOT})
-+        set(_phase2_project_root "$ENV{PROJECT_ROOT}")
-+    else()
-+        get_filename_component(_phase2_project_root
-+            "${CMAKE_SOURCE_DIR}/../../../.." ABSOLUTE)
-+    endif()
 +    set(_phase2_jemalloc_lib
-+        "${_phase2_project_root}/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a")
++        "${CMAKE_SOURCE_DIR}/.tmp/jemalloc-prof-libunwind/install/lib/libjemalloc_doris.a")
 +    if (NOT EXISTS "${_phase2_jemalloc_lib}")
 +        message(FATAL_ERROR
 +            "ck-phdr-unwind: ${_phase2_jemalloc_lib} is missing; "

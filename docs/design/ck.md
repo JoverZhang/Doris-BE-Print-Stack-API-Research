@@ -28,10 +28,21 @@ jemalloc so its heap profiler does not deadlock against the override.
    BE worker thread exists, so every thread that can later run the handler
    sees a populated cache.
 
-3. **Defense-in-depth gate.** `capture_into_slot` returns `CaptureFailed`
-   with zero frames if `hasPHDRCache()` is false. Reason: a missing cache
-   would route `dl_iterate_phdr` to the libc fallback, which takes the
-   loader lock and is not async-signal-safe.
+3. **No `hasPHDRCache()` gate in the unwind path.** `capture_into_slot`
+   calls `unw_init_local2` + `unw_step` unconditionally. Reason: CK runs
+   the same shape under TSan in CI
+   (`tests/queries/0_stateless/03565_system_stack_trace_works.sh` carries
+   no `no-tsan` tag) and `src/Storages/System/StorageSystemStackTrace.cpp`
+   builds `StackTrace(signal_context)` — which goes to `unw_backtrace` —
+   unconditionally. CK reserves `hasPHDRCache()` for the `trace_log`
+   continuous sampler boot decision in `programs/server/Server.cpp:1339`,
+   not the on-demand `system.stack_trace` handler. A gate at one capture
+   site cannot meaningfully protect the process when exception unwinding,
+   jemalloc backtracing, and other `dl_iterate_phdr` callers run
+   unguarded; defense-in-depth there is theatre. Under TSan,
+   `USE_PHDR_CACHE` is compile-guarded off so `dl_iterate_phdr` falls
+   through to libc — CK has accepted this in production for years
+   without deadlock evidence.
 
 4. **Seed from the interrupted ucontext.** Initialize the unwind cursor
    with `unw_init_local2(&cursor, ctx, UNW_INIT_SIGNAL_FRAME)` where `ctx`
@@ -54,8 +65,11 @@ jemalloc so its heap profiler does not deadlock against the override.
    `dl_iterate_phdr`. With the override active and profiling on, that
    re-entry deadlocks against jemalloc's internal locks. The
    `--enable-prof-libunwind` build makes jemalloc call `unw_backtrace`
-   instead. The build helper verifies `backtrace_method = 'libunwind'` in
-   `config.log` and fails the build on mismatch.
+   instead. The build helper verifies `prof-libunwind     : 1` in
+   `config.log` (jemalloc 5.3.0 records the backtracer choice as one of
+   three boolean result lines, not as a `backtrace_method` string) and
+   fails the build on mismatch (jemalloc/jemalloc#2504 — detection can
+   silently fall back to libgcc).
 
 ## Files
 
@@ -113,7 +127,6 @@ Variant capture (`be/src/service/http/action/print_stack_ck_phdr_unwind.cpp`):
 
 #include <cstring>
 
-#include "common/phdr_cache.h"
 #include "service/http/action/print_stack_capture.h"
 #include "service/http/action/print_stack_globals.h"
 
@@ -152,19 +165,17 @@ size_t walk_signal_frame(const ucontext_t& uc, uintptr_t* out, size_t cap) {
 
 } // namespace
 
-// Reason: variant capture. Body runs inside the signal handler.
+// Reason: variant capture. Body runs inside the signal handler. No
+// `hasPHDRCache()` gate — see Decision 3.
 // Spec: docs/architecture.md "Layer 3d"; docs/design/ck.md "Workflow".
+// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:163
+//   (CK's handler builds `StackTrace(signal_context)` unconditionally).
 void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
     // 1. Default to failure; success path overwrites both fields.
     out->status = ThreadStackStatus::CaptureFailed;
     out->frame_count = 0;
 
-    // 2. Refuse to unwind without the PHDR cache.
-    if (!hasPHDRCache()) {
-        return;
-    }
-
-    // 3. Walk the interrupted chain.
+    // 2. Walk the interrupted chain.
     out->frame_count = walk_signal_frame(uc, out->pcs.data(),
                                          kMaxSignalFrames);
     out->status = ThreadStackStatus::OK;
@@ -178,7 +189,8 @@ Jemalloc swap (`be/cmake/thirdparty.cmake`):
 ```cmake
 # Reason: link the locally-built jemalloc whose heap-profile backtracer
 # uses `unw_backtrace` instead of libgcc's `_Unwind_Backtrace`. The
-# build helper writes the archive to the install prefix below; running
+# build helper writes the archive to `be/.tmp/jemalloc-prof-libunwind/`
+# (gitignored, survives `phase2-reset`); running
 # `be/cmake/build-jemalloc-prof-libunwind.sh` is a prerequisite of the
 # `cmake` configure step.
 # Spec: docs/design/ck.md "Decisions".
@@ -191,11 +203,38 @@ set_target_properties(jemalloc PROPERTIES
 ## Workflow inside `capture_into_slot`
 
 1. Set `out->status = CaptureFailed`, `out->frame_count = 0`.
-2. If `!hasPHDRCache()`, return.
-3. Copy `uc` into a local `unw_context_t`. Call
+2. Copy `uc` into a local `unw_context_t`. Call
    `unw_init_local2(&cursor, &ctx, UNW_INIT_SIGNAL_FRAME)`. On non-zero
    return, return with the default failure fields.
-4. Loop until `unw_step(&cursor) <= 0` or `n == kMaxSignalFrames`. Each
+3. Loop until `unw_step(&cursor) <= 0` or `n == kMaxSignalFrames`. Each
    iteration reads `UNW_REG_IP` and writes `out->pcs[n++]`. Stop on a
    zero IP or a `unw_get_reg` error.
-5. Set `out->frame_count = n` and `out->status = OK`.
+4. Set `out->frame_count = n` and `out->status = OK`.
+
+## Runtime dlopen / dlclose compatibility
+
+The lock-free `dl_iterate_phdr` override is global, so every
+`dlopen`/`dlclose` after `updatePHDRCache()` runs makes the cache
+stale: stale entries miss new libraries (lossy unwinding through their
+frames) and dangling entries point into unmapped memory (handler reads
+through freed PHDRs). CK avoids this by banning `dlopen` after startup;
+Doris cannot, so the sites below need explicit treatment.
+
+Inventory of in-process `dlopen`-family calls in `be/src/`:
+
+| Site | Type | Treatment |
+|---|---|---|
+| `be/src/util/libjvm_loader.cpp:91` (`dlopen(libjvm)`) | Real load on first JNI use | Call `updatePHDRCache()` after `LibJVMLoader::load` returns success. Only real concern. |
+| `be/src/util/libjvm_loader.cpp:92` (`dlclose(libjvm)`) | Destructor on shutdown | Benign in practice (BE keeps the JVM for process lifetime). Pin if explicit close paths emerge. |
+| `be/src/runtime/user_function_cache.cpp:150` (`dynamic_open(nullptr, ...)`) | `dlopen(NULL, ...)` = self-handle | No new DSO; PHDR cache unaffected. Ignore. |
+| `be/src/runtime/user_function_cache.cpp:472` (`dynamic_open(.so, ...)`) | Native `.so` UDF load via `LibType::SO` | Vestigial — no frontend UDF path triggers `LibType::SO`. Every modern UDF goes through `get_jarpath` (Java UDF via JVM) or `get_pypath` (Python UDF via out-of-process `python_server.py` subprocess). The only entry to `LibType::SO` is `_load_entry_from_lib` rehydrating `.so` files left in the local cache dir at startup, and no execution path calls into them. Negligible risk; leave untreated. |
+| `be/src/util/dynamic_util.cpp:54` (`dlclose`) | Generic unloader | Reachable only via the vestigial `.so` UDF path. Negligible risk. |
+
+Net: libjvm is the only real concern. Modern Doris UDFs run isolated
+(JVM-mediated for Java; out-of-process subprocess for Python), matching
+CK's isolation model in spirit. The native `.so` UDF path is dead code
+in current deployments.
+
+Decision: hook `updatePHDRCache()` immediately after
+`LibJVMLoader::load` succeeds. The native `.so` UDF path is left as-is
+until/unless a frontend driver for it returns.

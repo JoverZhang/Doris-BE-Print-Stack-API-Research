@@ -1,11 +1,14 @@
-From 8fed950446170ad94ac3b17854a2015b34083e02 Mon Sep 17 00:00:00 2001
+From 3abd9dfcf18acf6b05ba9d2c7b0deb6110634bd8 Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
-Date: Thu, 4 Jun 2026 08:50:23 +0000
+Date: Thu, 4 Jun 2026 12:00:12 +0000
 Subject: [PATCH 3/4] (be) ck-phdr-unwind libunwind capture_into_slot
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
-Add the variant TU `be/src/service/http/action/print_stack_ck_phdr_unwind.cpp`. The handler-side hook copies the interrupted thread's `ucontext_t` into a libunwind context, calls `unw_init_local2` with `UNW_INIT_SIGNAL_FRAME`, and walks via `unw_get_reg(UNW_REG_IP)` + `unw_step` up to `kMaxSignalFrames`. A `hasPHDRCache()` gate refuses to unwind if patch 2's `updatePHDRCache()` never ran.
+Add the variant TU `be/src/service/http/action/print_stack_ck_phdr_unwind.cpp`. The handler-side hook copies the interrupted thread's `ucontext_t` into a libunwind context, calls `unw_init_local2` with `UNW_INIT_SIGNAL_FRAME`, and walks via `unw_get_reg(UNW_REG_IP)` + `unw_step` up to `kMaxSignalFrames`.
 
-TSan exception: `be/src/common/phdr_cache.cpp` compile-guards the override off when `THREAD_SANITIZER` is defined (TSan installs its own `dl_iterate_phdr` interceptor and refuses a user override), so `hasPHDRCache()` is always false in a TSan build. The defense-in-depth rationale (avoid the loader lock from the signal handler) is moot under TSan, which serializes loader access through its runtime and is debug-only. The gate is therefore `#if !defined(THREAD_SANITIZER)` so the test case `BestEffortFrameObserved` exercises real frames under TSan instead of degrading to CaptureFailed.
+No `hasPHDRCache()` gate. CK runs the same shape under TSan in its CI (tests/queries/0_stateless/03565_system_stack_trace_works.sh has no `no-tsan` tag) and `StorageSystemStackTrace.cpp` calls `StackTrace(signal_context)` — which goes to `unw_backtrace` — unconditionally. CK reserves `hasPHDRCache()` for the `trace_log` continuous sampler boot decision in `programs/server/Server.cpp:1339`. A gate at one capture site cannot meaningfully protect the process when exception unwinding, jemalloc backtracing, and other `dl_iterate_phdr` callers run unguarded.
 
 `UNW_LOCAL_ONLY` is defined before `<libunwind.h>` so the include resolves to the local-only `_ULx86_64_*` symbols the Doris libunwind archive exports. `be/src/service/CMakeLists.txt` globs `*.cpp` recursively, so the new TU is picked up without a CMakeLists edit.
 
@@ -13,16 +16,16 @@ Spec: docs/architecture.md "Layer 3d"; docs/design/ck.md "Decisions", "Shape", "
 
 Co-Authored-By: jover <joverzh@gmail.com>
 ---
- .../action/print_stack_ck_phdr_unwind.cpp     | 93 +++++++++++++++++++
- 1 file changed, 93 insertions(+)
+ .../action/print_stack_ck_phdr_unwind.cpp     | 86 +++++++++++++++++++
+ 1 file changed, 86 insertions(+)
  create mode 100644 be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
 
 diff --git a/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp b/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
 new file mode 100644
-index 00000000000..31e6a89d0a8
+index 00000000000..f577dac009d
 --- /dev/null
 +++ b/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,86 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -50,7 +53,6 @@ index 00000000000..31e6a89d0a8
 +
 +#include <cstring>
 +
-+#include "common/phdr_cache.h"
 +#include "service/http/action/print_stack_capture.h"
 +#include "service/http/action/print_stack_globals.h"
 +
@@ -91,26 +93,20 @@ index 00000000000..31e6a89d0a8
 +
 +// Reason: variant capture. Body runs inside the signal handler.
 +// Spec: docs/architecture.md "Layer 3d"; docs/design/ck.md "Workflow".
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:163
++//   (CK's handler builds a `StackTrace(signal_context)` unconditionally
++//   — no `hasPHDRCache()` gate. `hasPHDRCache()` in CK only gates the
++//   `trace_log` continuous sampler in `programs/server/Server.cpp:1339`).
 +void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
 +    // 1. Default to failure; success path overwrites both fields.
 +    out->status = ThreadStackStatus::CaptureFailed;
 +    out->frame_count = 0;
 +
-+    // 2. Refuse to unwind without the PHDR cache. Skipped under TSan:
-+    //    `phdr_cache.cpp` compile-guards the override off when
-+    //    `THREAD_SANITIZER` is defined (TSan installs its own
-+    //    `dl_iterate_phdr` interceptor and refuses a user override),
-+    //    so `hasPHDRCache()` always returns false in a TSan build.
-+    //    The defense-in-depth rationale (avoid the loader lock in the
-+    //    handler) is moot in TSan, which serializes loader access
-+    //    through its runtime and is debug-only.
-+#if !defined(THREAD_SANITIZER)
-+    if (!hasPHDRCache()) {
-+        return;
-+    }
-+#endif
-+
-+    // 3. Walk the interrupted chain.
++    // 2. Walk the interrupted chain. No `hasPHDRCache()` gate: CK runs
++    //    `unw_backtrace` unconditionally in the same position (TSan
++    //    included), and a missed cache is a process-wide concern
++    //    (exception unwinding, jemalloc backtrace) that one gate at
++    //    one capture site cannot meaningfully protect against.
 +    out->frame_count = walk_signal_frame(uc, out->pcs.data(), kMaxSignalFrames);
 +    out->status = ThreadStackStatus::OK;
 +}
