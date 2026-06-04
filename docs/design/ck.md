@@ -88,7 +88,7 @@ jemalloc so its heap profiler does not deadlock against the override.
 | `be/src/service/http/action/print_stack_ck_phdr_unwind.cpp` | `capture_into_slot` definition. TU-local `walk_signal_frame` helper. |
 | `thirdparty/build-thirdparty.sh` | `build_jemalloc_doris()`: add `--enable-prof-libunwind` (+ `CPPFLAGS`/`LDFLAGS`/`LIBS` for libunwind detection); verify `prof-libunwind : 1` in `config.log` and abort on mismatch. |
 
-The harness wrapper `scripts/phase2/build-jemalloc-prof-libunwind.sh`
+The harness wrapper `scripts/phase2/phase2-jemalloc.sh`
 (outside the Doris worktree) ensures the jemalloc source is unpacked
 in `${TP_SOURCE_DIR}` and invokes `build-thirdparty.sh jemalloc_doris`
 with `TP_DIR=${DORIS_THIRDPARTY}`. Idempotent: skips when the source

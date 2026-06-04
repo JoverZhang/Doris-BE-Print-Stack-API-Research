@@ -1,4 +1,4 @@
-From 6e183833abb833c074ad8c8986087985fafda287 Mon Sep 17 00:00:00 2001
+From d822042e2cb24fc271792bb2f1ee6132a4e177a8 Mon Sep 17 00:00:00 2001
 From: mira <mira@example.invalid>
 Date: Fri, 5 Jun 2026 00:10:28 +0800
 Subject: [PATCH 3/3] (thirdparty) ob-kill60 jemalloc with libunwind backtracer
@@ -31,9 +31,9 @@ host — which is every Doris BE build on modern Linux.
 
 Detection inputs (CPPFLAGS/LDFLAGS/LIBS) are supplied by the caller's
 environment rather than hard-coded, so the patch stays minimal and
-the harness wrapper (scripts/phase2/build-jemalloc-prof-libunwind.sh)
-keeps the rebuild-scenario plumbing in one place. The wrapper is
-reused unchanged from ck-phdr-unwind; its `--enable-prof-libunwind`
+the harness wrapper (scripts/phase2/phase2-jemalloc.sh) keeps the
+rebuild-scenario plumbing in one place. The wrapper is reused
+unchanged from ck-phdr-unwind; its `--enable-prof-libunwind`
 sentinel check passes once this patch lands and its md5-keyed cache
 hits for the second variant on first invocation.
 
@@ -58,7 +58,7 @@ Co-Authored-By: jover <joverzh@gmail.com>
  1 file changed, 19 insertions(+), 1 deletion(-)
 
 diff --git a/thirdparty/build-thirdparty.sh b/thirdparty/build-thirdparty.sh
-index 71a3b38afb8..fae41d7cfda 100755
+index 71a3b38afb8..c6b26f9c789 100755
 --- a/thirdparty/build-thirdparty.sh
 +++ b/thirdparty/build-thirdparty.sh
 @@ -1613,8 +1613,26 @@ build_jemalloc_doris() {
@@ -72,7 +72,7 @@ index 71a3b38afb8..fae41d7cfda 100755
 +    # `dlsym`-driven malloc. Source:
 +    # <ck>/contrib/jemalloc-cmake/CMakeLists.txt:199-212.
 +    # `CPPFLAGS`/`LDFLAGS`/`LIBS` for libunwind detection come from the
-+    # caller's env (see scripts/phase2/build-jemalloc-prof-libunwind.sh).
++    # caller's env (see scripts/phase2/phase2-jemalloc.sh).
 +    # Spec: docs/design/ob.md "Decisions".
      CFLAGS="${cflags}" ../configure --prefix="${TP_INSTALL_DIR}" --with-install-suffix="_doris" "${WITH_LG_PAGE}" \
 -        --with-jemalloc-prefix=je --enable-prof --disable-cxx --disable-libdl --disable-shared
@@ -90,5 +90,5 @@ index 71a3b38afb8..fae41d7cfda 100755
      make -j "${PARALLEL}"
      make install
 -- 
-2.53.0
+2.43.0
 

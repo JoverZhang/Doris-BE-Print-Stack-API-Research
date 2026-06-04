@@ -41,7 +41,7 @@ TARGET_ARCHIVE="${TARGET_INSTALL}/lib/libjemalloc_doris.a"
 
 # 1. Refuse to run unless the patched build-thirdparty.sh is in place.
 if ! grep -q -- "--enable-prof-libunwind" "${HOST_TP_DIR}/build-thirdparty.sh"; then
-    echo "ck-phdr-unwind jemalloc: ${HOST_TP_DIR}/build-thirdparty.sh is missing the --enable-prof-libunwind patch; refusing to run." >&2
+    echo "phase2-jemalloc: ${HOST_TP_DIR}/build-thirdparty.sh is missing the --enable-prof-libunwind patch; refusing to run." >&2
     exit 1
 fi
 
@@ -64,9 +64,9 @@ if [[ -f "${HOST_SENTINEL}" && -f "${HOST_ARCHIVE}" ]] && \
    [[ "$(cat "${HOST_SENTINEL}" 2>/dev/null)" == "${JEMALLOC_DORIS_MD5SUM}" ]]; then
     if ! cmp -s "${HOST_ARCHIVE}" "${TARGET_ARCHIVE}"; then
         install -m 0644 "${HOST_ARCHIVE}" "${TARGET_ARCHIVE}"
-        echo "ck-phdr-unwind jemalloc: cache hit (md5=${JEMALLOC_DORIS_MD5SUM}); synced ${HOST_ARCHIVE} -> ${TARGET_ARCHIVE}."
+        echo "phase2-jemalloc: cache hit (md5=${JEMALLOC_DORIS_MD5SUM}); synced ${HOST_ARCHIVE} -> ${TARGET_ARCHIVE}."
     else
-        echo "ck-phdr-unwind jemalloc: cache hit (md5=${JEMALLOC_DORIS_MD5SUM}); ${TARGET_ARCHIVE} already in sync."
+        echo "phase2-jemalloc: cache hit (md5=${JEMALLOC_DORIS_MD5SUM}); ${TARGET_ARCHIVE} already in sync."
     fi
     exit 0
 fi
@@ -97,7 +97,7 @@ if [[ ! -f "${JEMALLOC_PATCHED_MARK}" ]]; then
     if grep -q "jemalloc_protos.h jemalloc_typedefs.h ; do" "${JEMALLOC_HEADER_SH}"; then
         touch "${JEMALLOC_PATCHED_MARK}"
     else
-        echo "ck-phdr-unwind jemalloc: substantive edit of ${JEMALLOC_HEADER_SH} did not apply; the upstream jemalloc_hook.patch shape may have changed. Aborting." >&2
+        echo "phase2-jemalloc: substantive edit of ${JEMALLOC_HEADER_SH} did not apply; the upstream jemalloc_hook.patch shape may have changed. Aborting." >&2
         exit 1
     fi
 fi
@@ -120,7 +120,7 @@ export LIBS="-llzma"
 #    so this skips the rest of the pipeline. The patched function
 #    aborts on `prof-libunwind != 1`; reaching the next line means the
 #    verify passed. The install lands at ${HOST_ARCHIVE}.
-echo "ck-phdr-unwind jemalloc: invoking build-thirdparty.sh jemalloc_doris"
+echo "phase2-jemalloc: invoking build-thirdparty.sh jemalloc_doris"
 bash "${HOST_TP_DIR}/build-thirdparty.sh" jemalloc_doris
 
 # 8. Record the cache key and sync to the container's CMake-visible
@@ -128,4 +128,4 @@ bash "${HOST_TP_DIR}/build-thirdparty.sh" jemalloc_doris
 #    step 3.
 echo -n "${JEMALLOC_DORIS_MD5SUM}" > "${HOST_SENTINEL}"
 install -m 0644 "${HOST_ARCHIVE}" "${TARGET_ARCHIVE}"
-echo "ck-phdr-unwind jemalloc: build complete; cached (md5=${JEMALLOC_DORIS_MD5SUM}) and synced to ${TARGET_ARCHIVE}."
+echo "phase2-jemalloc: build complete; cached (md5=${JEMALLOC_DORIS_MD5SUM}) and synced to ${TARGET_ARCHIVE}."

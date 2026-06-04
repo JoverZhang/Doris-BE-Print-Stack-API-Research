@@ -57,7 +57,7 @@ for v in $VARIANTS; do
     if git -C "$DORIS_REPO" am "$PROJECT_ROOT/patches/$v/"*.patch; then
         clean+=("$v")
         if [[ "$v" == "ck-phdr-unwind" || "$v" == "ob-kill60" ]]; then
-            DORIS_REPO="$DORIS_REPO" "$PROJECT_ROOT/scripts/phase2/build-jemalloc-prof-libunwind.sh"
+            DORIS_REPO="$DORIS_REPO" "$PROJECT_ROOT/scripts/phase2/phase2-jemalloc.sh"
         fi
     else
         git -C "$DORIS_REPO" am --abort 2>/dev/null || true

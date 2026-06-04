@@ -108,7 +108,7 @@ head="$(git -C "$DORIS_REPO" rev-parse --short=12 HEAD)"
 # container install at the start of every test container; the wrapper hits
 # its sentinel cache after the first bootstrap build (<1 s).
 if [[ "$target" == "ck-phdr-unwind" || "$target" == "ob-kill60" ]]; then
-    "$PROJECT_ROOT/scripts/phase2/build-jemalloc-prof-libunwind.sh"
+    "$PROJECT_ROOT/scripts/phase2/phase2-jemalloc.sh"
 fi
 
 run_with_doris_ut_script() {

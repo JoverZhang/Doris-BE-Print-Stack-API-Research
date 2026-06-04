@@ -102,7 +102,7 @@ Steps 1-5 modify common `print_stack_*` files. The patches live in
 | `be/src/service/http/action/print_stack_ob_kill60.cpp` | Variant TU. Defines `capture_into_slot`, `variant_wait_for_release`, `variant_after_slot_read`. |
 | `thirdparty/build-thirdparty.sh` | `build_jemalloc_doris()`: add `--enable-prof-libunwind` (+ libunwind detection inputs); verify `prof-libunwind : 1` in `config.log`. |
 
-The harness wrapper `scripts/phase2/build-jemalloc-prof-libunwind.sh`
+The harness wrapper `scripts/phase2/phase2-jemalloc.sh`
 ensures the jemalloc source is unpacked and invokes
 `build-thirdparty.sh jemalloc_doris`. Same wrapper `ck-phdr-unwind`
 uses.
