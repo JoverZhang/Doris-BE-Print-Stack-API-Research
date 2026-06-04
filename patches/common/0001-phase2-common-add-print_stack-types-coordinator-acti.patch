@@ -1,4 +1,4 @@
-From b9c469f312d9cf8fdfdb0816744f86208dc24805 Mon Sep 17 00:00:00 2001
+From bf6ffbda6676aec99142af746b59856cc5477245 Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
 Date: Thu, 4 Jun 2026 01:42:12 +0800
 Subject: [PATCH 1/2] phase2/common: add print_stack types, coordinator,

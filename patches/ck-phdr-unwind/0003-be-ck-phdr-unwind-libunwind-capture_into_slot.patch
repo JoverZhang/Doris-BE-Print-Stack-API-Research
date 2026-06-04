@@ -1,4 +1,4 @@
-From 3a117df1fe2f40bcfd3d8f1a3b13a813101ff072 Mon Sep 17 00:00:00 2001
+From 145da0ab8040cbbed09aa87465433d2d34c349d9 Mon Sep 17 00:00:00 2001
 From: "Mira (mira/mira)" <hey2missmira@gmail.com>
 Date: Thu, 4 Jun 2026 12:00:12 +0000
 Subject: [PATCH 3/4] (be) ck-phdr-unwind libunwind capture_into_slot
@@ -16,16 +16,16 @@ Spec: docs/architecture.md "Layer 3d"; docs/design/ck.md "Decisions", "Shape", "
 
 Co-Authored-By: jover <joverzh@gmail.com>
 ---
- .../action/print_stack_ck_phdr_unwind.cpp     | 86 +++++++++++++++++++
- 1 file changed, 86 insertions(+)
+ .../action/print_stack_ck_phdr_unwind.cpp     | 77 +++++++++++++++++++
+ 1 file changed, 77 insertions(+)
  create mode 100644 be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
 
 diff --git a/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp b/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
 new file mode 100644
-index 00000000000..f577dac009d
+index 00000000000..bc84cfbc85c
 --- /dev/null
 +++ b/be/src/service/http/action/print_stack_ck_phdr_unwind.cpp
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,77 @@
 +// Licensed to the Apache Software Foundation (ASF) under one
 +// or more contributor license agreements.  See the NOTICE file
 +// distributed with this work for additional information
@@ -62,9 +62,7 @@ index 00000000000..f577dac009d
 +// Reason: seed from the interrupted thread's saved context and walk
 +// the chain. `UNW_INIT_SIGNAL_FRAME` tells libunwind the context came
 +// from a signal handler so the first IP read returns the interrupted PC.
-+// Reference: <ck>/contrib/llvm-project/libunwind/src/libunwind.cpp:221-240
-+//   (CK's `unw_backtrace` — the same step loop, but seeded from
-+//   `unw_getcontext`).
++// Reference: <ck>/contrib/llvm-project/libunwind/src/libunwind.cpp:221-240.
 +size_t walk_signal_frame(const ucontext_t& uc, uintptr_t* out, size_t cap) {
 +    unw_context_t ctx;
 +    std::memcpy(&ctx, &uc, sizeof(ctx));
@@ -93,20 +91,13 @@ index 00000000000..f577dac009d
 +
 +// Reason: variant capture. Body runs inside the signal handler.
 +// Spec: docs/architecture.md "Layer 3d"; docs/design/ck.md "Workflow".
-+// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:163
-+//   (CK's handler builds a `StackTrace(signal_context)` unconditionally
-+//   — no `hasPHDRCache()` gate. `hasPHDRCache()` in CK only gates the
-+//   `trace_log` continuous sampler in `programs/server/Server.cpp:1339`).
++// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:163.
 +void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out) {
 +    // 1. Default to failure; success path overwrites both fields.
 +    out->status = ThreadStackStatus::CaptureFailed;
 +    out->frame_count = 0;
 +
-+    // 2. Walk the interrupted chain. No `hasPHDRCache()` gate: CK runs
-+    //    `unw_backtrace` unconditionally in the same position (TSan
-+    //    included), and a missed cache is a process-wide concern
-+    //    (exception unwinding, jemalloc backtrace) that one gate at
-+    //    one capture site cannot meaningfully protect against.
++    // 2. Walk the chain.
 +    out->frame_count = walk_signal_frame(uc, out->pcs.data(), kMaxSignalFrames);
 +    out->status = ThreadStackStatus::OK;
 +}
