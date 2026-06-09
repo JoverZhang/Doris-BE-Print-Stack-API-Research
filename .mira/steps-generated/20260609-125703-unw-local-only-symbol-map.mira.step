@@ -1,0 +1,22 @@
+---
+schema_version: 2
+created_at: 2026-06-09T12:57:03+08:00
+project_path: /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research
+branch: master
+commit: 6bc9f47ef154a5ee9adfb00422d009a97f6c627e
+title: libunwind local-only symbol map
+thread.T1: public header macro expansion
+thread.T2: local-only object wrappers
+---
+
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-x86_64.h:39 | select x86_64 as the target token
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-common.h.in:48 | build public object names from prefix and function
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-common.h.in:51 | choose the local-only target prefix
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-common.h.in:241 | map unw_init_local through the selected prefix
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-common.h.in:242 | map unw_init_local2 through the selected prefix
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-common.h.in:244 | map unw_step through the selected prefix
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-common.h.in:250 | map unw_get_reg through the selected prefix
+T2 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Linit_local.c:1 | enter local-only init wrapper object
+T2 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Linit_local.c:4 | include generic init code under local-only prefix
+T2 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Lstep.c:4 | include generic step code under local-only prefix
+T2 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/mi/Lget_reg.c:4 | include generic register reader under local-only prefix

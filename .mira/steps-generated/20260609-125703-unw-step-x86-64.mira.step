@@ -1,0 +1,28 @@
+---
+schema_version: 2
+created_at: 2026-06-09T12:57:03+08:00
+project_path: /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research
+branch: master
+commit: 6bc9f47ef154a5ee9adfb00422d009a97f6c627e
+title: unw step x86_64 path
+thread.T1: public step call mapping
+thread.T2: x86_64 step implementation
+thread.T3: DWARF parser step
+thread.T4: x86_64 fallback handling
+---
+
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/include/libunwind-common.h.in:244 | map unw_step through the target prefix
+T1 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Lstep.c:1 | enter local-only x86_64 step wrapper object
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Lstep.c:4 | include the generic x86_64 step implementation
+T2 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:57 | enter x86_64 unw_step
+T2 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:73 | choose DWARF-based unwinding first
+T3 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/dwarf/Gparser.c:968 | enter dwarf_step
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/dwarf/Gparser.c:535 | process CFI using current or previous IP semantics
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/dwarf/Gparser.c:885 | apply the computed return address as the next IP
+T2 < .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:89 | resume x86_64 step after successful DWARF result
+T4 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:101 | enter fallback path after missing DWARF info
+T4 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:125 | try special signal-frame handling first
+T4 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:134 | try PLT entry handling when not a signal frame
+T4 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:144 | detect an exhausted frame chain
+T4 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:227 | fall back to RBP plus return-address slot
+T4 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Gstep.c:272 | load fallback RIP into cursor IP

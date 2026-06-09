@@ -1,0 +1,28 @@
+---
+schema_version: 2
+created_at: 2026-06-09T12:57:03+08:00
+project_path: /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research
+branch: master
+commit: 6bc9f47ef154a5ee9adfb00422d009a97f6c627e
+title: unw init local versus local2
+thread.T1: normal local context initializer
+thread.T2: signal-frame context initializer
+thread.T3: shared x86_64 cursor initialization
+---
+
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/doc/unw_init_local.man:69 | document when signal-frame initialization is needed
+T1 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:58 | enter unw_init_local for a normal local context
+T1 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:60 | initialize with previous-instruction adjustment enabled
+T2 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:64 | enter flag-aware local initializer
+T2 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:70 | recognize the signal-frame flag
+T2 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:72 | initialize with previous-instruction adjustment disabled
+T3 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:43 | enter shared local initialization helper
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:47 | run first-use target initialization if needed
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/Ginit_local.c:53 | attach the local address space to the context
+T3 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/init.h:45 | enter x86_64 common cursor initialization
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/init.h:65 | point RIP location at the saved ucontext register
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/init.h:67 | read the initial cursor IP from saved RIP
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/x86_64/init.h:81 | persist the previous-instruction policy on the cursor
+T3 > .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/dwarf/Gparser.c:432 | enter the later DWARF rule for normal call frames
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/dwarf/Gparser.c:438 | keep current IP semantics for signal frames
+T3 - .mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/src/dwarf/Gparser.c:537 | run CFI at IP minus the stored policy bit
