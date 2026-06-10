@@ -22,3 +22,11 @@
 	path = repos/source/doris-master
 	url = https://github.com/apache/doris.git
 	ignore = dirty
+[submodule "experiments/jemalloc-glibc-dlerror/deps/jemalloc"]
+	path = experiments/jemalloc-glibc-dlerror/deps/jemalloc
+	url = https://github.com/jemalloc/jemalloc.git
+	shallow = true
+[submodule "experiments/jemalloc-glibc-dlerror/deps/llvm-project"]
+	path = experiments/jemalloc-glibc-dlerror/deps/llvm-project
+	url = https://github.com/llvm/llvm-project.git
+	shallow = true

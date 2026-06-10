@@ -3,11 +3,6 @@
 common_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$common_dir/../.." && pwd)
 
-jemalloc_version=5.3.0
-llvm_version=17.0.6
-cmake_version=3.27.9
-
-cache="$root/.cache"
 deps="$root/.deps"
 results="$root/results"
 

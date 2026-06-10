@@ -2,13 +2,13 @@ ARG UBUNTU_VERSION=20.04
 FROM ubuntu:${UBUNTU_VERSION}
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG CMAKE_VERSION=3.27.9
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         autoconf \
         bzip2 \
         ca-certificates \
-        cmake \
         curl \
         file \
         g++ \
@@ -22,5 +22,11 @@ RUN apt-get update \
         python3 \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /opt/cmake \
+    && curl -fL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" \
+        | tar --strip-components=1 -xz -C /opt/cmake
+
+ENV PATH="/opt/cmake/bin:${PATH}"
 
 WORKDIR /work

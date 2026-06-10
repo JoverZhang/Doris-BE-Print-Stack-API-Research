@@ -9,7 +9,9 @@ build-jemalloc backend:
     source scripts/lib/common.sh
     source scripts/lib/container.sh
     image=$(build_image 20.04)
-    run_in_image "$image" bash ./scripts/build-jemalloc "{{backend}}"
+    build_dir=".build/cmake-20.04"
+    run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
+    run_in_image "$image" cmake --build "$build_dir" --target "backend-{{backend}}"
 
 case case_id:
     #!/usr/bin/env bash
@@ -18,7 +20,9 @@ case case_id:
     source scripts/lib/container.sh
     read -r image backend profiling expected <<<"$(case_row "{{case_id}}")"
     tag=$(build_image "$image")
-    run_in_image "$tag" bash ./scripts/build-jemalloc "$backend" >/dev/null
+    build_dir=".build/cmake-$image"
+    run_in_image "$tag" cmake -S . -B "$build_dir" -G Ninja >/dev/null
+    run_in_image "$tag" cmake --build "$build_dir" --target "backend-$backend" >/dev/null
     run_in_image "$tag" bash ./scripts/run-case "{{case_id}}"
 
 matrix:
@@ -38,6 +42,6 @@ matrix:
     done
 
 clean:
-    rm -rf .build .cache .deps results/raw results/*.md
+    rm -rf .build .deps results/raw results/*.md
     mkdir -p results
     touch results/.gitkeep

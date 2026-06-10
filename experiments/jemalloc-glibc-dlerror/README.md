@@ -39,10 +39,13 @@ libgcc path. Case D proves the newer glibc path avoids this case.
 
 ## Files
 - `Containerfile`: Ubuntu 20.04 or 24.04 image.
+- `CMakeLists.txt`: build graph for jemalloc, LLVM libunwind, and repro bits.
+- `deps/jemalloc`: jemalloc 5.3.0 source, pinned as a git submodule.
+- `deps/llvm-project`: LLVM 17.0.6 source, pinned as a git submodule.
 - `src/repro.c`: only `malloc(16)` and `free`.
 - `src/phdr_wrap.c`: `dl_iterate_phdr` interposer.
 - `justfile`: user entry point for build and run commands.
-- `scripts/`: internal shell implementation.
+- `scripts/`: container and case-runner helpers.
 - `results/`: small summaries; `results/raw/`: ignored raw logs.
 
 ## Run
@@ -66,7 +69,7 @@ just build-jemalloc llvm-libunwind
 ```
 
 `justfile` is the only user-facing interface. The scripts directory contains
-internal leaf commands and shared shell modules.
+container helpers and the case runner.
 
 The runner uses `podman` when present, otherwise `docker`. It passes ptrace
 options so the timeout case can attach `gdb`.
@@ -74,6 +77,20 @@ options so the timeout case can attach `gdb`.
 ## Build
 Every backend builds jemalloc 5.3.0 from source with profiling enabled. The
 system jemalloc package is not used.
+
+CMake owns the build graph. `just build-jemalloc libgcc` builds the
+`backend-libgcc` target. `just build-jemalloc llvm-libunwind` builds the
+`backend-llvm-libunwind` target.
+
+Downloaded tarballs are not used. The source lives in git submodules:
+
+```text
+deps/jemalloc
+deps/llvm-project
+```
+
+The gitlink commits pin the exact source revisions; the visible tags are
+`5.3.0` and `llvmorg-17.0.6`.
 
 The `libgcc` backend disables libunwind and gcc intrinsic fallback. That leaves
 jemalloc's libgcc `_Unwind_Backtrace` backend enabled.
