@@ -1,0 +1,61 @@
+From 31facfa28aa2e49430e6cccf4ee9af0dd7c50c6f Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Wed, 10 Jun 2026 19:01:57 +0800
+Subject: [PATCH 4/4] (be) snapshot-remote-unwind link libunwind-x86_64.a for
+ remote-mode API
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The variant TU `print_stack_snapshot_remote_unwind.cpp` calls
+`unw_init_remote` / `unw_create_addr_space` / `unw_step` /
+`unw_get_reg` against a custom address space. Those entry points
+have real implementations only in `lib64/libunwind-x86_64.a` under
+the `_Ux86_64_*` prefix. The default `lib64/libunwind.a` archive —
+which the Doris build already links — ships the matching
+`_ULx86_64_*` symbols as 6-byte stubs that return `-UNW_EINVAL`
+(their bodies are compiled out under `UNW_LOCAL_ONLY` in
+`src/x86_64/Linit_remote.c`). Verified empirically: `objdump -d` on
+the archive's `_ULx86_64_init_remote` shows
+`mov $0xfffffff8, %eax; ret` — six bytes, returns -8 (-UNW_EINVAL).
+
+Gate on `CMAKE_BUILD_TARGET_ARCH == x86_64` because the per-arch
+archive is named after the target ISA; the variant TU's accessors
+hardcode x86_64 GPR layout via `REG_RAX` etc. and the variant ships
+only on x86_64. The thirdparty build already produces
+`libunwind-x86_64.a` whenever it builds `libunwind.a` (see
+`thirdparty/build-thirdparty.sh:build_libunwind`); no thirdparty
+rebuild is needed.
+
+Spec: docs/design/snapshot.md "Decisions" #12.
+
+Co-Authored-By: jover <joverzh@gmail.com>
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ be/cmake/thirdparty.cmake | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/be/cmake/thirdparty.cmake b/be/cmake/thirdparty.cmake
+index 1dba907307d..8f9ce9d509e 100644
+--- a/be/cmake/thirdparty.cmake
++++ b/be/cmake/thirdparty.cmake
+@@ -87,6 +87,15 @@ endif()
+ 
+ if (USE_UNWIND)
+     add_thirdparty(libunwind LIBNAME "lib64/libunwind.a")
++    # libunwind.a is the local-only ("UNW_LOCAL_ONLY") archive; its
++    # `_ULx86_64_init_remote` is a 6-byte stub returning -UNW_EINVAL.
++    # The per-arch archive ships the real remote-mode implementation
++    # under the `_Ux86_64_*` prefix. snapshot-remote-unwind calls
++    # unw_init_remote/unw_step/unw_get_reg against a custom address
++    # space and needs those symbols at link time.
++    if ("${CMAKE_BUILD_TARGET_ARCH}" STREQUAL "x86_64")
++        add_thirdparty(libunwind-x86_64 LIBNAME "lib64/libunwind-x86_64.a")
++    endif()
+ endif()
+ 
+ add_thirdparty(grpc++_reflection LIB64)
+-- 
+2.43.0
+

@@ -9,12 +9,8 @@
 DORIS_BASE="${DORIS_BASE:-fc639a14a6cb19e23565c868e62d4c170337d5d8}"
 
 # Reason: variants known to the harness; common is implicit.
-# snapshot-remote-unwind is temporarily disabled because its patches still
-# target `native_stack_collect.cpp`, which does not exist on `phase2/common`
-# after the print_stack refactor. Re-add it after its variant patches are
-# rewritten against the new `capture_into_slot` seam.
 # Local: harness config.
-VARIANTS="fp-walk ck-phdr-unwind ob-kill60"
+VARIANTS="fp-walk ck-phdr-unwind ob-kill60 snapshot-remote-unwind"
 
 # Resolve the project root: prefer the PROJECT_ROOT exported by in-container;
 # fall back to git when sourced from the host.

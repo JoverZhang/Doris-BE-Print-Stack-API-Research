@@ -1,0 +1,122 @@
+From 848b11354a3d35723ebad0ca6551a0d8a788e049 Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Wed, 10 Jun 2026 17:31:46 +0800
+Subject: [PATCH 1/4] (be) snapshot-remote-unwind expose coordinator helpers
+ from anonymous namespace
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Move the coordinator helpers out of the anonymous namespace in
+`print_stack.cpp` into `doris::print_stack::detail` so the
+snapshot-remote-unwind variant TU can link against them.
+
+Moved:
+
+  - list_target_thread_ids
+  - read_thread_names
+  - is_signal_blocked
+  - rt_tgsigqueueinfo
+  - remaining_ms_until
+  - wait_on_pipe
+  - pc_to_frame
+
+The first six are the helpers the doc lists in docs/design/snapshot.md
+"Reuse, adjust, add" — the pipelined coordinator body added in patch
+0002 calls all of them. `pc_to_frame` is added to the same move because
+patch 0003's `variant_walk_snapshot` resolves PCs into frames in the
+coordinator phase and needs the same helper; the doc's textual list
+omitted it.
+
+`s_dump_mutex` and `capture_one` stay in the anonymous namespace. They
+are TU-local. Patch 0002 replaces `collect_print_stack`'s body with the
+pipelined coordinator, after which `capture_one` becomes unreferenced
+and is removed in that patch.
+
+Call sites in `capture_one` and `collect_print_stack` are qualified with
+`print_stack::detail::`. No behavior change.
+
+Spec: docs/design/snapshot.md "Reuse, adjust, add".
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ be/src/service/http/action/print_stack.cpp | 22 +++++++++++++++-------
+ 1 file changed, 15 insertions(+), 7 deletions(-)
+
+diff --git a/be/src/service/http/action/print_stack.cpp b/be/src/service/http/action/print_stack.cpp
+index bf85116d377..4db418dc468 100644
+--- a/be/src/service/http/action/print_stack.cpp
++++ b/be/src/service/http/action/print_stack.cpp
+@@ -48,6 +48,10 @@ namespace {
+ // Spec: docs/architecture.md "Layer 3a invariants".
+ std::mutex s_dump_mutex;
+ 
++} // namespace
++
++namespace print_stack::detail {
++
+ // Reason: enumerate /proc/self/task. With a selector, return the
+ // selector only if /proc/self/task lists it; otherwise an empty
+ // vector. Without a selector, return every tid.
+@@ -223,13 +227,17 @@ bool wait_on_pipe(int timeout_ms) {
+     }
+ }
+ 
++} // namespace print_stack::detail
++
++namespace {
++
+ // Reason: send one signal, wait bounded, copy out on match. Sequence
+ // advances on every exit so a late handler cannot publish into the
+ // next target's slot.
+ // Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:484-518.
+ void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
+                  ThreadStackTrace* out) {
+-    if (is_signal_blocked(tid, print_stack::kServiceSignal)) {
++    if (print_stack::detail::is_signal_blocked(tid, print_stack::kServiceSignal)) {
+         out->status = ThreadStackStatus::SignalBlocked;
+         return;
+     }
+@@ -242,8 +250,8 @@ void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
+     si.si_pid = print_stack::g_server_pid.load(std::memory_order_relaxed);
+     si.si_value.sival_int = print_stack::g_sequence_num.load(std::memory_order_acquire);
+ 
+-    if (rt_tgsigqueueinfo(si.si_pid, static_cast<pid_t>(tid), print_stack::kServiceSignal, &si) !=
+-        0) {
++    if (print_stack::detail::rt_tgsigqueueinfo(si.si_pid, static_cast<pid_t>(tid),
++                                               print_stack::kServiceSignal, &si) != 0) {
+         if (errno == ESRCH) {
+             out->status = ThreadStackStatus::ThreadExited;
+             return;
+@@ -252,7 +260,7 @@ void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
+         return;
+     }
+ 
+-    if (!wait_on_pipe(remaining_ms_until(deadline)) ||
++    if (!print_stack::detail::wait_on_pipe(print_stack::detail::remaining_ms_until(deadline)) ||
+         si.si_value.sival_int != print_stack::g_data_ready_num.load(std::memory_order_acquire)) {
+         out->status = ThreadStackStatus::Timeout;
+         return;
+@@ -261,7 +269,7 @@ void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
+     out->status = print_stack::g_slot.status;
+     out->frames.reserve(print_stack::g_slot.frame_count);
+     for (size_t i = 0; i < print_stack::g_slot.frame_count; ++i) {
+-        out->frames.push_back(pc_to_frame(print_stack::g_slot.pcs[i]));
++        out->frames.push_back(print_stack::detail::pc_to_frame(print_stack::g_slot.pcs[i]));
+     }
+ }
+ 
+@@ -273,8 +281,8 @@ void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
+ PrintStackResult collect_print_stack(const PrintStackOptions& options) {
+     std::scoped_lock dump_lock(s_dump_mutex);
+ 
+-    std::vector<int64_t> tids = list_target_thread_ids(options);
+-    auto names = read_thread_names(tids);
++    std::vector<int64_t> tids = print_stack::detail::list_target_thread_ids(options);
++    auto names = print_stack::detail::read_thread_names(tids);
+ 
+     PrintStackResult result;
+     result.threads.reserve(tids.size());
+-- 
+2.43.0
+

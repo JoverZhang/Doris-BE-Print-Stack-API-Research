@@ -1,0 +1,225 @@
+From 7d153318729c693221cd675fd9d0eff2d4408b6a Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Wed, 10 Jun 2026 17:36:06 +0800
+Subject: [PATCH 2/4] (be) snapshot-remote-unwind pipelined coordinator +
+ variant_walk_snapshot hook
+
+Add the `variant_walk_snapshot(int seq, ThreadStackTrace* out)`
+declaration to `print_stack_capture.h`. The hook moves the unwind step
+out of the handler and into the coordinator. The handler-side
+`capture_into_slot` records `(ucontext_t, stack window)` into a
+variant-local snapshot ring keyed by `seq & 1`; the coordinator drives
+libunwind remote against that snapshot and writes resolved frames into
+`*out`. Other variants do not link this hook.
+
+Replace `collect_print_stack`'s body in `print_stack.cpp` with the
+pipelined depth-1 coordinator from docs/design/snapshot.md "Coordinator
+state machine". One iteration per tid:
+
+  1. SignalBlocked check, no signal sent, no sequence bump.
+  2. Read seq, queue the signal. Send failure -> ThreadExited or
+     CaptureFailed, sequence bumped.
+  3. Pipelined unwind of the previous iteration's pending snapshot.
+     Runs while tid_i's handler runs on its thread; reads the opposite
+     parity slot (invariant 3 in the design doc), so the next handler's
+     write cannot race this read.
+  4. Bounded wait for data_ready. Timeout -> Timeout, sequence bumped
+     to drain the late handler.
+  5. Stage tid_i as pending; bump sequence so the next iteration's
+     parity differs.
+
+Final drain unwinds the last pending row outside the pipeline.
+
+`capture_one` is removed: the new collector handles signal + wait +
+pipelined walk inline, and capture_one's role (sequential
+"send-wait-resolve" per tid) is no longer the shape used here. The
+`Defer<>` include drops out with it.
+
+Spec: docs/design/snapshot.md "Multi-threaded interactions",
+      "Coordinator state machine".
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ be/src/service/http/action/print_stack.cpp    | 128 ++++++++++--------
+ .../service/http/action/print_stack_capture.h |  11 ++
+ 2 files changed, 84 insertions(+), 55 deletions(-)
+
+diff --git a/be/src/service/http/action/print_stack.cpp b/be/src/service/http/action/print_stack.cpp
+index 4db418dc468..3589e6cbb6c 100644
+--- a/be/src/service/http/action/print_stack.cpp
++++ b/be/src/service/http/action/print_stack.cpp
+@@ -37,8 +37,8 @@
+ #include <vector>
+ 
+ #include "common/symbol_index.h"
++#include "service/http/action/print_stack_capture.h"
+ #include "service/http/action/print_stack_globals.h"
+-#include "util/defer_op.h"
+ 
+ namespace doris {
+ namespace {
+@@ -229,55 +229,13 @@ bool wait_on_pipe(int timeout_ms) {
+ 
+ } // namespace print_stack::detail
+ 
+-namespace {
+-
+-// Reason: send one signal, wait bounded, copy out on match. Sequence
+-// advances on every exit so a late handler cannot publish into the
+-// next target's slot.
+-// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:484-518.
+-void capture_one(int64_t tid, std::chrono::steady_clock::time_point deadline,
+-                 ThreadStackTrace* out) {
+-    if (print_stack::detail::is_signal_blocked(tid, print_stack::kServiceSignal)) {
+-        out->status = ThreadStackStatus::SignalBlocked;
+-        return;
+-    }
+-
+-    auto bump_seq = [] { ++print_stack::g_sequence_num; };
+-    Defer<decltype(bump_seq)> on_exit(std::move(bump_seq));
+-
+-    siginfo_t si {};
+-    si.si_code = SI_QUEUE;
+-    si.si_pid = print_stack::g_server_pid.load(std::memory_order_relaxed);
+-    si.si_value.sival_int = print_stack::g_sequence_num.load(std::memory_order_acquire);
+-
+-    if (print_stack::detail::rt_tgsigqueueinfo(si.si_pid, static_cast<pid_t>(tid),
+-                                               print_stack::kServiceSignal, &si) != 0) {
+-        if (errno == ESRCH) {
+-            out->status = ThreadStackStatus::ThreadExited;
+-            return;
+-        }
+-        out->status = ThreadStackStatus::CaptureFailed;
+-        return;
+-    }
+-
+-    if (!print_stack::detail::wait_on_pipe(print_stack::detail::remaining_ms_until(deadline)) ||
+-        si.si_value.sival_int != print_stack::g_data_ready_num.load(std::memory_order_acquire)) {
+-        out->status = ThreadStackStatus::Timeout;
+-        return;
+-    }
+-
+-    out->status = print_stack::g_slot.status;
+-    out->frames.reserve(print_stack::g_slot.frame_count);
+-    for (size_t i = 0; i < print_stack::g_slot.frame_count; ++i) {
+-        out->frames.push_back(print_stack::detail::pc_to_frame(print_stack::g_slot.pcs[i]));
+-    }
+-}
+-
+-} // namespace
+-
+-// Reason: orchestration shared by every variant. The per-variant step
+-// is the capture hook the handler invokes.
+-// Reference: <ck>/src/Storages/System/StorageSystemStackTrace.cpp:424-599.
++// Reason: pipelined coordinator at depth 1. After signalling tid_i the
++// coordinator walks tid_{i-1}'s snapshot via `variant_walk_snapshot`
++// while tid_i's handler runs on the target thread. Parity-keyed
++// snapshot ring (invariant 3 in docs/design/snapshot.md) keeps the two
++// in-flight slots disjoint.
++// Spec: docs/design/snapshot.md "Multi-threaded interactions",
++//       "Coordinator state machine".
+ PrintStackResult collect_print_stack(const PrintStackOptions& options) {
+     std::scoped_lock dump_lock(s_dump_mutex);
+ 
+@@ -289,13 +247,73 @@ PrintStackResult collect_print_stack(const PrintStackOptions& options) {
+     for (int64_t tid : tids) {
+         ThreadStackTrace row;
+         row.thread_id = tid;
+-        row.thread_name = names[tid];
++        row.thread_name = std::move(names[tid]);
++        result.threads.push_back(std::move(row));
++    }
++
++    // Pipeline depth 1. pending_idx is -1 when no row is staged for a
++    // pipelined walk; otherwise it indexes the row whose snapshot the
++    // coordinator will unwind on the next iteration's step 3.
++    int pending_idx = -1;
++    int pending_seq = 0;
++
++    for (size_t i = 0; i < tids.size(); ++i) {
++        const int64_t tid = tids[i];
++        const auto deadline = std::chrono::steady_clock::now() +
++                              std::chrono::milliseconds(print_stack::kPipeReadTimeoutMs);
++
++        // 1. Skip threads with the service signal blocked. No signal
++        //    sent, so no bump.
++        if (print_stack::detail::is_signal_blocked(tid, print_stack::kServiceSignal)) {
++            result.threads[i].status = ThreadStackStatus::SignalBlocked;
++            continue;
++        }
+ 
+-        auto deadline = std::chrono::steady_clock::now() +
+-                        std::chrono::milliseconds(print_stack::kPipeReadTimeoutMs);
+-        capture_one(tid, deadline, &row);
++        // 2. Read this iteration's sequence and queue the signal.
++        const int seq_i = print_stack::g_sequence_num.load(std::memory_order_acquire);
++        siginfo_t si {};
++        si.si_code = SI_QUEUE;
++        si.si_pid = print_stack::g_server_pid.load(std::memory_order_relaxed);
++        si.si_value.sival_int = seq_i;
++        if (print_stack::detail::rt_tgsigqueueinfo(si.si_pid, static_cast<pid_t>(tid),
++                                                   print_stack::kServiceSignal, &si) != 0) {
++            result.threads[i].status = (errno == ESRCH) ? ThreadStackStatus::ThreadExited
++                                                        : ThreadStackStatus::CaptureFailed;
++            ++print_stack::g_sequence_num;
++            continue;
++        }
+ 
+-        result.threads.push_back(std::move(row));
++        // 3. Pipelined unwind. While tid_i's handler runs on its
++        //    thread, walk the previous tid's snapshot here. Reads
++        //    g_snapshots[pending_seq % 2]; the next handler writes
++        //    g_snapshots[seq_i % 2]: opposite parity by invariant 3,
++        //    so the two cannot race.
++        if (pending_idx >= 0) {
++            print_stack::variant_walk_snapshot(pending_seq, &result.threads[pending_idx]);
++            pending_idx = -1;
++        }
++
++        // 4. Wait for the handler to publish data_ready.
++        if (!print_stack::detail::wait_on_pipe(
++                    print_stack::detail::remaining_ms_until(deadline)) ||
++            seq_i != print_stack::g_data_ready_num.load(std::memory_order_acquire)) {
++            result.threads[i].status = ThreadStackStatus::Timeout;
++            ++print_stack::g_sequence_num;
++            continue;
++        }
++
++        // 5. Stage tid_i's snapshot for the next iteration's pipelined
++        //    walk. Bump the sequence so the next iteration's parity
++        //    differs.
++        pending_idx = static_cast<int>(i);
++        pending_seq = seq_i;
++        ++print_stack::g_sequence_num;
++    }
++
++    // Final drain: unwind the last pending snapshot, if any. No next
++    // iteration to overlap with, so the walk runs here unpipelined.
++    if (pending_idx >= 0) {
++        print_stack::variant_walk_snapshot(pending_seq, &result.threads[pending_idx]);
+     }
+ 
+     return result;
+diff --git a/be/src/service/http/action/print_stack_capture.h b/be/src/service/http/action/print_stack_capture.h
+index ebe57b7e7d6..fa87c2708dc 100644
+--- a/be/src/service/http/action/print_stack_capture.h
++++ b/be/src/service/http/action/print_stack_capture.h
+@@ -33,4 +33,15 @@ namespace doris::print_stack {
+ // Spec: docs/architecture.md "Layer 3d".
+ void capture_into_slot(const ucontext_t& uc, StackCaptureSlot* out);
+ 
++// Reason: snapshot-remote-unwind defers the unwind to the coordinator.
++// The handler-side `capture_into_slot` records a `ucontext_t` plus a
++// stack window into a variant-local snapshot ring; the coordinator
++// drives libunwind remote-mode against that snapshot and writes
++// resolved frames into `*out`. Other variants do not link this hook.
++// `seq` selects the snapshot the handler just published; parity
++// (`seq & 1`) keys the ring slot.
++// Spec: docs/design/snapshot.md "Multi-threaded interactions",
++//       "Coordinator-side walk".
++void variant_walk_snapshot(int seq, ThreadStackTrace* out);
++
+ } // namespace doris::print_stack
+-- 
+2.43.0
+

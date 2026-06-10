@@ -1,0 +1,408 @@
+From 7c0f3b44d294dc5c9958a357ac1aa68e6c166c55 Mon Sep 17 00:00:00 2001
+From: "Mira (mira/mira)" <hey2missmira@gmail.com>
+Date: Wed, 10 Jun 2026 17:42:01 +0800
+Subject: [PATCH 3/4] (be) snapshot-remote-unwind variant TU: capture +
+ libunwind remote walk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add `print_stack_snapshot_remote_unwind.cpp`. The variant ships two
+hooks the new collector calls into:
+
+  capture_into_slot
+    Handler-side body. Saves the interrupted thread's `ucontext_t` into
+    `g_snapshots[seq & 1]`, then copies a bounded stack tail starting
+    at RSP via `process_vm_readv`. Both operations are signal-safe; the
+    syscall copies in the kernel so the user-side walk does not pass
+    through ASAN's memcpy interceptor. A `mincore` gate on the first
+    page distinguishes "no stack to capture" from "stack present but
+    short". `g_slot.status` stays OK and `frame_count` stays 0 — the
+    coordinator does not read the slot's PC array for this variant.
+
+  variant_walk_snapshot
+    Coordinator-side libunwind remote walk. Builds an `unw_accessors_t`
+    with custom `access_reg` / `access_mem` / `find_proc_info` /
+    `put_unwind_info`, calls `unw_create_addr_space`, hands the
+    snapshot pointer to the accessors via a TLS pointer
+    (`tls_active_snapshot`), seeds with `unw_init_remote(&snap->regs)`,
+    walks via `unw_step` + `unw_get_reg(UNW_REG_IP)` up to
+    `kMaxSignalFrames`, and resolves each PC via
+    `detail::pc_to_frame`.
+
+Accessor specifics, all from docs/design/snapshot.md "Decisions":
+
+  - `access_reg`: reads x86_64 GPRs from `snap->regs.uc_mcontext.gregs`.
+    Writes return `-UNW_EREADONLYREG`.
+  - `access_mem`: serves stack words from `snap->stack_bytes` for
+    addresses in `[stack_base, stack_base + stack_size)`. For
+    in-stack addresses above the captured tail returns `-UNW_EINVAL`
+    (fail closed; libunwind stops and reports the frames so far).
+    Other addresses are eh_frame / DSO data — live read with a
+    `mincore` guard.
+  - `find_proc_info` / `put_unwind_info`: delegate to
+    `_Ux86_64_dwarf_find_proc_info` / `_Ux86_64_dwarf_put_unwind_info`.
+    Declared with `extern "C"` because the public headers don't
+    expose them; `libunwind-x86_64.a` exports them.
+  - `get_dyn_info_list_addr`, `access_fpreg`, `resume`,
+    `get_proc_name`: not used; return sentinel codes.
+
+The TU does NOT define `UNW_LOCAL_ONLY` before `<libunwind.h>`. The
+default `libunwind.a` archive ships `_ULx86_64_init_remote` as a
+6-byte stub returning `-UNW_EINVAL` (its body is compiled out under
+`UNW_LOCAL_ONLY` in `src/x86_64/Linit_remote.c`), so the remote-mode
+API is reachable only via the `_Ux86_64_*` symbols in
+`libunwind-x86_64.a`. With the define omitted, libunwind.h's macros
+resolve `unw_*` to the `_U` symbols; the link is satisfied by the
+companion patch that adds `libunwind-x86_64.a` to thirdparty.
+
+`be/src/service/CMakeLists.txt` globs `*.cpp` recursively; the new TU
+is picked up without a CMakeLists edit.
+
+Spec: docs/design/snapshot.md "Scope", "Multi-threaded interactions",
+      "Decisions", "Files".
+
+Co-Authored-By: jover <joverzh@gmail.com>
+---
+ .../print_stack_snapshot_remote_unwind.cpp    | 329 ++++++++++++++++++
+ 1 file changed, 329 insertions(+)
+ create mode 100644 be/src/service/http/action/print_stack_snapshot_remote_unwind.cpp
+
+diff --git a/be/src/service/http/action/print_stack_snapshot_remote_unwind.cpp b/be/src/service/http/action/print_stack_snapshot_remote_unwind.cpp
+new file mode 100644
+index 00000000000..d0a4101610b
+--- /dev/null
++++ b/be/src/service/http/action/print_stack_snapshot_remote_unwind.cpp
+@@ -0,0 +1,329 @@
++// Licensed to the Apache Software Foundation (ASF) under one
++// or more contributor license agreements.  See the NOTICE file
++// distributed with this work for additional information
++// regarding copyright ownership.  The ASF licenses this file
++// to you under the Apache License, Version 2.0 (the
++// "License"); you may not use this file except in compliance
++// with the License.  You may obtain a copy of the License at
++//
++//   http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing,
++// software distributed under the License is distributed on an
++// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++// KIND, either express or implied.  See the License for the
++// specific language governing permissions and limitations
++// under the License.
++
++// Reason: the variant needs libunwind's remote-mode API
++// (`unw_init_remote`, `unw_step`, `unw_get_reg` against a custom
++// address space). Those entry points are implemented only in
++// `libunwind-x86_64.a` under the `_Ux86_64_*` prefix. The default
++// `libunwind.a` archive ships `_ULx86_64_init_remote` as a 6-byte stub
++// returning `-UNW_EINVAL` because `Linit_remote.c` compiles its body
++// out under `UNW_LOCAL_ONLY`. So we do NOT define `UNW_LOCAL_ONLY`
++// here; libunwind.h's macros resolve `unw_*` to the `_U` symbols, and
++// `be/cmake/thirdparty.cmake` links `libunwind-x86_64.a` to satisfy
++// them.
++// Spec: docs/design/snapshot.md "Decisions" #12.
++#include <libunwind.h>
++#include <sys/mman.h>
++#include <sys/syscall.h>
++#include <sys/uio.h>
++#include <ucontext.h>
++#include <unistd.h>
++
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++
++#include "service/http/action/print_stack.h"
++#include "service/http/action/print_stack_capture.h"
++#include "service/http/action/print_stack_globals.h"
++
++namespace doris::print_stack {
++
++// Forward decl from print_stack.cpp's detail namespace.
++namespace detail {
++StackFrame pc_to_frame(uintptr_t pc);
++} // namespace detail
++
++namespace {
++
++// Reason: bytes per snapshot. Matches the previous snapshot prototype.
++// Large enough to capture a worker thread's call chain; small enough
++// that two slots fit in roughly two MiB.
++// Spec: docs/design/snapshot.md "Decisions" #14.
++constexpr size_t kMaxSnapshotBytes = 1U << 20;
++
++// Reason: handler -> coordinator hand-off slot. Each entry carries the
++// interrupted thread's saved `ucontext_t` plus a bounded tail of its
++// live stack. The walk reads registers from `regs` (via `access_reg`)
++// and stack words from `stack_bytes` (via `access_mem`).
++// Spec: docs/design/snapshot.md "Decisions" #5.
++struct Snapshot {
++    ucontext_t regs {};
++    uintptr_t stack_base {0};
++    size_t stack_size {0};
++    uint8_t stack_bytes[kMaxSnapshotBytes] {};
++};
++
++// Reason: parity-keyed ring at depth 2. Two adjacent successful sends
++// carry sequences `seq` and `seq + 1` (invariant 3), so adjacent
++// handlers write opposite-parity slots. The coordinator reads the
++// pending parity while the next handler writes the other.
++// Spec: docs/design/snapshot.md "Decisions" #5, #7;
++//       "Multi-threaded interactions" invariants 3 and 5.
++Snapshot g_snapshots[2];
++
++// Reason: libunwind passes one `void* arg` to every accessor. The
++// variant uses that slot for the `ucontext_t` pointer that
++// `access_reg` reads. `access_mem` also needs the snapshot pointer
++// (for the stack-window check) and uses this TLS pointer for it.
++// `s_dump_mutex` in print_stack.cpp serializes coordinator runs, so
++// a single thread-local at a time is sufficient; `thread_local` is
++// the defensive choice if dump serialization ever changes.
++// Spec: docs/design/snapshot.md "Decisions" #9.
++thread_local Snapshot* tls_active_snapshot = nullptr;
++
++// Reason: libunwind's DWARF lookup against the local process's loaded
++// DSOs. Walks `dl_iterate_phdr` and parses `.eh_frame_hdr` for the IP.
++// Declared here because the public headers do not expose it; the
++// `_Ux86_64_*` symbols are exported from `libunwind-x86_64.a`.
++// Spec: docs/design/snapshot.md "Decisions" #4, #12.
++extern "C" int _Ux86_64_dwarf_find_proc_info(unw_addr_space_t as, unw_word_t ip,
++                                             unw_proc_info_t* pi, int need_unwind_info,
++                                             void* arg);
++extern "C" void _Ux86_64_dwarf_put_unwind_info(unw_addr_space_t as, unw_proc_info_t* pi,
++                                               void* arg);
++
++// Reason: signal-safe stack copy via the kernel. `inline_memcpy` would
++// route through ASAN's interceptor and trip stack-buffer-underflow on
++// the redzones that compiler instrumentation inserts between locals.
++// `process_vm_readv` checks per-page in the kernel; a guard page
++// mid-copy returns a short read instead of `SIGSEGV`.
++// Spec: docs/design/snapshot.md "Decisions" #6.
++ssize_t read_stack_via_process_vm_readv(uintptr_t base, void* into, size_t cap) {
++    iovec local_iov {into, cap};
++    iovec remote_iov {reinterpret_cast<void*>(base), cap};
++    return static_cast<ssize_t>(
++            ::syscall(SYS_process_vm_readv, ::getpid(), &local_iov, 1, &remote_iov, 1, 0u));
++}
++
++// Reason: gate the first stack page. A thread parked just above a
++// guard page would otherwise have `process_vm_readv` reject the whole
++// call with EFAULT; the gate lets us distinguish "no stack to capture"
++// from "stack present but short".
++// Spec: docs/design/snapshot.md "Decisions" #11.
++bool first_page_is_mapped(uintptr_t addr) {
++    static const long page_size = ::sysconf(_SC_PAGESIZE);
++    const uintptr_t page_base = addr & ~static_cast<uintptr_t>(page_size - 1);
++    unsigned char vec = 0;
++    return ::mincore(reinterpret_cast<void*>(page_base), static_cast<size_t>(page_size), &vec) == 0;
++}
++
++// Reason: read from the captured `ucontext_t` only. Writes are
++// rejected; libunwind never asks for one during a read-only walk.
++// `arg` carries the `ucontext_t*` passed to `unw_init_remote`.
++// Spec: docs/design/snapshot.md "Decisions" #4.
++int access_reg(unw_addr_space_t /*as*/, unw_regnum_t reg, unw_word_t* val, int write,
++               void* arg) {
++    if (write) {
++        return -UNW_EREADONLYREG;
++    }
++    auto* uc = static_cast<ucontext_t*>(arg);
++    if (uc == nullptr) {
++        return -UNW_EUNSPEC;
++    }
++    int idx;
++    switch (reg) {
++    case UNW_X86_64_RAX: idx = REG_RAX; break;
++    case UNW_X86_64_RDX: idx = REG_RDX; break;
++    case UNW_X86_64_RCX: idx = REG_RCX; break;
++    case UNW_X86_64_RBX: idx = REG_RBX; break;
++    case UNW_X86_64_RSI: idx = REG_RSI; break;
++    case UNW_X86_64_RDI: idx = REG_RDI; break;
++    case UNW_X86_64_RBP: idx = REG_RBP; break;
++    case UNW_X86_64_RSP: idx = REG_RSP; break;
++    case UNW_X86_64_R8:  idx = REG_R8;  break;
++    case UNW_X86_64_R9:  idx = REG_R9;  break;
++    case UNW_X86_64_R10: idx = REG_R10; break;
++    case UNW_X86_64_R11: idx = REG_R11; break;
++    case UNW_X86_64_R12: idx = REG_R12; break;
++    case UNW_X86_64_R13: idx = REG_R13; break;
++    case UNW_X86_64_R14: idx = REG_R14; break;
++    case UNW_X86_64_R15: idx = REG_R15; break;
++    case UNW_X86_64_RIP: idx = REG_RIP; break;
++    default:             return -UNW_EBADREG;
++    }
++    *val = static_cast<unw_word_t>(uc->uc_mcontext.gregs[idx]);
++    return 0;
++}
++
++// Reason: stack words come from the snapshot bytes; other addresses
++// (eh_frame, unwind tables, DSO data) are served via a live read in
++// the coordinator. For in-stack addresses above the captured tail —
++// memory the target thread has mutated since the snapshot — the
++// accessor returns `-UNW_EINVAL`, which libunwind reads as "memory
++// access failed" and stops the walk. Clean truncation at the
++// snapshot boundary.
++// Spec: docs/design/snapshot.md "Decisions" #8.
++int access_mem(unw_addr_space_t /*as*/, unw_word_t addr, unw_word_t* val, int write,
++               void* /*arg*/) {
++    if (write) {
++        return -UNW_EREADONLYREG;
++    }
++    auto* snap = tls_active_snapshot;
++    if (snap == nullptr) {
++        return -UNW_EUNSPEC;
++    }
++
++    if (snap->stack_size > 0 && addr >= snap->stack_base) {
++        const uintptr_t window_end = snap->stack_base + snap->stack_size;
++        if (addr + sizeof(unw_word_t) <= window_end) {
++            std::memcpy(val, &snap->stack_bytes[addr - snap->stack_base], sizeof(unw_word_t));
++            return 0;
++        }
++        return -UNW_EINVAL;
++    }
++
++    if (!first_page_is_mapped(static_cast<uintptr_t>(addr))) {
++        return -UNW_EINVAL;
++    }
++    unw_word_t tmp;
++    std::memcpy(&tmp, reinterpret_cast<const void*>(addr), sizeof(tmp));
++    *val = tmp;
++    return 0;
++}
++
++int find_proc_info(unw_addr_space_t as, unw_word_t ip, unw_proc_info_t* pi, int need_unwind_info,
++                   void* arg) {
++    return _Ux86_64_dwarf_find_proc_info(as, ip, pi, need_unwind_info, arg);
++}
++
++void put_unwind_info(unw_addr_space_t as, unw_proc_info_t* pi, void* arg) {
++    _Ux86_64_dwarf_put_unwind_info(as, pi, arg);
++}
++
++int get_dyn_info_list_addr(unw_addr_space_t /*as*/, unw_word_t* dilap, void* /*arg*/) {
++    *dilap = 0;
++    return 0;
++}
++
++int access_fpreg(unw_addr_space_t /*as*/, unw_regnum_t /*reg*/, unw_fpreg_t* /*val*/,
++                 int /*write*/, void* /*arg*/) {
++    return -UNW_EBADREG;
++}
++
++int resume(unw_addr_space_t /*as*/, unw_cursor_t* /*cursor*/, void* /*arg*/) {
++    return -UNW_EINVAL;
++}
++
++int get_proc_name(unw_addr_space_t /*as*/, unw_word_t /*ip*/, char* /*buf*/, size_t /*len*/,
++                  unw_word_t* /*off*/, void* /*arg*/) {
++    return -UNW_ENOINFO;
++}
++
++} // namespace
++
++// Reason: handler body. Runs on the interrupted thread under the
++// architecture's single-writer latch. Body is one `ucontext_t` memcpy
++// plus one `process_vm_readv` syscall — both signal-safe. The
++// `no_sanitize` attribute keeps the `ucontext_t` copy out of ASAN's
++// memcpy interceptor; `process_vm_readv` already bypasses it for the
++// stack copy.
++// Spec: docs/design/snapshot.md "Multi-threaded interactions",
++//       "Handler body"; "Decisions" #1, #6, #10, #11.
++__attribute__((no_sanitize("address"))) void capture_into_slot(const ucontext_t& uc,
++                                                               StackCaptureSlot* out) {
++    // 1. Select snapshot parity. The reload of `g_sequence_num` is
++    //    safe under invariant 4: the coordinator does not advance the
++    //    sequence between the entry check (in the common handler) and
++    //    this body.
++    const int seq = g_sequence_num.load(std::memory_order_relaxed);
++    Snapshot* snap = &g_snapshots[seq & 1];
++
++    // 2. Save the interrupted thread's registers.
++    std::memcpy(&snap->regs, &uc, sizeof(ucontext_t));
++
++    // 3. Copy the stack tail. `process_vm_readv` handles per-page
++    //    faults in the kernel, so a guard page mid-copy returns a
++    //    short read instead of `SIGSEGV`. `first_page_is_mapped`
++    //    catches the case where the page at RSP is itself unmapped,
++    //    in which case the syscall would reject the whole call.
++    const uintptr_t rsp = static_cast<uintptr_t>(uc.uc_mcontext.gregs[REG_RSP]);
++    snap->stack_base = 0;
++    snap->stack_size = 0;
++    if (rsp != 0 && first_page_is_mapped(rsp)) {
++        const ssize_t n =
++                read_stack_via_process_vm_readv(rsp, snap->stack_bytes, sizeof(snap->stack_bytes));
++        if (n > 0) {
++            snap->stack_base = rsp;
++            snap->stack_size = static_cast<size_t>(n);
++        }
++    }
++
++    // 4. The architecture's slot. The coordinator does not read the
++    //    PC array for this variant (the snapshot lives in
++    //    `g_snapshots`), so frame_count stays 0. Status stays OK so
++    //    the common handler's data_ready publish proceeds.
++    out->status = ThreadStackStatus::OK;
++    out->frame_count = 0;
++}
++
++// Reason: coordinator-side libunwind remote walk against the captured
++// snapshot. Runs in the request thread, where `dl_iterate_phdr` is
++// allowed to take the loader lock. The walk seeds from `snap->regs`
++// and reads stack words from `snap->stack_bytes` via the custom
++// accessors. DWARF lookups delegate to the libunwind local helper,
++// which walks `dl_iterate_phdr` for the LOCAL process — correct here
++// because the snapshot belongs to a thread of THIS process.
++// Spec: docs/design/snapshot.md "Multi-threaded interactions",
++//       "Coordinator-side walk"; "Decisions" #4, #9.
++void variant_walk_snapshot(int seq, ThreadStackTrace* out) {
++    Snapshot* snap = &g_snapshots[seq & 1];
++
++    unw_accessors_t accessors {};
++    accessors.find_proc_info = find_proc_info;
++    accessors.put_unwind_info = put_unwind_info;
++    accessors.get_dyn_info_list_addr = get_dyn_info_list_addr;
++    accessors.access_mem = access_mem;
++    accessors.access_reg = access_reg;
++    accessors.access_fpreg = access_fpreg;
++    accessors.resume = resume;
++    accessors.get_proc_name = get_proc_name;
++
++    unw_addr_space_t as = unw_create_addr_space(&accessors, 0);
++    if (as == nullptr) {
++        out->status = ThreadStackStatus::CaptureFailed;
++        return;
++    }
++
++    tls_active_snapshot = snap;
++
++    unw_cursor_t cursor;
++    if (unw_init_remote(&cursor, as, &snap->regs) != 0) {
++        tls_active_snapshot = nullptr;
++        unw_destroy_addr_space(as);
++        out->status = ThreadStackStatus::CaptureFailed;
++        return;
++    }
++
++    out->frames.reserve(kMaxSignalFrames);
++    for (size_t n = 0; n < kMaxSignalFrames; ++n) {
++        unw_word_t ip = 0;
++        if (unw_get_reg(&cursor, UNW_REG_IP, &ip) != 0 || ip == 0) {
++            break;
++        }
++        out->frames.push_back(detail::pc_to_frame(static_cast<uintptr_t>(ip)));
++        if (unw_step(&cursor) <= 0) {
++            break;
++        }
++    }
++
++    tls_active_snapshot = nullptr;
++    unw_destroy_addr_space(as);
++    out->status = ThreadStackStatus::OK;
++}
++
++} // namespace doris::print_stack
+-- 
+2.43.0
+
