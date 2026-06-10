@@ -3,7 +3,6 @@
 common_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$common_dir/../.." && pwd)
 
-deps="$root/.deps"
 results="$root/results"
 
 die() {
@@ -32,10 +31,14 @@ image_tag() {
     echo "jemalloc-glibc-dlerror:ubuntu-$1"
 }
 
+cmake_build_dir() {
+    echo "$root/.build/cmake-$1"
+}
+
 backend_build_dir() {
-    echo "$root/.build/$1"
+    echo "$(cmake_build_dir "$1")/out/$2"
 }
 
 jemalloc_prefix() {
-    echo "$deps/jemalloc-$1"
+    echo "$(cmake_build_dir "$1")/deps/jemalloc-$2"
 }

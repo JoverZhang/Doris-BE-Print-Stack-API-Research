@@ -6,8 +6,8 @@ include(ProcessorCount)
 
 set(JEMALLOC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/jemalloc")
 set(LLVM_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/llvm-project")
-set(LOCAL_DEPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.deps")
-set(LOCAL_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.build")
+set(LOCAL_DEPS_DIR "${CMAKE_BINARY_DIR}/deps")
+set(LOCAL_LOG_DIR "${CMAKE_BINARY_DIR}/logs")
 
 ProcessorCount(host_jobs)
 if(NOT host_jobs)
@@ -23,7 +23,7 @@ endif()
 
 function(add_repro_targets backend)
     string(REPLACE "-" "_" target_suffix "${backend}")
-    set(out_dir "${LOCAL_BUILD_DIR}/${backend}/out")
+    set(out_dir "${CMAKE_BINARY_DIR}/out/${backend}")
 
     add_library(phdr_wrap_${target_suffix} SHARED src/phdr_wrap.c)
     set_target_properties(phdr_wrap_${target_suffix} PROPERTIES
@@ -42,7 +42,7 @@ endfunction()
 
 ExternalProject_Add(llvm-libunwind
     SOURCE_DIR "${LLVM_SOURCE_DIR}/runtimes"
-    BINARY_DIR "${LOCAL_BUILD_DIR}/llvm-libunwind-build"
+    BINARY_DIR "${CMAKE_BINARY_DIR}/llvm-libunwind-build"
     INSTALL_DIR "${LOCAL_DEPS_DIR}/llvm-libunwind"
     CMAKE_ARGS
         -DCMAKE_BUILD_TYPE=Release
@@ -59,7 +59,7 @@ ExternalProject_Add(llvm-libunwind
 
 set(unwind_install "${LOCAL_DEPS_DIR}/llvm-libunwind")
 set(unwind_lib_dir "${unwind_install}/lib")
-set(unwind_compat_dir "${LOCAL_BUILD_DIR}/llvm-libunwind-compat")
+set(unwind_compat_dir "${CMAKE_BINARY_DIR}/llvm-libunwind-compat")
 set(unwind_compat_archive "${unwind_lib_dir}/libunwind_jemalloc.a")
 
 add_custom_command(
@@ -78,7 +78,8 @@ add_custom_target(libunwind-jemalloc-archive DEPENDS "${unwind_compat_archive}")
 function(add_jemalloc_backend backend)
     set(prefix "${LOCAL_DEPS_DIR}/jemalloc-${backend}")
     set(source_copy "${CMAKE_BINARY_DIR}/src/jemalloc-${backend}")
-    set(log_file "${LOCAL_BUILD_DIR}/${backend}/jemalloc-configure.log")
+    set(log_dir "${LOCAL_LOG_DIR}/${backend}")
+    set(log_file "${log_dir}/jemalloc-configure.log")
     set(common_args "--enable-prof --enable-shared --disable-static --disable-prof-gcc")
     set(cppflags "")
     set(ldflags "")
@@ -99,7 +100,8 @@ function(add_jemalloc_backend backend)
             "${CMAKE_COMMAND}" -E rm -rf "<SOURCE_DIR>"
             COMMAND "${CMAKE_COMMAND}" -E copy_directory "${JEMALLOC_SOURCE_DIR}" "<SOURCE_DIR>"
         CONFIGURE_COMMAND
-            /bin/sh -c "cd '<SOURCE_DIR>' && CPPFLAGS='${cppflags}' LDFLAGS='${ldflags}' ./autogen.sh --prefix='${prefix}' ${common_args} ${unwind_args} | tee '${log_file}'"
+            "${CMAKE_COMMAND}" -E make_directory "${log_dir}"
+            COMMAND /bin/sh -c "cd '<SOURCE_DIR>' && CPPFLAGS='${cppflags}' LDFLAGS='${ldflags}' ./autogen.sh --prefix='${prefix}' ${common_args} ${unwind_args} | tee '${log_file}'"
         BUILD_COMMAND make -C "<SOURCE_DIR>" -j${host_jobs} build_lib_shared
         INSTALL_COMMAND make -C "<SOURCE_DIR>" install_lib install_include
         BUILD_BYPRODUCTS "${prefix}/lib/libjemalloc.so"

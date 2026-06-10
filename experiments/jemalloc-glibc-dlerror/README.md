@@ -58,7 +58,10 @@ just matrix
 Run one row:
 
 ```bash
-just case A
+just case-A
+just case-B
+just case-C
+just case-D
 ```
 
 Build one jemalloc backend:
@@ -68,8 +71,9 @@ just build-jemalloc libgcc
 just build-jemalloc llvm-libunwind
 ```
 
-`justfile` is the only user-facing interface. The scripts directory contains
-container helpers and the case runner.
+`justfile` is the user-facing flow. Read `case-A`, `case-B`, `case-C`, and
+`case-D` top-down to see the container version, build steps, and run step for
+each row. The scripts directory contains container helpers and the case runner.
 
 The runner uses `podman` when present, otherwise `docker`. It passes ptrace
 options so the timeout case can attach `gdb`.
@@ -78,9 +82,10 @@ options so the timeout case can attach `gdb`.
 Every backend builds jemalloc 5.3.0 from source with profiling enabled. The
 system jemalloc package is not used.
 
-CMake owns the build graph. `just build-jemalloc libgcc` builds the
-`backend-libgcc` target. `just build-jemalloc llvm-libunwind` builds the
-`backend-llvm-libunwind` target.
+CMake owns the build graph. `just build-jemalloc libgcc` builds and verifies
+the libgcc-backed jemalloc. `just build-jemalloc llvm-libunwind` builds and
+verifies the LLVM-libunwind-backed jemalloc. The `case-*` recipes build the
+demo and wrapper explicitly after the allocator backend is ready.
 
 Downloaded tarballs are not used. The source lives in git submodules:
 

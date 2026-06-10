@@ -1,5 +1,4 @@
 .build/
-.deps/
 results/raw/
 results/*.log
 results/*.bt

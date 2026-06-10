@@ -11,27 +11,79 @@ build-jemalloc backend:
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
     run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
-    run_in_image "$image" cmake --build "$build_dir" --target "backend-{{backend}}"
+    run_in_image "$image" cmake --build "$build_dir" --target "verify-jemalloc-{{backend}}"
 
-case case_id:
+case-A:
     #!/usr/bin/env bash
     set -euo pipefail
     source scripts/lib/common.sh
     source scripts/lib/container.sh
-    read -r image backend profiling expected <<<"$(case_row "{{case_id}}")"
-    tag=$(build_image "$image")
-    build_dir=".build/cmake-$image"
-    run_in_image "$tag" cmake -S . -B "$build_dir" -G Ninja >/dev/null
-    run_in_image "$tag" cmake --build "$build_dir" --target "backend-$backend" >/dev/null
-    run_in_image "$tag" bash ./scripts/run-case "{{case_id}}"
+    image=$(build_image 20.04)
+    build_dir=".build/cmake-20.04"
+    run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
+    # 1. Build jemalloc with profiling support and the libgcc unwind backend.
+    run_in_image "$image" cmake --build "$build_dir" --target verify-jemalloc-libgcc
+    # 2. Build the demo executable and dl_iterate_phdr wrapper.
+    run_in_image "$image" cmake --build "$build_dir" --target repro-bits-libgcc
+    # 3. Run with profiling on and capture the timeout/gdb result.
+    run_in_image "$image" bash ./scripts/run-case A
+
+case-B:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/common.sh
+    source scripts/lib/container.sh
+    image=$(build_image 20.04)
+    build_dir=".build/cmake-20.04"
+    run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
+    # 1. Build the same libgcc-backed jemalloc as Case A.
+    run_in_image "$image" cmake --build "$build_dir" --target verify-jemalloc-libgcc
+    # 2. Build the same demo executable and wrapper as Case A.
+    run_in_image "$image" cmake --build "$build_dir" --target repro-bits-libgcc
+    # 3. Run with profiling off and capture the completion result.
+    run_in_image "$image" bash ./scripts/run-case B
+
+case-C:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/common.sh
+    source scripts/lib/container.sh
+    image=$(build_image 20.04)
+    build_dir=".build/cmake-20.04"
+    run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
+    # 1. Build LLVM libunwind from the local submodule.
+    run_in_image "$image" cmake --build "$build_dir" --target llvm-libunwind
+    # 2. Add the unw_backtrace compatibility object expected by jemalloc.
+    run_in_image "$image" cmake --build "$build_dir" --target libunwind-jemalloc-archive
+    # 3. Build jemalloc with profiling support and the LLVM libunwind backend.
+    run_in_image "$image" cmake --build "$build_dir" --target verify-jemalloc-llvm-libunwind
+    # 4. Build the demo executable and dl_iterate_phdr wrapper.
+    run_in_image "$image" cmake --build "$build_dir" --target repro-bits-llvm-libunwind
+    # 5. Run with profiling on and capture the completion result.
+    run_in_image "$image" bash ./scripts/run-case C
+
+case-D:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/common.sh
+    source scripts/lib/container.sh
+    image=$(build_image 24.04)
+    build_dir=".build/cmake-24.04"
+    run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
+    # 1. Build jemalloc with profiling support and the libgcc unwind backend.
+    run_in_image "$image" cmake --build "$build_dir" --target verify-jemalloc-libgcc
+    # 2. Build the demo executable and dl_iterate_phdr wrapper.
+    run_in_image "$image" cmake --build "$build_dir" --target repro-bits-libgcc
+    # 3. Run with profiling on under the newer glibc image and capture the result.
+    run_in_image "$image" bash ./scripts/run-case D
 
 matrix:
     #!/usr/bin/env bash
     set -euo pipefail
-    just case A
-    just case B
-    just case C
-    just case D
+    just case-A
+    just case-B
+    just case-C
+    just case-D
     printf '\n| Case | Expected | Observed | Verdict |\n'
     printf '|---|---|---|---|\n'
     for case_id in A B C D; do \
@@ -42,6 +94,6 @@ matrix:
     done
 
 clean:
-    rm -rf .build .deps results/raw results/*.md
+    rm -rf .build results/raw results/*.md
     mkdir -p results
     touch results/.gitkeep

@@ -9,9 +9,9 @@ run_case_in_container() {
     local timeout_seconds=${TIMEOUT_SECONDS:-8}
     local prefix wrapper repro summary raw_dir malloc_conf pid deadline timed_out rc observed bt stack_shape verdict
 
-    prefix=$(jemalloc_prefix "$backend")
-    wrapper="$(backend_build_dir "$backend")/out/libphdr_wrap.so"
-    repro="$(backend_build_dir "$backend")/out/repro"
+    prefix=$(jemalloc_prefix "$image" "$backend")
+    wrapper="$(backend_build_dir "$image" "$backend")/libphdr_wrap.so"
+    repro="$(backend_build_dir "$image" "$backend")/repro"
     summary="$results/$case_id.md"
     raw_dir="$results/raw/$case_id"
     [[ -x "$repro" && -f "$wrapper" && -f "$prefix/lib/libjemalloc.so" ]] ||
