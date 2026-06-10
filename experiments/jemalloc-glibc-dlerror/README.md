@@ -39,13 +39,14 @@ libgcc path. Case D proves the newer glibc path avoids this case.
 
 ## Files
 - `Containerfile`: Ubuntu 20.04 or 24.04 image.
-- `CMakeLists.txt`: build graph for jemalloc, LLVM libunwind, and repro bits.
 - `deps/jemalloc`: jemalloc 5.3.0 source, pinned as a git submodule.
 - `deps/llvm-project`: LLVM 17.0.6 source, pinned as a git submodule.
 - `src/repro.c`: only `malloc(16)` and `free`.
 - `src/phdr_wrap.c`: `dl_iterate_phdr` interposer.
 - `justfile`: user entry point for build and run commands.
 - `scripts/container.sh`: container build/run helpers.
+- `scripts/build`: simple build functions for jemalloc, LLVM libunwind, and
+  repro bits.
 - `scripts/run-case`: single-case runtime harness.
 - `results/`: small summaries; `results/raw/`: ignored raw logs.
 
@@ -65,13 +66,6 @@ just case-C
 just case-D
 ```
 
-Build one jemalloc backend:
-
-```bash
-just build-jemalloc libgcc
-just build-jemalloc llvm-libunwind
-```
-
 `justfile` is the user-facing flow. Read `case-A`, `case-B`, `case-C`, and
 `case-D` top-down to see the container version, build steps, and run step for
 each row. The scripts directory contains container helpers and the case runner.
@@ -83,10 +77,9 @@ options so the timeout case can attach `gdb`.
 Every backend builds jemalloc 5.3.0 from source with profiling enabled. The
 system jemalloc package is not used.
 
-CMake owns the build graph. `just build-jemalloc libgcc` builds and verifies
-the libgcc-backed jemalloc. `just build-jemalloc llvm-libunwind` builds and
-verifies the LLVM-libunwind-backed jemalloc. The `case-*` recipes build the
-demo and wrapper explicitly after the allocator backend is ready.
+`scripts/build` owns the build commands. The `case-*` recipes call explicit
+build functions for allocator builds, libunwind builds, and demo/wrapper builds.
+LLVM libunwind still uses its upstream CMake build internally.
 
 Downloaded tarballs are not used. The source lives in git submodules:
 

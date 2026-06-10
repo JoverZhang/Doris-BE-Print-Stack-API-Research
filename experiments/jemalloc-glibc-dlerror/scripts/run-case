@@ -47,7 +47,7 @@ validate_args() {
 }
 
 prepare_paths() {
-    build_dir="$root/.build/cmake-$image"
+    build_dir="$root/.build/ubuntu-$image"
     prefix="$build_dir/deps/jemalloc-$backend"
     wrapper="$build_dir/out/$backend/libphdr_wrap.so"
     repro="$build_dir/out/$backend/repro"
