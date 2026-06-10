@@ -22,12 +22,23 @@ git -C "$DORIS_REPO" clean -fd \
     -e 'be/ut_build*/' \
     -e 'be/ut_build*'
 
-# 2. Detach at the configured base commit, not at a branch name such as master.
+# 2. Clear disposable local reproducer artifacts owned by this project.
+if [[ -d "${PROJECT_ROOT}/reproduce" ]]; then
+    find "${PROJECT_ROOT}/reproduce" \
+        -mindepth 2 \
+        -maxdepth 2 \
+        -type d \
+        -name .tmp \
+        -prune \
+        -exec rm -rf {} +
+fi
+
+# 3. Detach at the configured base commit, not at a branch name such as master.
 git -C "$DORIS_REPO" switch --detach "$DORIS_BASE"
 
-# 3. Delete every phase2/* branch in the submodule.
+# 4. Delete every phase2/* branch in the submodule.
 for ref in $(git -C "$DORIS_REPO" for-each-ref --format="%(refname:short)" refs/heads/phase2/); do
     git -C "$DORIS_REPO" branch -D "$ref"
 done
 
-echo "phase2 reset complete: Doris source tree is clean, phase2/* branches removed, build dirs preserved"
+echo "phase2 reset complete: Doris source tree is clean, reproducer tmp cleared, phase2/* branches removed, build dirs preserved"

@@ -1,0 +1,17 @@
+diff --git a/be/src/common/phdr_cache.cpp b/be/src/common/phdr_cache.cpp
+index 338776763b..b7d1eb1c73 100644
+--- a/be/src/common/phdr_cache.cpp
++++ b/be/src/common/phdr_cache.cpp
+@@ -85 +84,0 @@ std::atomic<PHDRCache*> phdr_cache {};
+-/*
+@@ -107 +105,0 @@ extern "C"
+-*/
+diff --git a/be/src/service/doris_main.cpp b/be/src/service/doris_main.cpp
+index e42d976978..32a63fc0fa 100644
+--- a/be/src/service/doris_main.cpp
++++ b/be/src/service/doris_main.cpp
+@@ -68,0 +69 @@
++#include "common/phdr_cache.h"
+@@ -591 +592 @@ int main(int argc, char** argv) {
+-    // updatePHDRCache();
++    updatePHDRCache();
