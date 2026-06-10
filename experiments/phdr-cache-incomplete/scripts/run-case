@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$script_dir/.." && pwd)
+results="$root/results"
+
+die() {
+    echo "$*" >&2
+    exit 2
+}
+
+usage() {
+    die "usage: scripts/run-case <case> <scenario> <expected-quality|any> <expected-termination|any|signal>"
+}
+
+validate_args() {
+    [[ $# -eq 4 ]] || usage
+
+    case_id=$1
+    scenario=$2
+    expected_quality=$3
+    expected_termination=$4
+    timeout_seconds=${TIMEOUT_SECONDS:-8}
+
+    case "$case_id" in
+        A|B|C|D|E) ;;
+        *) die "case must be A, B, C, D, or E" ;;
+    esac
+    case "$scenario" in
+        complete|missing-plugin|stale-dlclose|poison-plugin|missing-main) ;;
+        *) die "unknown scenario: $scenario" ;;
+    esac
+    case "$expected_quality" in
+        full|prefix-truncated|wrong-frame|error-frame|no-frames|crashed|any) ;;
+        *) die "unknown expected quality: $expected_quality" ;;
+    esac
+    case "$expected_termination" in
+        normal|timeout|signal|any|failed*) ;;
+        *) die "unknown expected termination: $expected_termination" ;;
+    esac
+}
+
+prepare_paths() {
+    out="$root/.build/out"
+    driver="$out/driver"
+    raw_dir="$results/raw/$case_id"
+    frames_file="$raw_dir/frames.tsv"
+    stderr_file="$raw_dir/stderr.log"
+
+    [[ -x "$driver" && -f "$out/libplugin_a.so" && -f "$out/libplugin_b.so" ]] ||
+        die "missing build artifacts; run: scripts/build libunwind && scripts/build repro"
+}
+
+prepare_raw_dir() {
+    rm -rf "$raw_dir"
+    mkdir -p "$raw_dir"
+}
+
+run_driver() {
+    set +e
+    {
+        timeout "${timeout_seconds}s" env PHDR_PLUGIN_DIR="$out" "$driver" "$scenario"
+        rc=$?
+    } >"$frames_file" 2>"$stderr_file"
+    set -e
+}
+
+detect_termination() {
+    if [[ "$rc" == 0 ]]; then
+        observed_termination=normal
+    elif [[ "$rc" == 124 ]]; then
+        observed_termination=timeout
+    elif (( rc > 128 )); then
+        local sig=$((rc - 128))
+        local name
+        name=$(kill -l "$sig" 2>/dev/null || echo "$sig")
+        observed_termination="signal(SIG${name#SIG})"
+    else
+        observed_termination="failed($rc)"
+    fi
+}
+
+has_symbol() {
+    local pattern=$1
+    awk -F '\t' '$1 == "FRAME" { print $5 }' "$frames_file" | grep -Eq "$pattern"
+}
+
+detect_frame_quality() {
+    local frame_count plugin_prefix wrong_prefix
+
+    frame_count=$(awk -F '\t' '$1 == "FRAME" { c++ } END { print c + 0 }' "$frames_file")
+
+    case "$scenario" in
+        stale-dlclose)
+            plugin_prefix=plugin_b
+            wrong_prefix=plugin_a
+            ;;
+        *)
+            plugin_prefix=plugin_a
+            wrong_prefix=plugin_b
+            ;;
+    esac
+
+    if [[ "$observed_termination" == signal\(SIG* ]]; then
+        observed_quality=crashed
+    elif [[ "$frame_count" == 0 ]]; then
+        observed_quality=no-frames
+    elif awk -F '\t' '$1 == "FRAME" && ($3 == "0xffffffff" || $4 == "-" || $5 == "<unknown>") { found = 1 } END { exit found ? 0 : 1 }' "$frames_file"; then
+        observed_quality=error-frame
+    elif has_symbol "${wrong_prefix}_(entry|mid|leaf)"; then
+        observed_quality=wrong-frame
+    elif has_symbol "${plugin_prefix}_entry" \
+        && has_symbol "${plugin_prefix}_mid" \
+        && has_symbol "${plugin_prefix}_leaf" \
+        && has_symbol '^main$'; then
+        observed_quality=full
+    elif has_symbol 'capture_stack' || has_symbol "${plugin_prefix}_(entry|mid|leaf)"; then
+        observed_quality=prefix-truncated
+    else
+        observed_quality=wrong-frame
+    fi
+}
+
+quality_matches() {
+    [[ "$expected_quality" == any || "$expected_quality" == "$observed_quality" ]]
+}
+
+termination_matches() {
+    case "$expected_termination" in
+        any)
+            return 0
+            ;;
+        signal)
+            [[ "$observed_termination" == signal\(SIG* ]]
+            ;;
+        *)
+            [[ "$expected_termination" == "$observed_termination" ]]
+            ;;
+    esac
+}
+
+decide_verdict() {
+    verdict=fail
+    if quality_matches && termination_matches; then
+        verdict=pass
+    fi
+}
+
+write_case_summary() {
+    local summary="$results/$case_id.md"
+
+    cat >"$summary" <<EOF
+# Case $case_id
+- scenario: $scenario
+- expected frame quality: $expected_quality
+- observed frame quality: $observed_quality
+- expected termination: $expected_termination
+- observed termination: $observed_termination
+- exit code: $rc
+- verdict: $verdict
+- raw logs: results/raw/$case_id/
+- frames:
+EOF
+    awk -F '\t' '$1 == "FRAME" {
+        printf("  - #%s %s [%s]\n", $2, $5, $4)
+    }' "$frames_file" | sed -n '1,16p' >>"$summary"
+
+    if [[ -s "$stderr_file" ]]; then
+        {
+            echo "- cache excerpt:"
+            grep -E '^(SCENARIO|CACHE|POISON|LOAD|DLCLOSE|CALL)' "$stderr_file" \
+                | sed -n '1,24p' \
+                | sed -E 's/0x[0-9a-f]{4,}/<addr>/g' \
+                | sed 's/^/  - /'
+        } >>"$summary"
+    fi
+}
+
+print_case_result() {
+    printf '%s|%s|%s|%s|%s\n' "$case_id" "$scenario" "$observed_quality" "$observed_termination" "$verdict"
+}
+
+main() {
+    validate_args "$@"
+    prepare_paths
+    prepare_raw_dir
+    run_driver
+    detect_termination
+    detect_frame_quality
+    decide_verdict
+    write_case_summary
+    print_case_result
+    [[ "$verdict" == pass ]]
+}
+
+main "$@"

@@ -1,0 +1,30 @@
+# Case A
+- scenario: complete
+- expected frame quality: full
+- observed frame quality: full
+- expected termination: normal
+- observed termination: normal
+- exit code: 0
+- verdict: pass
+- raw logs: results/raw/A/
+- frames:
+  - #0 capture_stack [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+  - #1 plugin_a_leaf [/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so]
+  - #2 plugin_a_mid [/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so]
+  - #3 plugin_a_entry [/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so]
+  - #4 call_plugin [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+  - #5 main [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+  - #6 __libc_start_main [/lib/x86_64-linux-gnu/libc.so.6]
+  - #7 _start [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+- cache excerpt:
+  - SCENARIO	complete
+  - LOAD	/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so
+  - CACHE	active=1	entries=7
+  - CACHE	0	base=<addr>	phdr=<addr>	phnum=11	name=<main>
+  - CACHE	1	base=<addr>	phdr=<addr>	phnum=4	name=linux-vdso.so.1
+  - CACHE	2	base=<addr>	phdr=<addr>	phnum=11	name=/lib/x86_64-linux-gnu/libdl.so.2
+  - CACHE	3	base=<addr>	phdr=<addr>	phnum=13	name=/lib/x86_64-linux-gnu/libpthread.so.0
+  - CACHE	4	base=<addr>	phdr=<addr>	phnum=14	name=/lib/x86_64-linux-gnu/libc.so.6
+  - CACHE	5	base=<addr>	phdr=<addr>	phnum=11	name=/lib64/ld-linux-x86-64.so.2
+  - CACHE	6	base=<addr>	phdr=<addr>	phnum=11	name=/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so
+  - CALL	plugin_a_entry	complete

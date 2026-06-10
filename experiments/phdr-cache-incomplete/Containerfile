@@ -1,0 +1,23 @@
+ARG UBUNTU_VERSION=20.04
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        ca-certificates \
+        file \
+        g++ \
+        gcc \
+        gdb \
+        git \
+        libtool \
+        make \
+        pkg-config \
+        procps \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work/experiments/phdr-cache-incomplete

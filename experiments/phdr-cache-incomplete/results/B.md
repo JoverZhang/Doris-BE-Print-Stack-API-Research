@@ -1,0 +1,26 @@
+# Case B
+- scenario: missing-plugin
+- expected frame quality: prefix-truncated
+- observed frame quality: prefix-truncated
+- expected termination: normal
+- observed termination: normal
+- exit code: 0
+- verdict: pass
+- raw logs: results/raw/B/
+- frames:
+  - #0 capture_stack [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+  - #1 plugin_a_leaf [/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so]
+  - #2 main [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+  - #3 __libc_start_main [/lib/x86_64-linux-gnu/libc.so.6]
+  - #4 _start [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+- cache excerpt:
+  - SCENARIO	missing-plugin
+  - CACHE	active=1	entries=6
+  - CACHE	0	base=<addr>	phdr=<addr>	phnum=11	name=<main>
+  - CACHE	1	base=<addr>	phdr=<addr>	phnum=4	name=linux-vdso.so.1
+  - CACHE	2	base=<addr>	phdr=<addr>	phnum=11	name=/lib/x86_64-linux-gnu/libdl.so.2
+  - CACHE	3	base=<addr>	phdr=<addr>	phnum=13	name=/lib/x86_64-linux-gnu/libpthread.so.0
+  - CACHE	4	base=<addr>	phdr=<addr>	phnum=14	name=/lib/x86_64-linux-gnu/libc.so.6
+  - CACHE	5	base=<addr>	phdr=<addr>	phnum=11	name=/lib64/ld-linux-x86-64.so.2
+  - LOAD	/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so
+  - CALL	plugin_a_entry	missing-plugin

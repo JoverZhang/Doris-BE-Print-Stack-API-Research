@@ -1,0 +1,82 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+default:
+    @just --list
+
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/container.sh
+    image=$(build_image 20.04)
+    run_in_image "$image" bash ./scripts/build libunwind
+    run_in_image "$image" bash ./scripts/build repro
+
+case-A:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/container.sh
+    image=$(build_image 20.04)
+    run_in_image "$image" bash ./scripts/build libunwind
+    run_in_image "$image" bash ./scripts/build repro
+    run_in_image "$image" bash ./scripts/run-case A complete full normal
+
+case-B:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/container.sh
+    image=$(build_image 20.04)
+    run_in_image "$image" bash ./scripts/build libunwind
+    run_in_image "$image" bash ./scripts/build repro
+    run_in_image "$image" bash ./scripts/run-case B missing-plugin prefix-truncated normal
+
+case-C:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/container.sh
+    image=$(build_image 20.04)
+    run_in_image "$image" bash ./scripts/build libunwind
+    run_in_image "$image" bash ./scripts/build repro
+    run_in_image "$image" bash ./scripts/run-case C stale-dlclose full normal
+
+case-D:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/container.sh
+    image=$(build_image 20.04)
+    run_in_image "$image" bash ./scripts/build libunwind
+    run_in_image "$image" bash ./scripts/build repro
+    run_in_image "$image" bash ./scripts/run-case D poison-plugin crashed signal
+
+case-E:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/container.sh
+    image=$(build_image 20.04)
+    run_in_image "$image" bash ./scripts/build libunwind
+    run_in_image "$image" bash ./scripts/build repro
+    run_in_image "$image" bash ./scripts/run-case E missing-main error-frame normal
+
+matrix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just case-A
+    just case-B
+    just case-C
+    just case-D
+    just case-E
+    printf '\n| Case | Scenario | Expected quality | Observed quality | Expected termination | Observed termination | Verdict |\n'
+    printf '|---|---|---|---|---|---|---|\n'
+    for case_id in A B C D E; do \
+        scenario=$(sed -n 's/^- scenario: //p' "results/$case_id.md"); \
+        expected_quality=$(sed -n 's/^- expected frame quality: //p' "results/$case_id.md"); \
+        observed_quality=$(sed -n 's/^- observed frame quality: //p' "results/$case_id.md"); \
+        expected_term=$(sed -n 's/^- expected termination: //p' "results/$case_id.md"); \
+        observed_term=$(sed -n 's/^- observed termination: //p' "results/$case_id.md"); \
+        verdict=$(sed -n 's/^- verdict: //p' "results/$case_id.md"); \
+        printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$case_id" "$scenario" "$expected_quality" "$observed_quality" "$expected_term" "$observed_term" "$verdict"; \
+    done
+
+clean:
+    rm -rf .build results/raw results/*.md
+    mkdir -p results
+    touch results/.gitkeep

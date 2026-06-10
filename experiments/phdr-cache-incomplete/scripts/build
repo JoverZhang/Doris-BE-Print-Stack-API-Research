@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$script_dir/.." && pwd)
+jobs=${BUILD_JOBS:-$(nproc)}
+cc_cmd=${CC:-cc}
+
+libunwind_src="$root/../jemalloc-glibc-dlerror/deps/libunwind"
+build="$root/.build"
+prefix="$build/deps/libunwind"
+out="$build/out"
+
+die() {
+    echo "$*" >&2
+    exit 2
+}
+
+usage() {
+    die "usage: scripts/build <libunwind|repro>"
+}
+
+require_libunwind_source() {
+    [[ -f "$libunwind_src/configure.ac" ]] ||
+        die "missing libunwind source: $libunwind_src"
+}
+
+copy_source() {
+    local src=$1 dest=$2
+
+    rm -rf "$dest"
+    mkdir -p "$dest"
+    cp -R "$src/." "$dest/"
+}
+
+build_libunwind() {
+    local src_copy="$build/src/libunwind"
+    local log="$build/logs/libunwind-configure.log"
+
+    require_libunwind_source
+    [[ -f "$prefix/lib/libunwind.a" && -f "$prefix/include/libunwind.h" ]] && return
+
+    echo "build libunwind"
+    rm -rf "$prefix"
+    mkdir -p "$(dirname "$log")"
+    copy_source "$libunwind_src" "$src_copy"
+
+    (
+        cd "$src_copy"
+        autoreconf -i
+        CFLAGS="-O2 -fPIC" ./configure --prefix="$prefix" \
+            --enable-static --disable-shared \
+            --disable-documentation --disable-tests \
+            --disable-minidebuginfo --disable-zlibdebuginfo | tee "$log"
+    )
+    make -C "$src_copy" -j "$jobs"
+    make -C "$src_copy" install
+    test -f "$prefix/lib/libunwind.a"
+    test -f "$prefix/include/libunwind.h"
+}
+
+build_repro() {
+    [[ -f "$prefix/lib/libunwind.a" && -f "$prefix/include/libunwind.h" ]] ||
+        die "missing libunwind; run: scripts/build libunwind"
+
+    echo "build repro"
+    mkdir -p "$out"
+
+    local common_flags=(
+        -O1 -g
+        -fno-omit-frame-pointer
+        -fno-optimize-sibling-calls
+        -fasynchronous-unwind-tables
+    )
+    local plugin_flags=(
+        -O1 -g
+        -fPIC -shared
+        -fomit-frame-pointer
+        -fno-optimize-sibling-calls
+        -fasynchronous-unwind-tables
+    )
+
+    "$cc_cmd" "${plugin_flags[@]}" "$root/src/plugin_a.c" -o "$out/libplugin_a.so"
+    "$cc_cmd" "${plugin_flags[@]}" "$root/src/plugin_b.c" -o "$out/libplugin_b.so"
+    "$cc_cmd" "${common_flags[@]}" -DUNW_LOCAL_ONLY -I"$prefix/include" \
+        -rdynamic "$root/src/driver.c" "$root/src/phdr_cache.c" \
+        "$prefix/lib/libunwind.a" -ldl -pthread -o "$out/driver"
+}
+
+cmd=${1:-}
+shift || true
+
+case "$cmd" in
+    libunwind)
+        [[ $# -eq 0 ]] || usage
+        build_libunwind
+        ;;
+    repro)
+        [[ $# -eq 0 ]] || usage
+        build_repro
+        ;;
+    *)
+        usage
+        ;;
+esac

@@ -1,0 +1,25 @@
+# Case D
+- scenario: poison-plugin
+- expected frame quality: crashed
+- observed frame quality: crashed
+- expected termination: signal
+- observed termination: signal(SIGSEGV)
+- exit code: 139
+- verdict: pass
+- raw logs: results/raw/D/
+- frames:
+  - #0 capture_stack [/work/experiments/phdr-cache-incomplete/.build/out/driver]
+  - #1 plugin_a_leaf [/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so]
+- cache excerpt:
+  - SCENARIO	poison-plugin
+  - LOAD	/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so
+  - POISON	libplugin_a.so	changed=1
+  - CACHE	active=1	entries=7
+  - CACHE	0	base=<addr>	phdr=<addr>	phnum=11	name=<main>
+  - CACHE	1	base=<addr>	phdr=<addr>	phnum=4	name=linux-vdso.so.1
+  - CACHE	2	base=<addr>	phdr=<addr>	phnum=11	name=/lib/x86_64-linux-gnu/libdl.so.2
+  - CACHE	3	base=<addr>	phdr=<addr>	phnum=13	name=/lib/x86_64-linux-gnu/libpthread.so.0
+  - CACHE	4	base=<addr>	phdr=<addr>	phnum=14	name=/lib/x86_64-linux-gnu/libc.so.6
+  - CACHE	5	base=<addr>	phdr=<addr>	phnum=11	name=/lib64/ld-linux-x86-64.so.2
+  - CACHE	6	base=<addr>	phdr=0x1	phnum=11	name=/work/experiments/phdr-cache-incomplete/.build/out/libplugin_a.so
+  - CALL	plugin_a_entry	poison-plugin
