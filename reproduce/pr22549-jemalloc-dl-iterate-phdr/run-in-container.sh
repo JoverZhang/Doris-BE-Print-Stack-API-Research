@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Reason: create a deterministic feedback loop for apache/doris#22549. The
-# loop applies the old PHDR-cache override, rebuilds only the affected BE
-# pieces, then interrupts gdb after jemalloc deadlocks before main().
+# loop applies the old PHDR-cache override, proves the stock jemalloc profiling
+# deadlock, then proves the phase2 prof-libunwind jemalloc cache reaches main.
 # Local: reproduce/pr22549-jemalloc-dl-iterate-phdr.
 set -euo pipefail
 
@@ -11,11 +11,14 @@ source "${PROJECT_ROOT}/scripts/phase2/_common.sh"
 
 patch_file="${script_dir}/repro.patch"
 expected_file="${script_dir}/expected-key-frames.txt"
+thirdparty_libunwind_patch="${PROJECT_ROOT}/patches/ck-phdr-unwind/0004-thirdparty-ck-phdr-unwind-jemalloc-with-libunwind-ba.patch"
 out_root="${script_dir}/.tmp"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 out_dir="${out_root}/${run_id}"
 build_dir="${DORIS_REPO}/be/build_Release"
 binary="${build_dir}/src/service/doris_be"
+target_jemalloc_archive="${DORIS_THIRDPARTY:-/var/local/thirdparty}/installed/lib/libjemalloc_doris.a"
+stock_jemalloc_backup="${out_dir}/stock-libjemalloc_doris.a"
 ninja="${NINJA:-/var/local/ldb-toolchain/bin/ninja}"
 gdb="${GDB:-/var/local/ldb-toolchain/bin/gdb}"
 if [[ -x /var/local/ldb-toolchain/bin/nm ]]; then
@@ -146,6 +149,19 @@ assert_expected_stack() {
     fi
 }
 
+backup_stock_jemalloc_target() {
+    [[ -f "$target_jemalloc_archive" ]] || \
+        fail_with_log "missing target jemalloc archive: ${target_jemalloc_archive}"
+    cp -a "$target_jemalloc_archive" "$stock_jemalloc_backup"
+    sha256sum "$stock_jemalloc_backup" >"${out_dir}/stock-libjemalloc_doris.sha256"
+}
+
+restore_stock_jemalloc_target() {
+    if [[ -f "$stock_jemalloc_backup" ]]; then
+        install -m 0644 "$stock_jemalloc_backup" "$target_jemalloc_archive"
+    fi
+}
+
 restore_clean_build_best_effort() {
     local log_file="${out_dir}/cleanup-rebuild.log"
     : >"$log_file"
@@ -153,6 +169,7 @@ restore_clean_build_best_effort() {
         echo "cleanup: missing ${build_dir}/build.ninja; skipped clean relink" >>"$log_file"
         return 0
     fi
+    restore_stock_jemalloc_target || return 1
     source_doris_env "$log_file" || return 1
     "$ninja" -C "$build_dir" \
         src/common/libCommon.a \
@@ -207,6 +224,7 @@ fi
 clean_doris_worktree
 git -C "$DORIS_REPO" switch --detach "$DORIS_BASE" >/dev/null
 git -C "$DORIS_REPO" apply --unidiff-zero "$patch_file"
+backup_stock_jemalloc_target
 
 echo "building doris_be with PHDR-cache override, jobs=${jobs}"
 build_and_link "${out_dir}/build.log"
@@ -249,10 +267,13 @@ run_gdb_case() {
 
 prof_stack="${out_dir}/gdb-stack.txt"
 control_stack="${out_dir}/control-prof-false.txt"
+libunwind_stack="${out_dir}/libunwind-prof-main.txt"
+prof_conf_libgcc="prof:true,prof_active:true,lg_prof_interval:20,prof_prefix:${out_dir}/jemalloc_heap_profile_libgcc"
+prof_conf_libunwind="prof:true,prof_active:true,lg_prof_interval:20,prof_prefix:${out_dir}/jemalloc_heap_profile_libunwind"
 
 echo "running gdb repro, timeout=${timeout_s}s"
 run_gdb_case "prof-active" \
-    "prof:true,prof_active:true,lg_prof_interval:20,prof_prefix:${out_dir}/jemalloc_heap_profile" \
+    "$prof_conf_libgcc" \
     "$timeout_s" \
     "$prof_stack"
 
@@ -274,7 +295,34 @@ run_gdb_case "prof-false" \
 grep -q 'Breakpoint 1, main' "$control_stack" || \
     fail_with_log "control case did not reach main with prof:false" "$control_stack"
 
-echo "PASS: reproduced pre-main jemalloc/dl_iterate_phdr deadlock"
+echo "preparing jemalloc prof-libunwind mitigation via phase2 cache"
+git -C "$DORIS_REPO" apply "$thirdparty_libunwind_patch"
+DORIS_REPO="$DORIS_REPO" "$PROJECT_ROOT/scripts/phase2/phase2-jemalloc.sh" \
+    >"${out_dir}/phase2-jemalloc.log" 2>&1 || \
+    fail_with_log "phase2 jemalloc prof-libunwind setup failed" "${out_dir}/phase2-jemalloc.log"
+sha256sum "$target_jemalloc_archive" >"${out_dir}/libunwind-libjemalloc_doris.sha256"
+
+echo "relinking doris_be with jemalloc prof-libunwind"
+build_and_link "${out_dir}/build-libunwind.log"
+record_symbols "${out_dir}/patched-symbols-libunwind.txt"
+
+echo "running gdb mitigation with jemalloc prof-libunwind, timeout=${control_timeout_s}s"
+run_gdb_case "prof-libunwind" \
+    "$prof_conf_libunwind" \
+    "$control_timeout_s" \
+    "$libunwind_stack"
+
+libunwind_rc="$(cat "${libunwind_stack}.rc")"
+[[ "$libunwind_rc" == "0" ]] || \
+    fail_with_log "expected prof-libunwind gdb rc=0, got rc=${libunwind_rc}" "$libunwind_stack"
+grep -q 'Breakpoint 1, main' "$libunwind_stack" || \
+    fail_with_log "prof-libunwind case did not reach main" "$libunwind_stack"
+if grep -q 'getOriginalDLIteratePHDR' "$libunwind_stack"; then
+    fail_with_log "prof-libunwind case still re-entered getOriginalDLIteratePHDR" "$libunwind_stack"
+fi
+
+echo "PASS: reproduced stock jemalloc deadlock and prof-libunwind mitigation"
 echo "stack: ${prof_stack}"
+echo "mitigation: ${libunwind_stack}"
 echo "key frames:"
 sed -n '1,80p' "${out_dir}/key-stack.txt"
