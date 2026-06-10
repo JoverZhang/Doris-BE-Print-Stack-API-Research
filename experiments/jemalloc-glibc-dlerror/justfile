@@ -9,7 +9,7 @@ case-A:
     source scripts/container.sh
     image=$(build_image 20.04)
     # 1. Build jemalloc with profiling support and the libgcc unwind backend.
-    run_in_image "$image" bash ./scripts/build jemalloc-libgcc 20.04
+    run_in_image "$image" bash ./scripts/build jemalloc 20.04 libgcc
     # 2. Build the demo executable and dl_iterate_phdr wrapper.
     run_in_image "$image" bash ./scripts/build repro 20.04 libgcc
     # 3. Run with profiling on and capture the timeout/gdb result.
@@ -21,7 +21,7 @@ case-B:
     source scripts/container.sh
     image=$(build_image 20.04)
     # 1. Build the same libgcc-backed jemalloc as Case A.
-    run_in_image "$image" bash ./scripts/build jemalloc-libgcc 20.04
+    run_in_image "$image" bash ./scripts/build jemalloc 20.04 libgcc
     # 2. Build the same demo executable and wrapper as Case A.
     run_in_image "$image" bash ./scripts/build repro 20.04 libgcc
     # 3. Run with profiling off and capture the completion result.
@@ -37,7 +37,7 @@ case-C:
     # 2. Add the unw_backtrace compatibility object expected by jemalloc.
     run_in_image "$image" bash ./scripts/build libunwind-jemalloc-archive 20.04
     # 3. Build jemalloc with profiling support and the LLVM libunwind backend.
-    run_in_image "$image" bash ./scripts/build jemalloc-llvm-libunwind 20.04
+    run_in_image "$image" bash ./scripts/build jemalloc 20.04 llvm-libunwind
     # 4. Build the demo executable and dl_iterate_phdr wrapper.
     run_in_image "$image" bash ./scripts/build repro 20.04 llvm-libunwind
     # 5. Run with profiling on and capture the completion result.
@@ -49,7 +49,7 @@ case-D:
     source scripts/container.sh
     image=$(build_image 24.04)
     # 1. Build jemalloc with profiling support and the libgcc unwind backend.
-    run_in_image "$image" bash ./scripts/build jemalloc-libgcc 24.04
+    run_in_image "$image" bash ./scripts/build jemalloc 24.04 libgcc
     # 2. Build the demo executable and dl_iterate_phdr wrapper.
     run_in_image "$image" bash ./scripts/build repro 24.04 libgcc
     # 3. Run with profiling on under the newer glibc image and capture the result.

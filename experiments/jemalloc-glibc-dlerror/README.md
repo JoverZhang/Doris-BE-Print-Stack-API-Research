@@ -80,6 +80,8 @@ system jemalloc package is not used.
 `scripts/build` owns the build commands. The `case-*` recipes call explicit
 build functions for allocator builds, libunwind builds, and demo/wrapper builds.
 LLVM libunwind still uses its upstream CMake build internally.
+Jemalloc uses one command shape:
+`scripts/build jemalloc <ubuntu-version> <libgcc|llvm-libunwind>`.
 
 Downloaded tarballs are not used. The source lives in git submodules:
 

@@ -15,7 +15,7 @@ die() {
 }
 
 usage() {
-    die "usage: scripts/build <jemalloc-libgcc|llvm-libunwind|libunwind-jemalloc-archive|jemalloc-llvm-libunwind|repro> <ubuntu-version> [backend]"
+    die "usage: scripts/build <jemalloc|llvm-libunwind|libunwind-jemalloc-archive|repro> <ubuntu-version> [backend]"
 }
 
 require_image() {
@@ -46,6 +46,11 @@ build_dir() {
     echo "$root/.build/ubuntu-$1"
 }
 
+checked_build_dir() {
+    require_image "$1"
+    build_dir "$1"
+}
+
 verify_jemalloc_log() {
     local log=$1 prof_libunwind=$2 prof_libgcc=$3
 
@@ -62,43 +67,11 @@ copy_jemalloc_source() {
     cp -R "$jemalloc_src/." "$dest/"
 }
 
-build_jemalloc_libgcc() {
-    local image=$1 build prefix src_copy log
-
-    require_image "$image"
-    require_jemalloc_source
-    build=$(build_dir "$image")
-    prefix="$build/deps/jemalloc-libgcc"
-    src_copy="$build/src/jemalloc-libgcc"
-    log="$build/logs/libgcc/jemalloc-configure.log"
-
-    if [[ -f "$prefix/lib/libjemalloc.so" ]]; then
-        verify_jemalloc_log "$log" 0 1
-        return
-    fi
-
-    echo "build jemalloc-libgcc for ubuntu:$image"
-    rm -rf "$prefix"
-    mkdir -p "$(dirname "$log")"
-    copy_jemalloc_source "$src_copy"
-
-    (
-        cd "$src_copy"
-        ./autogen.sh --prefix="$prefix" \
-            --enable-prof --enable-shared --disable-static \
-            --disable-prof-gcc --disable-prof-libunwind | tee "$log"
-    )
-    make -C "$src_copy" -j "$jobs" build_lib_shared
-    make -C "$src_copy" install_lib install_include
-    verify_jemalloc_log "$log" 0 1
-}
-
 build_llvm_libunwind() {
     local image=$1 build llvm_build prefix
 
-    require_image "$image"
     require_llvm_source
-    build=$(build_dir "$image")
+    build=$(checked_build_dir "$image")
     llvm_build="$build/llvm-libunwind-build"
     prefix="$build/deps/llvm-libunwind"
 
@@ -124,8 +97,7 @@ build_llvm_libunwind() {
 build_libunwind_jemalloc_archive() {
     local image=$1 build prefix compat_dir archive
 
-    require_image "$image"
-    build=$(build_dir "$image")
+    build=$(checked_build_dir "$image")
     prefix="$build/deps/llvm-libunwind"
     compat_dir="$build/llvm-libunwind-compat"
     archive="$prefix/lib/libunwind_jemalloc.a"
@@ -143,51 +115,74 @@ build_libunwind_jemalloc_archive() {
     ar rcs "$archive" "$compat_dir/unw_backtrace.o"
 }
 
-build_jemalloc_llvm_libunwind() {
-    local image=$1 build llvm_prefix archive prefix src_copy log
+build_jemalloc() {
+    local image=$1 backend=$2 build prefix src_copy log
+    local llvm_prefix archive
+    local prof_libunwind prof_libgcc
+    local configure_env=()
+    local configure_args=()
 
-    require_image "$image"
+    require_backend "$backend"
     require_jemalloc_source
-    require_llvm_source
-    build=$(build_dir "$image")
-    llvm_prefix="$build/deps/llvm-libunwind"
-    archive="$llvm_prefix/lib/libunwind_jemalloc.a"
-    prefix="$build/deps/jemalloc-llvm-libunwind"
-    src_copy="$build/src/jemalloc-llvm-libunwind"
-    log="$build/logs/llvm-libunwind/jemalloc-configure.log"
+    build=$(checked_build_dir "$image")
+    prefix="$build/deps/jemalloc-$backend"
+    src_copy="$build/src/jemalloc-$backend"
+    log="$build/logs/$backend/jemalloc-configure.log"
 
-    [[ -f "$archive" ]] ||
-        die "missing libunwind_jemalloc.a; run: scripts/build libunwind-jemalloc-archive $image"
+    case "$backend" in
+        libgcc)
+            prof_libunwind=0
+            prof_libgcc=1
+            configure_args=(--disable-prof-gcc --disable-prof-libunwind)
+            ;;
+        llvm-libunwind)
+            require_llvm_source
+            llvm_prefix="$build/deps/llvm-libunwind"
+            archive="$llvm_prefix/lib/libunwind_jemalloc.a"
+            [[ -f "$archive" ]] ||
+                die "missing libunwind_jemalloc.a; run: scripts/build libunwind-jemalloc-archive $image"
+            prof_libunwind=1
+            prof_libgcc=0
+            configure_env=(
+                "CPPFLAGS=-I$root/cmake/libunwind-compat -I$llvm_prefix/include"
+                "LDFLAGS=-L$llvm_prefix/lib -Wl,-rpath,$llvm_prefix/lib"
+            )
+            configure_args=(
+                --disable-prof-gcc
+                --enable-prof-libunwind
+                --disable-prof-libgcc
+                --with-static-libunwind="$archive"
+            )
+            ;;
+    esac
+
     if [[ -f "$prefix/lib/libjemalloc.so" ]]; then
-        verify_jemalloc_log "$log" 1 0
+        verify_jemalloc_log "$log" "$prof_libunwind" "$prof_libgcc"
         return
     fi
 
-    echo "build jemalloc-llvm-libunwind for ubuntu:$image"
+    echo "build jemalloc for ubuntu:$image backend:$backend"
     rm -rf "$prefix"
     mkdir -p "$(dirname "$log")"
     copy_jemalloc_source "$src_copy"
 
     (
         cd "$src_copy"
-        CPPFLAGS="-I$root/cmake/libunwind-compat -I$llvm_prefix/include" \
-            LDFLAGS="-L$llvm_prefix/lib -Wl,-rpath,$llvm_prefix/lib" \
-            ./autogen.sh --prefix="$prefix" \
+        env "${configure_env[@]}" ./autogen.sh \
+            --prefix="$prefix" \
             --enable-prof --enable-shared --disable-static \
-            --disable-prof-gcc --enable-prof-libunwind \
-            --disable-prof-libgcc --with-static-libunwind="$archive" | tee "$log"
+            "${configure_args[@]}" | tee "$log"
     )
     make -C "$src_copy" -j "$jobs" build_lib_shared
     make -C "$src_copy" install_lib install_include
-    verify_jemalloc_log "$log" 1 0
+    verify_jemalloc_log "$log" "$prof_libunwind" "$prof_libgcc"
 }
 
 build_repro() {
     local image=$1 backend=$2 build out
 
-    require_image "$image"
     require_backend "$backend"
-    build=$(build_dir "$image")
+    build=$(checked_build_dir "$image")
     out="$build/out/$backend"
 
     echo "build repro for ubuntu:$image backend:$backend"
@@ -200,21 +195,17 @@ cmd=${1:-}
 shift || true
 
 case "$cmd" in
-    jemalloc-libgcc)
-        [[ $# -eq 1 ]] || usage
-        build_jemalloc_libgcc "$1"
-        ;;
-    llvm-libunwind)
-        [[ $# -eq 1 ]] || usage
-        build_llvm_libunwind "$1"
+    jemalloc)
+        [[ $# -eq 2 ]] || usage
+        build_jemalloc "$1" "$2"
         ;;
     libunwind-jemalloc-archive)
         [[ $# -eq 1 ]] || usage
         build_libunwind_jemalloc_archive "$1"
         ;;
-    jemalloc-llvm-libunwind)
+    llvm-libunwind)
         [[ $# -eq 1 ]] || usage
-        build_jemalloc_llvm_libunwind "$1"
+        build_llvm_libunwind "$1"
         ;;
     repro)
         [[ $# -eq 2 ]] || usage
