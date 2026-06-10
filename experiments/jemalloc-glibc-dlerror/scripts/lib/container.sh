@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+container_lib_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$container_lib_dir/../.." && pwd)
+
 container_engine() {
     if [[ -n "${ENGINE:-}" ]]; then
         echo "$ENGINE"
@@ -17,7 +20,7 @@ container_run_args() {
 build_image() {
     local version=$1 engine tag
     engine=$(container_engine)
-    tag=$(image_tag "$version")
+    tag="jemalloc-glibc-dlerror:ubuntu-$version"
 
     "$engine" build -f "$root/Containerfile" --build-arg "UBUNTU_VERSION=$version" -t "$tag" "$root" >/dev/null
     echo "$tag"

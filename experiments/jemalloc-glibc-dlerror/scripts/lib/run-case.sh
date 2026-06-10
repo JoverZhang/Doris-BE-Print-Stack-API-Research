@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+run_case_lib_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$run_case_lib_dir/../.." && pwd)
+results="$root/results"
+
+die() {
+    echo "$*" >&2
+    exit 2
+}
+
 run_case_in_container() {
     local case_id=$1
     local image=$2
@@ -7,12 +16,12 @@ run_case_in_container() {
     local profiling=$4
     local expected=$5
     local timeout_seconds=${TIMEOUT_SECONDS:-8}
-    local prefix wrapper repro summary raw_dir malloc_conf pid deadline timed_out rc observed bt stack_shape verdict
+    local build_dir prefix wrapper repro raw_dir malloc_conf pid deadline timed_out rc observed bt stack_shape verdict
 
-    prefix=$(jemalloc_prefix "$image" "$backend")
-    wrapper="$(backend_build_dir "$image" "$backend")/libphdr_wrap.so"
-    repro="$(backend_build_dir "$image" "$backend")/repro"
-    summary="$results/$case_id.md"
+    build_dir="$root/.build/cmake-$image"
+    prefix="$build_dir/deps/jemalloc-$backend"
+    wrapper="$build_dir/out/$backend/libphdr_wrap.so"
+    repro="$build_dir/out/$backend/repro"
     raw_dir="$results/raw/$case_id"
     [[ -x "$repro" && -f "$wrapper" && -f "$prefix/lib/libjemalloc.so" ]] ||
         die "missing build artifacts for backend=$backend; run just build-jemalloc $backend first"

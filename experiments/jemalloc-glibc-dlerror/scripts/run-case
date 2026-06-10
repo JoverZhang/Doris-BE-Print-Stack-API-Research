@@ -2,9 +2,11 @@
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "$script_dir/lib/common.sh"
 source "$script_dir/lib/run-case.sh"
 
-case_id=${1:-}
-read -r image backend profiling expected <<<"$(case_row "$case_id")"
-run_case_in_container "$case_id" "$image" "$backend" "$profiling" "$expected"
+if [[ $# -ne 5 ]]; then
+    echo "usage: scripts/run-case <case> <ubuntu-version> <backend> <profiling> <expected>" >&2
+    exit 2
+fi
+
+run_case_in_container "$@"

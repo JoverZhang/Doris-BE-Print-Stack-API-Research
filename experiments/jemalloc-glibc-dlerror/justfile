@@ -6,7 +6,6 @@ default:
 build-jemalloc backend:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/common.sh
     source scripts/lib/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
@@ -16,7 +15,6 @@ build-jemalloc backend:
 case-A:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/common.sh
     source scripts/lib/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
@@ -26,12 +24,11 @@ case-A:
     # 2. Build the demo executable and dl_iterate_phdr wrapper.
     run_in_image "$image" cmake --build "$build_dir" --target repro-bits-libgcc
     # 3. Run with profiling on and capture the timeout/gdb result.
-    run_in_image "$image" bash ./scripts/run-case A
+    run_in_image "$image" bash ./scripts/run-case A 20.04 libgcc on deadlock
 
 case-B:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/common.sh
     source scripts/lib/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
@@ -41,12 +38,11 @@ case-B:
     # 2. Build the same demo executable and wrapper as Case A.
     run_in_image "$image" cmake --build "$build_dir" --target repro-bits-libgcc
     # 3. Run with profiling off and capture the completion result.
-    run_in_image "$image" bash ./scripts/run-case B
+    run_in_image "$image" bash ./scripts/run-case B 20.04 libgcc off completed
 
 case-C:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/common.sh
     source scripts/lib/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
@@ -60,12 +56,11 @@ case-C:
     # 4. Build the demo executable and dl_iterate_phdr wrapper.
     run_in_image "$image" cmake --build "$build_dir" --target repro-bits-llvm-libunwind
     # 5. Run with profiling on and capture the completion result.
-    run_in_image "$image" bash ./scripts/run-case C
+    run_in_image "$image" bash ./scripts/run-case C 20.04 llvm-libunwind on completed
 
 case-D:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/common.sh
     source scripts/lib/container.sh
     image=$(build_image 24.04)
     build_dir=".build/cmake-24.04"
@@ -75,7 +70,7 @@ case-D:
     # 2. Build the demo executable and dl_iterate_phdr wrapper.
     run_in_image "$image" cmake --build "$build_dir" --target repro-bits-libgcc
     # 3. Run with profiling on under the newer glibc image and capture the result.
-    run_in_image "$image" bash ./scripts/run-case D
+    run_in_image "$image" bash ./scripts/run-case D 24.04 libgcc on completed
 
 matrix:
     #!/usr/bin/env bash
