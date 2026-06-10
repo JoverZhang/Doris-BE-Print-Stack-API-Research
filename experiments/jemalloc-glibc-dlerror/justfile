@@ -6,7 +6,7 @@ default:
 build-jemalloc backend:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/container.sh
+    source scripts/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
     run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
@@ -15,7 +15,7 @@ build-jemalloc backend:
 case-A:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/container.sh
+    source scripts/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
     run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
@@ -29,7 +29,7 @@ case-A:
 case-B:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/container.sh
+    source scripts/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
     run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
@@ -43,7 +43,7 @@ case-B:
 case-C:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/container.sh
+    source scripts/container.sh
     image=$(build_image 20.04)
     build_dir=".build/cmake-20.04"
     run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja
@@ -61,7 +61,7 @@ case-C:
 case-D:
     #!/usr/bin/env bash
     set -euo pipefail
-    source scripts/lib/container.sh
+    source scripts/container.sh
     image=$(build_image 24.04)
     build_dir=".build/cmake-24.04"
     run_in_image "$image" cmake -S . -B "$build_dir" -G Ninja

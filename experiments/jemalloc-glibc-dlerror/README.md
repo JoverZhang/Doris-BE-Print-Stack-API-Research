@@ -45,7 +45,8 @@ libgcc path. Case D proves the newer glibc path avoids this case.
 - `src/repro.c`: only `malloc(16)` and `free`.
 - `src/phdr_wrap.c`: `dl_iterate_phdr` interposer.
 - `justfile`: user entry point for build and run commands.
-- `scripts/`: container and case-runner helpers.
+- `scripts/container.sh`: container build/run helpers.
+- `scripts/run-case`: single-case runtime harness.
 - `results/`: small summaries; `results/raw/`: ignored raw logs.
 
 ## Run

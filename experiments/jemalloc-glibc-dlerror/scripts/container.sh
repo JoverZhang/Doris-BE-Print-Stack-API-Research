@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-container_lib_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-root=$(cd "$container_lib_dir/../.." && pwd)
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+root=$(cd "$script_dir/.." && pwd)
 
 container_engine() {
     if [[ -n "${ENGINE:-}" ]]; then
