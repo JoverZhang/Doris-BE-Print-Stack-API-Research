@@ -10,6 +10,7 @@ PROJECT_ROOT="${PROJECT_ROOT:-$(cd "${script_dir}/../.." && pwd)}"
 source "${PROJECT_ROOT}/scripts/phase2/_common.sh"
 
 patch_file="${script_dir}/repro.patch"
+expected_file="${script_dir}/expected-key-frames.txt"
 out_root="${script_dir}/.tmp"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 out_dir="${out_root}/${run_id}"
@@ -118,6 +119,31 @@ record_symbols() {
         "$nm_tool" -an "$binary" \
             | grep -E 'dl_iterate_phdr|updatePHDRCache|hasPHDRCache' || true
     } >"$output_file"
+}
+
+normalize_stack_excerpt() {
+    local stack_file="$1"
+    awk '
+        /^Thread 1 \(Thread / { in_stack = 1; print; next }
+        in_stack && /^#[0-9]+/ { print; next }
+        in_stack { exit }
+    ' "$stack_file" \
+        | sed -E \
+            -e 's/0x[0-9a-f]+/<addr>/g' \
+            -e 's/LWP [0-9]+/LWP <lwp>/g'
+}
+
+assert_expected_stack() {
+    local stack_file="$1"
+    local normalized_file="${out_dir}/normalized-stack.txt"
+    local diff_file="${out_dir}/expected-stack.diff"
+
+    normalize_stack_excerpt "$stack_file" >"$normalized_file"
+    if ! diff -u "$expected_file" "$normalized_file" >"$diff_file"; then
+        echo "error: normalized stack did not match ${expected_file}" >&2
+        cat "$diff_file" >&2
+        exit 1
+    fi
 }
 
 restore_clean_build_best_effort() {
@@ -230,16 +256,12 @@ run_gdb_case "prof-active" \
     "$timeout_s" \
     "$prof_stack"
 
-grep -n -E 'malloc_mutex_lock_final|malloc_init_hard|_dlerror_run|dlsym|getOriginalDLIteratePHDR|dl_iterate_phdr|_Unwind_Backtrace|je_prof_boot2|_dl_init_internal|_dl_start_user' \
+grep -n -E 'malloc_mutex_lock_final|malloc_init_hard|jecalloc|_dlerror_run|dlsym|getOriginalDLIteratePHDR|dl_iterate_phdr|_Unwind_Backtrace|je_prof_boot2|AllocateHeap|_dl_init_internal|_dl_start_user' \
     "$prof_stack" >"${out_dir}/key-stack.txt" || true
 
 prof_rc="$(cat "${prof_stack}.rc")"
 [[ "$prof_rc" == "124" ]] || fail_with_log "expected gdb timeout rc=124, got rc=${prof_rc}" "$prof_stack"
-grep -q 'getOriginalDLIteratePHDR' "$prof_stack" || fail_with_log "missing getOriginalDLIteratePHDR frame" "$prof_stack"
-grep -q 'dl_iterate_phdr' "$prof_stack" || fail_with_log "missing dl_iterate_phdr frame" "$prof_stack"
-grep -q '_Unwind_Backtrace' "$prof_stack" || fail_with_log "missing _Unwind_Backtrace frame" "$prof_stack"
-grep -q 'je_prof_boot2' "$prof_stack" || fail_with_log "missing je_prof_boot2 frame" "$prof_stack"
-grep -q 'malloc_init_hard' "$prof_stack" || fail_with_log "missing nested malloc_init_hard frame" "$prof_stack"
+assert_expected_stack "$prof_stack"
 if grep -q 'Breakpoint 1, main' "$prof_stack"; then
     fail_with_log "unexpectedly reached main with jemalloc profiling active" "$prof_stack"
 fi

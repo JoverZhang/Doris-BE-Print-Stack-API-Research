@@ -22,6 +22,11 @@ reached; gdb is interrupted by timeout and the captured stack contains
 `getOriginalDLIteratePHDR`, `dl_iterate_phdr`, `_Unwind_Backtrace`,
 `je_prof_boot2`, and nested `malloc_init_hard`.
 
+The stable committed result is `expected-key-frames.txt`, a normalized excerpt
+of the gdb stack with run-specific addresses and LWP ids replaced by
+placeholders. The raw `gdb-stack.txt` file remains under `.tmp/latest/` for
+inspection.
+
 Artifacts are written under:
 
 ```text
