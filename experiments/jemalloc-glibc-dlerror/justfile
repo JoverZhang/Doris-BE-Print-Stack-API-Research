@@ -1,18 +1,41 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-engine := `if command -v podman >/dev/null 2>&1; then echo podman; else echo docker; fi`
-
 default:
     @just --list
 
-image20:
-    {{engine}} build -f Containerfile --build-arg UBUNTU_VERSION=20.04 -t jemalloc-glibc-dlerror:ubuntu-20.04 .
+build-jemalloc backend:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/common.sh
+    source scripts/lib/container.sh
+    image=$(build_image 20.04)
+    run_in_image "$image" bash ./scripts/build-jemalloc "{{backend}}"
 
-image24:
-    {{engine}} build -f Containerfile --build-arg UBUNTU_VERSION=24.04 -t jemalloc-glibc-dlerror:ubuntu-24.04 .
+case case_id:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source scripts/lib/common.sh
+    source scripts/lib/container.sh
+    read -r image backend profiling expected <<<"$(case_row "{{case_id}}")"
+    tag=$(build_image "$image")
+    run_in_image "$tag" bash ./scripts/build-jemalloc "$backend" >/dev/null
+    run_in_image "$tag" bash ./scripts/run-case "{{case_id}}"
 
 matrix:
-    ./scripts/run-matrix.sh
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just case A
+    just case B
+    just case C
+    just case D
+    printf '\n| Case | Expected | Observed | Verdict |\n'
+    printf '|---|---|---|---|\n'
+    for case_id in A B C D; do \
+        expected=$(sed -n 's/^- expected: //p' "results/$case_id.md"); \
+        observed=$(sed -n 's/^- observed: //p' "results/$case_id.md"); \
+        verdict=$(sed -n 's/^- verdict: //p' "results/$case_id.md"); \
+        printf '| %s | %s | %s | %s |\n' "$case_id" "$expected" "$observed" "$verdict"; \
+    done
 
 clean:
     rm -rf .build .cache .deps results/raw results/*.md

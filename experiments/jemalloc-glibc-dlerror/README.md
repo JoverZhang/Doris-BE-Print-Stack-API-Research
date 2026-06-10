@@ -41,9 +41,8 @@ libgcc path. Case D proves the newer glibc path avoids this case.
 - `Containerfile`: Ubuntu 20.04 or 24.04 image.
 - `src/repro.c`: only `malloc(16)` and `free`.
 - `src/phdr_wrap.c`: `dl_iterate_phdr` interposer.
-- `scripts/build.sh`: builds jemalloc and local repro artifacts.
-- `scripts/run-one.sh`: runs one fixed row and records a summary.
-- `scripts/run-matrix.sh`: runs rows A-D and prints a table.
+- `justfile`: user entry point for build and run commands.
+- `scripts/`: internal shell implementation.
 - `results/`: small summaries; `results/raw/`: ignored raw logs.
 
 ## Run
@@ -53,29 +52,30 @@ From this directory:
 just matrix
 ```
 
-Without `just`:
+Run one row:
 
 ```bash
-./scripts/run-matrix.sh
+just case A
 ```
+
+Build one jemalloc backend:
+
+```bash
+just build-jemalloc libgcc
+just build-jemalloc llvm-libunwind
+```
+
+`justfile` is the only user-facing interface. The scripts directory contains
+internal leaf commands and shared shell modules.
 
 The runner uses `podman` when present, otherwise `docker`. It passes ptrace
-options so the timeout case can attach `gdb`:
-
-```text
---cap-add SYS_PTRACE --security-opt seccomp=unconfined
-```
+options so the timeout case can attach `gdb`.
 
 ## Build
-`scripts/build.sh` accepts:
+Every backend builds jemalloc 5.3.0 from source with profiling enabled. The
+system jemalloc package is not used.
 
-```text
-JEMALLOC_BACKEND=libgcc
-JEMALLOC_BACKEND=llvm-libunwind
-```
-
-Both paths build jemalloc 5.3.0 from source with profiling enabled. The
-`libgcc` path disables libunwind and gcc intrinsic fallback. That leaves
+The `libgcc` backend disables libunwind and gcc intrinsic fallback. That leaves
 jemalloc's libgcc `_Unwind_Backtrace` backend enabled.
 
 The `llvm-libunwind` path builds LLVM libunwind from source. It configures

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$script_dir/lib/common.sh"
+source "$script_dir/lib/fetch.sh"
+source "$script_dir/lib/build-jemalloc.sh"
+
+backend=${1:-}
+require_backend "$backend"
+build_jemalloc_backend "$backend"
+echo "built jemalloc backend=$backend"
+echo "jemalloc=$(jemalloc_prefix "$backend")/lib/libjemalloc.so"
+echo "wrapper=$(backend_build_dir "$backend")/out/libphdr_wrap.so"
+echo "repro=$(backend_build_dir "$backend")/out/repro"
