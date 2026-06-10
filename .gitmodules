@@ -26,7 +26,7 @@
 	path = experiments/jemalloc-glibc-dlerror/deps/jemalloc
 	url = https://github.com/jemalloc/jemalloc.git
 	shallow = true
-[submodule "experiments/jemalloc-glibc-dlerror/deps/llvm-project"]
-	path = experiments/jemalloc-glibc-dlerror/deps/llvm-project
-	url = https://github.com/llvm/llvm-project.git
+[submodule "experiments/jemalloc-glibc-dlerror/deps/libunwind"]
+	path = experiments/jemalloc-glibc-dlerror/deps/libunwind
+	url = https://github.com/libunwind/libunwind.git
 	shallow = true

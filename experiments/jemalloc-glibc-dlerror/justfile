@@ -32,16 +32,14 @@ case-C:
     set -euo pipefail
     source scripts/container.sh
     image=$(build_image 20.04)
-    # 1. Build LLVM libunwind from the local submodule.
-    run_in_image "$image" bash ./scripts/build llvm-libunwind 20.04
-    # 2. Add the unw_backtrace compatibility object expected by jemalloc.
-    run_in_image "$image" bash ./scripts/build libunwind-jemalloc-archive 20.04
-    # 3. Build jemalloc with profiling support and the LLVM libunwind backend.
-    run_in_image "$image" bash ./scripts/build jemalloc 20.04 llvm-libunwind
-    # 4. Build the demo executable and dl_iterate_phdr wrapper.
-    run_in_image "$image" bash ./scripts/build repro 20.04 llvm-libunwind
-    # 5. Run with profiling on and capture the completion result.
-    run_in_image "$image" bash ./scripts/run-case C 20.04 llvm-libunwind on completed
+    # 1. Build nongnu libunwind from the local submodule.
+    run_in_image "$image" bash ./scripts/build libunwind 20.04
+    # 2. Build jemalloc with profiling support and the libunwind backend.
+    run_in_image "$image" bash ./scripts/build jemalloc 20.04 libunwind
+    # 3. Build the demo executable and dl_iterate_phdr wrapper.
+    run_in_image "$image" bash ./scripts/build repro 20.04 libunwind
+    # 4. Run with profiling on and capture the completion result.
+    run_in_image "$image" bash ./scripts/run-case C 20.04 libunwind on completed
 
 case-D:
     #!/usr/bin/env bash

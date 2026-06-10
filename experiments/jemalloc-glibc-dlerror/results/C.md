@@ -1,6 +1,6 @@
 # Case C
 - image: ubuntu:20.04
-- jemalloc backend: llvm-libunwind
+- jemalloc backend: libunwind
 - profiling: on
 - expected: completed
 - observed: completed

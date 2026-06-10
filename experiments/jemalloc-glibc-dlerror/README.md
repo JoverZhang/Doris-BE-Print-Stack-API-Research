@@ -30,22 +30,22 @@ The exact frame spelling can vary. The proof is the recursive allocator shape.
 |---|---|---|---|---|
 | A | `ubuntu:20.04` | libgcc `_Unwind_Backtrace` | on | deadlock |
 | B | `ubuntu:20.04` | libgcc `_Unwind_Backtrace` | off | completed |
-| C | `ubuntu:20.04` | LLVM libunwind `unw_backtrace()` | on | completed |
+| C | `ubuntu:20.04` | libunwind `unw_backtrace()` | on | completed |
 | D | `ubuntu:24.04` | libgcc `_Unwind_Backtrace` | on | completed |
 
 Case A proves the old glibc path can recurse into jemalloc. Case B proves
-profiling is the trigger. Case C proves the LLVM libunwind backend avoids the
-libgcc path. Case D proves the newer glibc path avoids this case.
+profiling is the trigger. Case C proves the libunwind backend avoids the libgcc
+path. Case D proves the newer glibc path avoids this case.
 
 ## Files
 - `Containerfile`: Ubuntu 20.04 or 24.04 image.
 - `deps/jemalloc`: jemalloc 5.3.0 source, pinned as a git submodule.
-- `deps/llvm-project`: LLVM 17.0.6 source, pinned as a git submodule.
+- `deps/libunwind`: nongnu libunwind 1.6.2 source, pinned as a git submodule.
 - `src/repro.c`: only `malloc(16)` and `free`.
 - `src/phdr_wrap.c`: `dl_iterate_phdr` interposer.
 - `justfile`: user entry point for build and run commands.
 - `scripts/container.sh`: container build/run helpers.
-- `scripts/build`: simple build functions for jemalloc, LLVM libunwind, and
+- `scripts/build`: simple build functions for jemalloc, libunwind, and
   repro bits.
 - `scripts/run-case`: single-case runtime harness.
 - `results/`: small summaries; `results/raw/`: ignored raw logs.
@@ -79,26 +79,24 @@ system jemalloc package is not used.
 
 `scripts/build` owns the build commands. The `case-*` recipes call explicit
 build functions for allocator builds, libunwind builds, and demo/wrapper builds.
-LLVM libunwind still uses its upstream CMake build internally.
 Jemalloc uses one command shape:
-`scripts/build jemalloc <ubuntu-version> <libgcc|llvm-libunwind>`.
+`scripts/build jemalloc <ubuntu-version> <libgcc|libunwind>`.
 
 Downloaded tarballs are not used. The source lives in git submodules:
 
 ```text
 deps/jemalloc
-deps/llvm-project
+deps/libunwind
 ```
 
 The gitlink commits pin the exact source revisions; the visible tags are
-`5.3.0` and `llvmorg-17.0.6`.
+`5.3.0` and `v1.6.2`.
 
 The `libgcc` backend disables libunwind and gcc intrinsic fallback. That leaves
 jemalloc's libgcc `_Unwind_Backtrace` backend enabled.
 
-The `llvm-libunwind` path builds LLVM libunwind from source. It configures
-jemalloc with libunwind enabled and libgcc disabled. Ubuntu `libunwind-dev` is
-not used.
+The `libunwind` path builds nongnu libunwind from source. It configures jemalloc
+with libunwind enabled and libgcc disabled. Ubuntu `libunwind-dev` is not used.
 
 ## Results
 
@@ -133,7 +131,7 @@ If Case A times out without this shape, the proof failed.
 ## Reading Controls
 
 Case B must complete; if it hangs, profiling is not the only trigger.
-Case C must complete; if it hangs, the LLVM libunwind control failed.
+Case C must complete; if it hangs, the libunwind control failed.
 Case D must complete; if it hangs, the glibc-version control failed.
 
 ## Source References
