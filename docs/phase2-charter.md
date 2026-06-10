@@ -94,5 +94,3 @@ See [AGENTS.md](../AGENTS.md) for the patch-first workflow.
 - [phase2-test-plan.md](phase2-test-plan.md): three CK-shape test cases for
   the fp-walk baseline. Agent-owned.
 - [writing-guidelines.md](writing-guidelines.md): house style for these docs.
-- [../evidence/phase2/subagent-brief-template.md](../evidence/phase2/subagent-brief-template.md):
-  per-variant dispatch brief. Agent-owned.

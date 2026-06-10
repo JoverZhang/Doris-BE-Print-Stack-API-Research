@@ -28,4 +28,3 @@ baseline passes.
 - [`docs/phase2-test-plan.md`](docs/phase2-test-plan.md): three CK-shape test cases for the fp-walk baseline (agent-owned)
 - [`docs/writing-guidelines.md`](docs/writing-guidelines.md): project writing style
 - [`docs/coding-guidelines.md`](docs/coding-guidelines.md): code and comment conventions
-- [`evidence/phase2/subagent-brief-template.md`](evidence/phase2/subagent-brief-template.md): per-variant dispatch brief

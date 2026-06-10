@@ -232,12 +232,6 @@ items, all deferred:
   Bundled into the same status-shape refinement task as the
   unwind-error issue above.
 
-## Environment Notes
-
-The dispatch brief records the build landmines: the `build.sh` bind-mount
-packaging failure, the libunwind symbol prefixes, and the remote-unwind stub.
-See [../evidence/phase2/subagent-brief-template.md](../evidence/phase2/subagent-brief-template.md).
-
 ## References
 
 - Doris live native-stack PR: apache/doris#22549.
