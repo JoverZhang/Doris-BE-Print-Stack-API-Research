@@ -1,0 +1,20 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+engine := `if command -v podman >/dev/null 2>&1; then echo podman; else echo docker; fi`
+
+default:
+    @just --list
+
+image20:
+    {{engine}} build -f Containerfile --build-arg UBUNTU_VERSION=20.04 -t jemalloc-glibc-dlerror:ubuntu-20.04 .
+
+image24:
+    {{engine}} build -f Containerfile --build-arg UBUNTU_VERSION=24.04 -t jemalloc-glibc-dlerror:ubuntu-24.04 .
+
+matrix:
+    ./scripts/run-matrix.sh
+
+clean:
+    rm -rf .build .cache .deps results/raw results/*.md
+    mkdir -p results
+    touch results/.gitkeep

@@ -1,0 +1,8 @@
+.cache/
+.build/
+.deps/
+results/raw/
+results/*.log
+results/*.bt
+results/*.heap
+results/*.prof

@@ -1,0 +1,26 @@
+ARG UBUNTU_VERSION=20.04
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        autoconf \
+        bzip2 \
+        ca-certificates \
+        cmake \
+        curl \
+        file \
+        g++ \
+        gcc \
+        gdb \
+        git \
+        make \
+        ninja-build \
+        pkg-config \
+        procps \
+        python3 \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
