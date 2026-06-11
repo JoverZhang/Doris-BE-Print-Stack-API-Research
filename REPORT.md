@@ -19,7 +19,7 @@
 | capture stack | 采集 PC / RIP 地址序列。 |
 | symbolization | 符号化，把 `(dso, dso_offset)` 转成人类可读的函数名、文件名、行号；本文不重点讨论。 |
 | dso / dso_offset | DSO 是动态库或可执行文件；offset 是扣除 ASLR 后的相对偏移，可用于离线符号化。 |
-| rt signal | Linux realtime signal；本文用于让 coordinator 请求某个目标线程进入 handler。 |
+| rt signal | Linux realtime signal；本文用于让 coordinator 请求某个目标线程进入 signal handler。 |
 | frame-pointer walk | 沿 RBP 链采集 return address，handler 逻辑简单，但可能缺帧。 |
 | libunwind | 基于 unwind 信息恢复调用栈，栈质量更好，但在 signal handler 内有 async-signal-safety 风险。 |
 | async-signal-safe | 表示函数可安全地在 signal handler 内调用；本文的核心风险判断之一。 |
@@ -27,7 +27,7 @@
 
 ## 调研总结：
 
-1. 公共 API / coordinator 逻辑较为固定（参考 CK 与 OB）
+1. API，coordinator 与 handler 交互方式较为固定（参考 CK 与 OB）
 2. 权衡点主要在 handler 内如何 capture stack，最终取舍取决于接受哪一级一致性（见 [1.1 采集强度](#11-采集强度)）
 3. 已复现部分 signal handler 内 libunwind 的风险路径（见 [4. 证据链](#4-证据链)）
 
