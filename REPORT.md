@@ -8,10 +8,23 @@
 
 > 测试时，可使用 llvm-symbolizer 等工具对 (dso, dso_offset) 进行离线符号化
 
-## 统一术语：
+## 阅读前置术语
 
-1. **coordinator**：接收 HTTP 请求的线程，负责整体流程控制和结果汇总
-2. **handler**：每个目标线程在收到 rt signal 后进入的 signal handler
+> 只解释本文中的使用方式，不展开通用背景。
+
+| 术语 | 本文含义 |
+|---|---|
+| coordinator | 接收 HTTP 请求的普通线程，负责枚举目标线程、发送 signal、等待结果、汇总与符号解析。 |
+| handler | 目标线程收到 rt signal 后进入的 signal handler，负责在目标线程上下文中采集栈。 |
+| capture stack | 采集 PC / RIP 地址序列。 |
+| symbolization | 符号化，把 `(dso, dso_offset)` 转成人类可读的函数名、文件名、行号；本文不重点讨论。 |
+| dso / dso_offset | DSO 是动态库或可执行文件；offset 是扣除 ASLR 后的相对偏移，可用于离线符号化。 |
+| rt signal | Linux realtime signal；本文用于让 coordinator 请求某个目标线程进入 handler。 |
+| frame-pointer walk | 沿 RBP 链采集 return address，handler 逻辑简单，但可能缺帧。 |
+| libunwind | 基于 unwind 信息恢复调用栈，栈质量更好，但在 signal handler 内有 async-signal-safety 风险。 |
+| async-signal-safe | 表示函数可安全地在 signal handler 内调用；本文的核心风险判断之一。 |
+| PHDR cache | 缓存动态库加载信息，避免 handler 内触碰 loader，但有生命周期与一致性风险。 |
+
 ## 结论：
 
 1. 公共 API / coordinator 逻辑可以先收敛，方案差异收敛为 handler 内如何 capture stack，最终取舍取决于接受哪一级一致性（见 [5. 回归需求与下一步](#5-回归需求与下一步)）
