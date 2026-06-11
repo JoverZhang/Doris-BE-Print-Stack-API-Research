@@ -14,8 +14,8 @@
 2. **handler**：每个目标线程在收到 rt signal 后进入的 signal handler
 ## 结论：
 
-1. 公共 API / coordinator 逻辑可以先收敛，方案差异收敛为 handler 内如何 capture stack，最终取舍取决于接受哪一级一致性
-2. 已复现部分 signal handler 内 libunwind 的风险路径（见最后证据链）
+1. 公共 API / coordinator 逻辑可以先收敛，方案差异收敛为 handler 内如何 capture stack，最终取舍取决于接受 [哪一级一致性](#5-回归需求与下一步)
+2. 已复现部分 signal handler 内 libunwind 的风险路径（见 [证据链](#4-证据链)）
 
 ## 1. 目标
 
