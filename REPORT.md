@@ -25,34 +25,58 @@
 | async-signal-safe | 表示函数可安全地在 signal handler 内调用；本文的核心风险判断之一。 |
 | PHDR cache | 缓存动态库加载信息，避免 handler 内触碰 loader，但有生命周期与一致性风险。 |
 
-## 结论：
+## 调研总结：
 
-1. 公共 API / coordinator 逻辑可以先收敛，方案差异收敛为 handler 内如何 capture stack，最终取舍取决于接受哪一级一致性（见 [5. 回归需求与下一步](#5-回归需求与下一步)）
-2. 已复现部分 signal handler 内 libunwind 的风险路径（见 [4. 证据链](#4-证据链)）
+1. 公共 API / coordinator 逻辑较为固定（参考 CK 与 OB）
+2. 权衡点主要在 handler 内如何 capture stack，最终取舍取决于接受哪一级一致性（见 [1.1 采集强度](#11-采集强度)）
+3. 已复现部分 signal handler 内 libunwind 的风险路径（见 [4. 证据链](#4-证据链)）
 
 ## 1. 目标
 
-为 `doris_be` 提供一个运行时 debug API，在不重启、不挂起进程的前提下采集线程的
-native stack：
+为 `doris_be` 提供一个运行时 debug API，在不重启、不挂起进程的前提下采集线程的 native stack
 
-```text
-GET /api/print_stack                  # 默认全部线程
-GET /api/print_stack?thread_id=12345  # 指定线程（后续可支持多个）
-```
+### 1.1 采集强度
 
-- 每帧返回 `(dso, dso_offset)`，offset 已扣除 ASLR。（可直接符号化）
-- 面向 Linux x86_64 Release 构建；同一时刻只允许一个 print_stack（需要阻塞后续请求）。
-- 单个线程不响应时记空栈，不拖垮整个请求。
+对一致性的要求从严到宽分五级，每级对应不同的设计空间：
+
+| 级 | 要求（逐级放宽） | 对应设计 |
+|---|---|---|
+| 1 | 严格全线程同一时刻快照 | 需并发 signal + handler 集体驻留等待放行（未验证并发 rt signal 风险） |
+| 2 | 严格几个指定线程的同时快照 | 同上，范围更小 |
+| 3 | 容忍各线程采集时刻不同 | **CK / OB 生产形态**：顺序采集 + handler 内 libunwind |
+| 4 | 再容忍栈外层帧被截断 | snapshot + remote unwind（见 3.3） |
+| 5 | 再容忍缺帧（tail call）与偶发截断（prologue） | frame-pointer walk |
 
 调研主要目标：评估不同设计方案在 signal 安全与栈质量上的权衡，锁定可接受的一致性等级。
 
-## 2. 实现原理
+## 2. 设计与实现（API 与 capture stack）
 
 API 层面设计参考了 CK 和 OB 的实现方式，目前主要差异在于 handler 内的 capture stack 方案。
 
 ### 2.1 API 层面
 
 本仓库实现的 patch: [common](patches/common/0001-phase2-common-add-print_stack-types-coordinator-acti.patch)
+
+```text
+GET /api/print_stack                  # 默认全部线程
+GET /api/print_stack?thread_id=12345  # 指定线程（后续可支持多个）
+```
+
+```json
+{
+  "threads": [
+    {
+      "thread_id": 12345,
+      "thread_name": "brpc_worker",
+      "trace": [
+        { "dso": "/path/to/libdoris_be.so", "dso_offset": "0x1234" }
+      ]
+    }
+  ]
+}
+```
+
+流程：
 
 ```text
 HTTP action
@@ -66,9 +90,10 @@ HTTP action
 
 核心要点：
 
+- 同一时刻只允许一个 print_stack（需要阻塞后续请求）
 - rt signal 会排队、不会合并；sequence 不匹配的迟到结果被丢弃。
 - 采集顺序进行，所以一个共享 slot、单写 latch 就够了。
-- handler 内只做 signal-safe 的事；DSO 解析、`/proc` 读取都留在 coordinator。
+- handler 内只做 signal-safe 的事；DSO 解析、`/proc/self/task` 读取都留在 coordinator。
 
 ### 2.2 capture stack 层面（两种栈采集方式）
 
@@ -119,19 +144,7 @@ HTTP action
 链条结论：unwind、loader、allocator 三者的交互风险真实且可复现；目前已发现的每条风险都有
 已验证的缓解路径（libunwind backend、glibc ≥ 2.34、或不在 handler 内 unwind）。
 
-## 5. 回归需求与下一步
-
-对一致性的要求从严到宽分五级，每级对应不同的设计空间：
-
-| 级 | 要求（逐级放宽） | 对应设计 |
-|---|---|---|
-| 1 | 严格全线程同一时刻快照 | 需并发 signal + handler 集体驻留等待放行（未验证并发 rt signal 风险） |
-| 2 | 严格几个指定线程的同时快照 | 同上，范围更小 |
-| 3 | 容忍各线程采集时刻不同 | CK / OB 生产形态：顺序采集 + handler 内 libunwind |
-| 4 | 再容忍栈外层帧被截断 | snapshot + remote unwind（见 3.3） |
-| 5 | 再容忍缺帧（tail call）与偶发截断（prologue） | frame-pointer walk |
-
-下一步：
+## 5. 下一步
 
 1. 锁定可接受的一致性等级 — 它直接决定候选集合与协调层形态。
 2. 补实验闭环：并发 rt signal 丢失证明、snapshot 截断扫描、tail call /
