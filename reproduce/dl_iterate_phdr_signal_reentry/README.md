@@ -68,3 +68,20 @@ lock is still held.
 
 This program holds the outer callback in `t1`. Then it signals `t2`. The `t2`
 handler calls `dl_iterate_phdr` again and blocks on the same loader lock.
+
+## libunwind 1.6.2 path
+
+For libunwind 1.6.2 on x86_64, the continuous `unw_backtrace` to
+`dl_iterate_phdr` path is:
+
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/mi/backtrace.c#L57-L69 - unw_backtrace()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L398-L449 - tdep_trace()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L273-L331 - trace_lookup()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L211-L249 - trace_init_addr()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gstep.c#L56-L75 - unw_step()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L967-L972 - dwarf_step()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925 - find_reg_state()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L423-L461 - fetch_proc_info()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/include/tdep-x86_64/libunwind_i.h#L250-L253 - tdep_find_proc_info() macro
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L789-L808 - dwarf_find_proc_info()
+- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dl-iterate-phdr.c#L47-L64 - dl_iterate_phdr()
