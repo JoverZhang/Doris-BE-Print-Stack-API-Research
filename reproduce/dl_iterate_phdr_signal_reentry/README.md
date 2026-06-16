@@ -3,22 +3,35 @@
 This directory contains one program that reproduces the signal-handler deadlock
 around libunwind's `unw_backtrace()` path to glibc `dl_iterate_phdr()`.
 
-Build:
+Build instructions are in [BUILD.md](BUILD.md).
 
-```bash
-cd ../../.mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind
-autoreconf -i
-mkdir -p _build-local
-cd _build-local
-../configure --prefix="$PWD/_install"
-make -j"$(nproc)"
+## Critical Path
 
-cd ../../../../../../reproduce/dl_iterate_phdr_signal_reentry
-bash build.sh
+The deadlock is the lock cycle below:
+
+1. `T1` enters `dl_iterate_phdr()` and holds glibc's loader lock:
+
+   - https://github.com/bminor/glibc/blob/master/elf/dl-iteratephdr.c#L38-L39 - glibc `dl_iterate_phdr()` takes the loader lock.
+
+2. `T2` enters libunwind from a signal handler. It holds libunwind's
+   `cache->lock`, then goes to `dl_iterate_phdr()` and waits for the loader
+   lock held by `T1`:
+
+   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L595-L618 - `get_rs_cache()` acquires `cache->lock`.
+   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925 - `find_reg_state()` calls `fetch_proc_info()` on cache miss.
+   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L806-L808 - `dwarf_find_proc_info()` calls `dl_iterate_phdr()`.
+
+3. `T1` receives a signal while still inside the outer `dl_iterate_phdr()`
+   callback. Its signal handler runs libunwind and tries to take the same
+   libunwind `cache->lock`, which is still held by `T2`.
+
+In short:
+
+```text
+T1 outer dl_iterate_phdr   holds glibc loader lock, waits for T1 handler to return
+T2 handler/libunwind       holds libunwind cache lock, waits for glibc loader lock
+T1 handler/libunwind       waits for libunwind cache lock
 ```
-
-`build.sh` links the reproducer to the OceanBase vendored libunwind build at
-`../../.mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind/_build-local/src/.libs`.
 
 Run:
 
