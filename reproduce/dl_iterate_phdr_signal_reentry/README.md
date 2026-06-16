@@ -15,8 +15,8 @@ The path is:
 - `T1` enters `dl_iterate_phdr()` and holds `lock 1`.
 - `T2` enters a signal handler, calls `unw_backtrace()`, and holds `lock 2`;
   it then enters `dl_iterate_phdr()` and waits for `lock 1`.
-- `T1` receives a signal, enters the signal handler, tries to enter libunwind,
-  and waits for `lock 2`, forming a deadlock.
+- `T1` receives a signal, its handler calls `unw_backtrace()` and waits for
+  `lock 2`, completing the deadlock cycle.
 
 ## Build and Run
 
