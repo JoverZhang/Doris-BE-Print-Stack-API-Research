@@ -3,37 +3,11 @@
 This directory contains one program that reproduces the signal-handler deadlock
 around libunwind's `unw_backtrace()` path to glibc `dl_iterate_phdr()`.
 
+## Build and Run
+
 Build instructions are in [BUILD.md](BUILD.md).
 
-## Critical Path
-
-The deadlock is the lock cycle below:
-
-1. `T1` enters `dl_iterate_phdr()` and holds glibc's loader lock:
-
-   - https://github.com/bminor/glibc/blob/master/elf/dl-iteratephdr.c#L38-L39 - glibc `dl_iterate_phdr()` takes the loader lock.
-
-2. `T2` enters libunwind from a signal handler. It holds libunwind's
-   `cache->lock`, then goes to `dl_iterate_phdr()` and waits for the loader
-   lock held by `T1`:
-
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L595-L618 - `get_rs_cache()` acquires `cache->lock`.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925 - `find_reg_state()` calls `fetch_proc_info()` on cache miss.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L806-L808 - `dwarf_find_proc_info()` calls `dl_iterate_phdr()`.
-
-3. `T1` receives a signal while still inside the outer `dl_iterate_phdr()`
-   callback. Its signal handler runs libunwind and tries to take the same
-   libunwind `cache->lock`, which is still held by `T2`.
-
-In short:
-
-```text
-T1 outer dl_iterate_phdr   holds glibc loader lock, waits for T1 handler to return
-T2 handler/libunwind       holds libunwind cache lock, waits for glibc loader lock
-T1 handler/libunwind       waits for libunwind cache lock
-```
-
-Run:
+Run the reproducer from this directory:
 
 ```bash
 ./libunwind_signal_deadlock_reproducer
@@ -46,6 +20,36 @@ S9 result: libunwind signal reentry deadlock reproduced
 ```
 
 The reproducer exits with `124` after it confirms the deadlock.
+
+Debugger workflows are in [DEBUGGING.md](DEBUGGING.md).
+
+## Critical Path
+
+The deadlock is the lock cycle below:
+
+1. `T1` enters `dl_iterate_phdr()` and holds glibc's loader lock:
+
+   - glibc `dl_iterate_phdr()` takes the loader lock. [source](https://github.com/bminor/glibc/blob/master/elf/dl-iteratephdr.c#L38-L39)
+
+2. `T2` enters libunwind from a signal handler. It holds libunwind's
+   `cache->lock`, then goes to `dl_iterate_phdr()` and waits for the loader
+   lock held by `T1`:
+
+   - `get_rs_cache()` acquires `cache->lock`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L595-L618)
+   - `find_reg_state()` calls `fetch_proc_info()` on cache miss. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925)
+   - `dwarf_find_proc_info()` calls `dl_iterate_phdr()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L806-L808)
+
+3. `T1` receives a signal while still inside the outer `dl_iterate_phdr()`
+   callback. Its signal handler runs libunwind and tries to take the same
+   libunwind `cache->lock`, which is still held by `T2`.
+
+In short:
+
+```text
+T1 outer dl_iterate_phdr   holds glibc loader lock, waits for T1 handler to return
+T2 handler/libunwind       holds libunwind cache lock, waits for glibc loader lock
+T1 handler/libunwind       waits for libunwind cache lock
+```
 
 ## How It Reproduces
 
@@ -67,14 +71,14 @@ The exact sequence is:
 
    S5 source path:
 
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L595-L618 - `get_rs_cache()` acquires `cache->lock`.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925 - `find_reg_state()` calls `fetch_proc_info()` on cache miss.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L946-L956 - `put_rs_cache()` releases `cache->lock` later, after `fetch_proc_info()`.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L453-L462 - `fetch_proc_info()` calls `tdep_find_proc_info()`.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/include/tdep-x86_64/libunwind_i.h#L250-L253 - x86_64 local `tdep_find_proc_info()` maps to `dwarf_find_proc_info()`.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L806-L808 - `dwarf_find_proc_info()` calls `dl_iterate_phdr()`.
-   - https://github.com/libunwind/libunwind/blob/v1.6.2/src/dl-iterate-phdr.c#L57-L64 - libunwind's wrapper calls libc `dl_iterate_phdr()`.
-   - https://github.com/bminor/glibc/blob/master/elf/dl-iteratephdr.c#L38-L81 - glibc `dl_iterate_phdr()` takes and later releases the loader lock.
+   - `get_rs_cache()` acquires `cache->lock`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L595-L618)
+   - `find_reg_state()` calls `fetch_proc_info()` on cache miss. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925)
+   - `put_rs_cache()` releases `cache->lock` later, after `fetch_proc_info()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L946-L956)
+   - `fetch_proc_info()` calls `tdep_find_proc_info()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L453-L462)
+   - x86_64 local `tdep_find_proc_info()` maps to `dwarf_find_proc_info()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/include/tdep-x86_64/libunwind_i.h#L250-L253)
+   - `dwarf_find_proc_info()` calls `dl_iterate_phdr()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L806-L808)
+   - libunwind's wrapper calls libc `dl_iterate_phdr()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dl-iterate-phdr.c#L57-L64)
+   - glibc `dl_iterate_phdr()` takes and later releases the loader lock. [source](https://github.com/bminor/glibc/blob/master/elf/dl-iteratephdr.c#L38-L81)
 6. `S6`: `main` signals `t1` and waits until `t1` enters its signal handler.
 7. `S7`: `t1` calls `unw_backtrace()` from the signal handler and blocks on the
    libunwind cache lock held by `t2`.
@@ -98,57 +102,23 @@ The important point is that `main` does release `t1`'s callback flag. The
 callback still cannot return, because the same `t1` thread is interrupted in
 its signal handler and that handler is blocked inside libunwind.
 
-## Debugging
-
-Set `HOLD_ON_DEADLOCK_SECONDS` to keep the reproducer alive after it detects a
-deadlock:
-
-```bash
-HOLD_ON_DEADLOCK_SECONDS=20 ./libunwind_signal_deadlock_reproducer
-```
-
-For a gdb-launched stack capture:
-
-```bash
-gdb -batch -q ./libunwind_signal_deadlock_reproducer \
-  -ex 'set pagination off' \
-  -ex 'handle SIG34 nostop noprint pass' \
-  -ex 'handle SIG35 nostop noprint pass' \
-  -ex 'set env HOLD_ON_DEADLOCK_SECONDS 999' \
-  -ex 'break hold_on_deadlock_if_requested' \
-  -ex 'run' \
-  -ex 'thread apply all bt' \
-  -ex 'quit'
-```
-
-On the tested host, the relevant frames were:
-
-```text
-t2: unw_backtrace -> _ULx86_64_step -> ... -> dl_iterate_phdr -> pthread_mutex_lock
-t1: signal handler -> unw_backtrace -> _ULx86_64_step -> pthread_mutex_lock
-```
-
 ## Source Pointers
 
 The glibc side is `__dl_iterate_phdr`, which takes
 `GL(dl_load_write_lock)` before invoking callbacks and releases it after the
-callback loop:
-
-```text
-https://github.com/bminor/glibc/blob/master/elf/dl-iteratephdr.c
-```
+callback loop. [source](https://github.com/bminor/glibc/blob/master/elf/dl-iteratephdr.c)
 
 For libunwind 1.6.2 on x86_64, the continuous `unw_backtrace` to
 `dl_iterate_phdr` path is:
 
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/mi/backtrace.c#L57-L69 - `unw_backtrace()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L398-L449 - `tdep_trace()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L273-L331 - `trace_lookup()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L211-L249 - `trace_init_addr()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gstep.c#L56-L75 - `unw_step()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L967-L972 - `dwarf_step()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925 - `find_reg_state()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L423-L461 - `fetch_proc_info()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/include/tdep-x86_64/libunwind_i.h#L250-L253 - `tdep_find_proc_info()` macro
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L789-L808 - `dwarf_find_proc_info()`
-- https://github.com/libunwind/libunwind/blob/v1.6.2/src/dl-iterate-phdr.c#L47-L64 - `dl_iterate_phdr()`
+- `unw_backtrace()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/mi/backtrace.c#L57-L69)
+- `tdep_trace()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L398-L449)
+- `trace_lookup()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L273-L331)
+- `trace_init_addr()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gtrace.c#L211-L249)
+- `unw_step()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/x86_64/Gstep.c#L56-L75)
+- `dwarf_step()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L967-L972)
+- `find_reg_state()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L908-L925)
+- `fetch_proc_info()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gparser.c#L423-L461)
+- `tdep_find_proc_info()` macro. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/include/tdep-x86_64/libunwind_i.h#L250-L253)
+- `dwarf_find_proc_info()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dwarf/Gfind_proc_info-lsb.c#L789-L808)
+- `dl_iterate_phdr()`. [source](https://github.com/libunwind/libunwind/blob/v1.6.2/src/dl-iterate-phdr.c#L47-L64)
