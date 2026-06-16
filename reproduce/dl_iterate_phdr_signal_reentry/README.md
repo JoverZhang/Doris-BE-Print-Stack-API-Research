@@ -7,7 +7,7 @@ around libunwind's `unw_backtrace()` path to glibc `dl_iterate_phdr()`.
 
 There are two locks:
 
-- `lock 1`: the `dl_iterate_phdr()` loader lock
+- `lock 1`: glibc's loader lock, held by `dl_iterate_phdr()`
 - `lock 2`: libunwind's rs cache lock, acquired on the `unw_backtrace()` path
 
 The path is:
