@@ -3,6 +3,21 @@
 This directory contains one program that reproduces the signal-handler deadlock
 around libunwind's `unw_backtrace()` path to glibc `dl_iterate_phdr()`.
 
+## In Short
+
+There are two locks:
+
+- `lock 1`: the `dl_iterate_phdr()` loader lock
+- `lock 2`: libunwind's rs cache lock
+
+The path is:
+
+- `T1` enters `dl_iterate_phdr()` and holds `lock 1`.
+- `T2` enters libunwind and holds `lock 2`, then enters `dl_iterate_phdr()`
+  and waits for `lock 1`.
+- `T1` receives a signal, enters the signal handler, tries to enter libunwind,
+  and waits for `lock 2`, forming a deadlock.
+
 ## Build and Run
 
 Build instructions are in [BUILD.md](BUILD.md).
