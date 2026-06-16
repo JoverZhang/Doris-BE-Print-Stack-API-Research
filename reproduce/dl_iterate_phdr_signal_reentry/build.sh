@@ -4,6 +4,9 @@ set -euo pipefail
 cd -- "$(dirname -- "$0")"
 
 cxx=${CXX:-c++}
+default_libunwind_root="$PWD/../../.mira/research-sources/oceanbase-kill-60/oceanbase-v4.5.0_CE/libunwind"
+libunwind_root=${OCEANBASE_LIBUNWIND_ROOT:-$default_libunwind_root}
+libunwind_lib_dir=${OCEANBASE_LIBUNWIND_LIB_DIR:-$libunwind_root/_build-local/src/.libs}
 
 if [[ -n "${CXXFLAGS:-}" ]]
 then
@@ -16,10 +19,15 @@ if [[ -n "${LDLIBS:-}" ]]
 then
     read -r -a ldlibs <<< "$LDLIBS"
 else
-    ldlibs=(-ldl -pthread)
+    ldlibs=(
+        "-L$libunwind_lib_dir"
+        "-Wl,-rpath,$libunwind_lib_dir"
+        -lunwind
+        -pthread
+    )
 fi
 
 "$cxx" "${cxxflags[@]}" \
-    dl_iterate_phdr_signal_reentry.cpp \
-    -o dl_iterate_phdr_signal_reentry \
+    libunwind_signal_deadlock_reproducer.cpp \
+    -o libunwind_signal_deadlock_reproducer \
     "${ldlibs[@]}"
