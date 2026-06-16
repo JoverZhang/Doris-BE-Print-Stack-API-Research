@@ -8,13 +8,13 @@ around libunwind's `unw_backtrace()` path to glibc `dl_iterate_phdr()`.
 There are two locks:
 
 - `lock 1`: the `dl_iterate_phdr()` loader lock
-- `lock 2`: libunwind's rs cache lock
+- `lock 2`: libunwind's rs cache lock, acquired on the `unw_backtrace()` path
 
 The path is:
 
 - `T1` enters `dl_iterate_phdr()` and holds `lock 1`.
-- `T2` enters libunwind and holds `lock 2`, then enters `dl_iterate_phdr()`
-  and waits for `lock 1`.
+- `T2` enters a signal handler, calls `unw_backtrace()`, and holds `lock 2`;
+  it then enters `dl_iterate_phdr()` and waits for `lock 1`.
 - `T1` receives a signal, enters the signal handler, tries to enter libunwind,
   and waits for `lock 2`, forming a deadlock.
 
