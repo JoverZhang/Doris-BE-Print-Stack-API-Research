@@ -30,3 +30,15 @@
 	path = experiments/jemalloc-glibc-dlerror/deps/libunwind
 	url = https://github.com/libunwind/libunwind.git
 	shallow = true
+[submodule ".mira/research-sources/jemalloc-5.3.0"]
+	path = .mira/research-sources/jemalloc-5.3.0
+	url = https://github.com/jemalloc/jemalloc.git
+	shallow = true
+[submodule ".mira/research-sources/glibc-dlerror-deadlock-b2964eb"]
+	path = .mira/research-sources/glibc-dlerror-deadlock-b2964eb
+	url = https://github.com/bminor/glibc.git
+	shallow = true
+[submodule ".mira/research-sources/glibc-dlerror-base-free-fada901"]
+	path = .mira/research-sources/glibc-dlerror-base-free-fada901
+	url = https://github.com/bminor/glibc.git
+	shallow = true
