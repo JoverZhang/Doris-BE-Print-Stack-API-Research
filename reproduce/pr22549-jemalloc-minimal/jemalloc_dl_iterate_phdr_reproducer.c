@@ -74,17 +74,18 @@ dl_iterate_phdr(int (*callback)(struct dl_phdr_info* info, size_t size, void* da
     return getOriginalDLIteratePHDR()(callback, data);
 }
 
-__attribute__((constructor)) static void trigger_jemalloc_before_main(void) {
-    WRITE_LITERAL("constructor: malloc before main\n");
+static void trigger_jemalloc_from_main(void) {
+    WRITE_LITERAL("main: malloc first\n");
     void* ptr = malloc(24);
     if (ptr == NULL) {
         WRITE_LITERAL("error: malloc returned null\n");
         _exit(2);
     }
-    WRITE_LITERAL("constructor: malloc returned\n");
+    WRITE_LITERAL("main: malloc returned\n");
 }
 
 int main(void) {
+    trigger_jemalloc_from_main();
     WRITE_LITERAL("main: reached\n");
     return 0;
 }

@@ -1,0 +1,33 @@
+---
+schema_version: 2
+created_at: 2026-06-24T21:53:51+08:00
+project_path: /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/reproduce/pr22549-jemalloc-minimal
+branch: master
+commit: 87f92075737bf11d4f7c784c837c9a33f4d60f6c
+title: prev prof-on gdb stack
+thread.T1: pre-main jemalloc constructor recursion
+---
+
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/sysdeps/x86_64/start.S:116 | frame 22 _start
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/csu/libc-start.c:381 | frame 21 __libc_start_main_impl
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/csu/libc-start.c:147 | frame 20 call_init
+T1 - .tmp/jemalloc-src/src/jemalloc.c:2151 | frame 19 malloc_init_hard
+T1 - .tmp/jemalloc-src/src/prof.c:693 | frame 18 je_prof_boot2
+T1 - .tmp/jemalloc-src/src/prof_sys.c:301 | frame 17 je_prof_unwind_init
+T1 - jemalloc_dl_iterate_phdr_reproducer.c:49 | frame 16 _Unwind_Backtrace
+T1 - jemalloc_dl_iterate_phdr_reproducer.c:74 | frame 15 dl_iterate_phdr
+T1 - jemalloc_dl_iterate_phdr_reproducer.c:64 | frame 14 getOriginalDLIteratePHDR
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/dlfcn/dlsym.c:70 | frame 13 __dlsym
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/dlfcn/dlerror.c:148 | frame 12 _dlerror_run
+T1 - jemalloc_dl_iterate_phdr_reproducer.c:28 | frame 11 doris_calloc
+T1 - .tmp/jemalloc-src/src/jemalloc.c:2852 | frame 10 jecalloc
+T1 - .tmp/jemalloc-src/src/jemalloc.c:2689 | frame 9 imalloc
+T1 - .tmp/jemalloc-src/src/jemalloc.c:2658 | frame 8 imalloc_init_check
+T1 - .tmp/jemalloc-src/src/jemalloc.c:298 | frame 7 malloc_init
+T1 - .tmp/jemalloc-src/src/jemalloc.c:2118 | frame 6 malloc_init_hard
+T1 - .tmp/jemalloc-src/include/jemalloc/internal/mutex.h:217 | frame 5 malloc_mutex_lock
+T1 - .tmp/jemalloc-src/src/mutex.c:90 | frame 4 je_malloc_mutex_lock_slow
+T1 - .tmp/jemalloc-src/include/jemalloc/internal/mutex.h:151 | frame 3 malloc_mutex_lock_final
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/nptl/pthread_mutex_lock.c:67 | frame 2 __GI___pthread_mutex_lock
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/nptl/lowlevellock.c:50 | frame 1 __GI___lll_lock_wait
+T1 - /home/mira/lab/projects/Doris-BE-Print-Stack-API-Research/.mira/research-sources/glibc-dlerror-deadlock-b2964eb/sysdeps/nptl/futex-internal.h:146 | frame 0 futex_wait
