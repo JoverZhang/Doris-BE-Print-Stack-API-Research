@@ -4,12 +4,14 @@ Doris BE 需要一个 debug API，在运行中采集 native thread stack。
 候选方案共享同一个 HTTP / coordinator 协议，差异集中在 signal handler 里的 capture hook。
 当前收尾工作要补齐关键实验，再按统一标准进入方案取舍。
 
-## 0. 当前判断
+## 0. 当前状态总结
 
 - 公共 API / coordinator 协议可以先收敛，capture hook 保持可替换。
 - 方案分歧集中在 handler 内执行 libunwind、copy snapshot、还是读取 RBP 链。
-- CK / OB 提供了 signal handler 内采集的生产参考，同时把 libunwind 风险带进 handler。
-- Snapshot 把 unwind 移到 coordinator，但引入 copied stack 和 remote accessor 复杂度。
+- CK / OB 提供了 signal handler 内采集的生产参考，同时把 libunwind 风险带进 signal handler。
+- 为避免将非 signal-safety 的 libunwind 路径带入 handler，CK 通过 PHDR cache 规避了 `dl_iterate_phdr`，但引入了 cache 生命周期风险。
+- 本项目尝试了两个规避 handler 内的 libunwind 的实验，snapshot 和 frame-pointer walking 两种思路，但都面临栈质量和边界条件的挑战。
+- Snapshot 把 unwind 移到 coordinator，但可能存在性能，栈截断或一致性风险。
 - Frame-pointer walking 的 handler 最小，取舍点是 tail call、prologue、缺少 frame pointer 的帧边界。
 
 ## 1. 候选方案对比
@@ -19,7 +21,6 @@ Doris BE 需要一个 debug API，在运行中采集 native thread stack。
 | 方案 | Handler 内做什么 | 主要收益 | 主要风险 | 待补实验 |
 |---|---|---|---|---|
 | CK-style PHDR-cache unwind | 用 signal `ucontext_t` 跑 libunwind walk | 预期栈帧质量较好；有 CK 协议参考 | PHDR cache 与 `dlopen` / `dlclose` 生命周期；全局 `dl_iterate_phdr` override | PHDR 信息缺失 / stale PHDR 实验 |
-| OB-style two-phase `kill -60` | 跑 nongnu libunwind，并参与 release 协作 | 有 OB 生产参考；输出适合离线解析 | handler 内 libunwind 可能进入 loader path；两阶段协议增加同步复杂度 | two-phase 作用实验 |
 | Snapshot + remote unwind | copy registers 和 bounded stack bytes | libunwind 运行在 coordinator；loader 交互离开 handler | copied stack 截断；remote accessor 复杂；snapshot 一致性 | snapshot stack size / accessor / 截断实验 |
 | Frame-pointer walking | 读 RIP/RBP，沿 RBP 链取 return address | handler 路径小；依赖 Doris Release frame pointer | tail call、prologue、缺少 frame pointer 的代码可能漏帧 | tail call / prologue 漏帧实验 |
 
@@ -36,7 +37,6 @@ Doris BE 需要一个 debug API，在运行中采集 native thread stack。
 | 实验 | 影响的方案 | 要确认的取舍点 | 最小实验输出 |
 |---|---|---|---|
 | PHDR 信息缺失 / stale PHDR | CK-style PHDR-cache unwind | PHDR cache 不完整时是少帧、停止、错误 frame，还是崩溃 | 完整 PHDR / 缺失 PHDR / stale PHDR 三列结果表 |
-| two-phase 作用 | OB-style two-phase `kill -60` | release 协作在 Doris slot + sequence 模型中提供的额外属性 | single-phase 与 two-phase 的 stale result / timeout recovery 行为表 |
 | snapshot 截断 | Snapshot + remote unwind | copied stack 需要多大；截断后 libunwind 如何停止 | stack size sweep 表：size、frame count、stop reason |
 | tail call / prologue 漏帧 | Frame-pointer walking | `-fno-omit-frame-pointer` 下 RBP 链具体漏哪些帧 | 普通调用、tail call、禁用 sibling-call 的栈对比表 |
 | libunwind 截断行为 | libunwind 相关方案 | cursor API 停止条件和调用方 cap 的关系 | recursion depth、frame cap、stop reason 对比表 |
